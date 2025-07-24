@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../../lib/db";
 import Project from "../../../../models/project";
+import { v2 as cloudinary } from 'cloudinary';
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 interface NearbyPlace {
   name: string;
@@ -36,7 +44,7 @@ interface Flags {
   highValue: boolean;
 }
 
-interface ProjectCreateRequest {
+interface ProjectData {
   name: string;
   location: string;
   type: string;
@@ -44,8 +52,6 @@ interface ProjectCreateRequest {
   developer: string;
   price: string;
   priceNumeric: number;
-  coverImage: string[];
-  gallery: string[];
   description: string;
   completionDate: string;
   totalUnits: number;
@@ -53,21 +59,66 @@ interface ProjectCreateRequest {
   launchDate: string;
   featured: boolean;
   overview: string;
-  image: string;
   flags: Flags;
   locationDetails: LocationDetails;
   paymentPlan: PaymentPlan;
 }
 
-// Deep validation helper for nested fields
-function validateProjectData(data: ProjectCreateRequest): { isValid: boolean; errors: string[] } {
+// Helper function to create URL-friendly slug
+function createSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+}
+
+// Helper function to upload image to Cloudinary with compression and WebP conversion
+async function uploadImageToCloudinary(
+  fileBuffer: Buffer, 
+  fileName: string, 
+  folderName: string,
+  isGallery: boolean = false
+): Promise<string> {
+  try {
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        {
+          folder: folderName,
+          public_id: fileName,
+          format: 'webp', // Convert to WebP
+          quality: 'auto:good', // Automatic quality optimization
+          fetch_format: 'auto', // Automatic format selection
+          width: isGallery ? 1200 : 1920, // Different sizes for gallery vs cover
+          height: isGallery ? 800 : 1080,
+          crop: 'limit', // Don't upscale, only downscale if needed
+          resource_type: 'image',
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      ).end(fileBuffer);
+    });
+
+    return (result as any).secure_url;
+  } catch (error) {
+    console.error('Cloudinary upload error:', error);
+    throw new Error('Failed to upload image to Cloudinary');
+  }
+}
+
+// Validation function for project data
+function validateProjectData(data: ProjectData): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
 
-  // Simple string fields
-  const requiredStringFields: (keyof ProjectCreateRequest)[] = [
+  // Required string fields
+  const requiredStringFields: (keyof ProjectData)[] = [
     "name", "location", "type", "status", "developer",
-    "price", "description", "overview", "image"
+    "price", "description", "overview"
   ];
+  
   for (const field of requiredStringFields) {
     if (!data[field] || typeof data[field] !== "string" || !data[field].trim()) {
       errors.push(`${field} is required and must be a non-empty string.`);
@@ -98,14 +149,6 @@ function validateProjectData(data: ProjectCreateRequest): { isValid: boolean; er
     errors.push("launchDate is required and must be a valid date string.");
   }
 
-  // Arrays
-  if (!Array.isArray(data.coverImage)) {
-    errors.push("coverImage must be an array of strings.");
-  }
-  if (!Array.isArray(data.gallery)) {
-    errors.push("gallery must be an array of strings.");
-  }
-
   // Flags object
   if (!data.flags || typeof data.flags !== "object") {
     errors.push("flags must be an object.");
@@ -118,41 +161,42 @@ function validateProjectData(data: ProjectCreateRequest): { isValid: boolean; er
     }
   }
 
-  // Validate locationDetails (nested)
-  if (
-    !data.locationDetails ||
-    typeof data.locationDetails !== "object" ||
-    !data.locationDetails.description ||
-    !data.locationDetails.description.trim()
-  ) {
-    errors.push("locationDetails.description is required.");
-  }
-  if (
-    !Array.isArray(data.locationDetails.nearby) ||
-    data.locationDetails.nearby.length === 0
-  ) {
-    errors.push("locationDetails.nearby must be a non-empty array.");
+  // Validate locationDetails
+  if (!data.locationDetails || typeof data.locationDetails !== "object") {
+    errors.push("locationDetails must be an object.");
   } else {
-    data.locationDetails.nearby.forEach((place, idx) => {
-      if (!place.name || !place.name.trim()) errors.push(`locationDetails.nearby[${idx}].name is required.`);
-      if (!place.distance || !place.distance.trim()) errors.push(`locationDetails.nearby[${idx}].distance is required.`);
-    });
-  }
-  if (
-    !data.locationDetails.coordinates ||
-    typeof data.locationDetails.coordinates.latitude !== "number" ||
-    typeof data.locationDetails.coordinates.longitude !== "number"
-  ) {
-    errors.push("locationDetails.coordinates.latitude and longitude are required numbers.");
+    if (!data.locationDetails.description || !data.locationDetails.description.trim()) {
+      errors.push("locationDetails.description is required.");
+    }
+    
+    if (!Array.isArray(data.locationDetails.nearby)) {
+      errors.push("locationDetails.nearby must be an array.");
+    } else {
+      data.locationDetails.nearby.forEach((place, idx) => {
+        if (!place.name || !place.name.trim()) {
+          errors.push(`locationDetails.nearby[${idx}].name is required.`);
+        }
+        if (!place.distance || !place.distance.trim()) {
+          errors.push(`locationDetails.nearby[${idx}].distance is required.`);
+        }
+      });
+    }
+    
+    if (!data.locationDetails.coordinates ||
+        typeof data.locationDetails.coordinates.latitude !== "number" ||
+        typeof data.locationDetails.coordinates.longitude !== "number") {
+      errors.push("locationDetails.coordinates.latitude and longitude are required numbers.");
+    }
   }
 
-  // Validate paymentPlan (nested)
+  // Validate paymentPlan
   if (!data.paymentPlan || typeof data.paymentPlan !== "object") {
     errors.push("paymentPlan must be an object.");
   } else {
     if (!data.paymentPlan.booking || !data.paymentPlan.booking.trim()) {
       errors.push("paymentPlan.booking is required.");
     }
+    
     if (!Array.isArray(data.paymentPlan.construction) || data.paymentPlan.construction.length === 0) {
       errors.push("paymentPlan.construction must be a non-empty array.");
     } else {
@@ -165,6 +209,7 @@ function validateProjectData(data: ProjectCreateRequest): { isValid: boolean; er
         }
       });
     }
+    
     if (!data.paymentPlan.handover || !data.paymentPlan.handover.trim()) {
       errors.push("paymentPlan.handover is required.");
     }
@@ -177,50 +222,127 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
 
-    let data: ProjectCreateRequest;
-    try {
-      data = await request.json();
-    } catch {
+    // Parse FormData from the request
+    const formData = await request.formData();
+    
+    // Extract project data
+    const projectDataString = formData.get('projectData') as string;
+    if (!projectDataString) {
       return NextResponse.json(
-        { success: false, message: "Invalid JSON in request body", error: "INVALID_JSON" },
+        { success: false, message: "Project data is required", error: "MISSING_PROJECT_DATA" },
         { status: 400 }
       );
     }
 
-    // Validate incoming data
-    const validation = validateProjectData(data);
+    let projectData: ProjectData;
+    try {
+      projectData = JSON.parse(projectDataString);
+    } catch {
+      return NextResponse.json(
+        { success: false, message: "Invalid project data JSON", error: "INVALID_JSON" },
+        { status: 400 }
+      );
+    }
+
+    // Validate project data
+    const validation = validateProjectData(projectData);
     if (!validation.isValid) {
       return NextResponse.json(
-        { success: false, message: "Validation failed", errors: validation.errors, error: "VALIDATION_ERROR" },
+        { 
+          success: false, 
+          message: "Validation failed", 
+          errors: validation.errors, 
+          error: "VALIDATION_ERROR" 
+        },
+        { status: 400 }
+      );
+    }
+
+    // Create slug from project name
+    const slug = createSlug(projectData.name);
+    
+    // Check for existing project by name (case-insensitive)
+    const existing = await Project.findOne({ 
+      name: { $regex: new RegExp(`^${projectData.name}$`, "i") } 
+    });
+    if (existing) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          message: "Project with this name already exists", 
+          error: "DUPLICATE_NAME" 
+        },
+        { status: 409 }
+      );
+    }
+
+    // Handle cover image upload
+    const coverImageFile = formData.get('coverImage') as File;
+    if (!coverImageFile) {
+      return NextResponse.json(
+        { success: false, message: "Cover image is required", error: "MISSING_COVER_IMAGE" },
+        { status: 400 }
+      );
+    }
+
+    // Upload cover image to Cloudinary
+    const coverImageBuffer = Buffer.from(await coverImageFile.arrayBuffer());
+    const coverImageUrl = await uploadImageToCloudinary(
+      coverImageBuffer,
+      `cover-${Date.now()}`,
+      slug,
+      false
+    );
+
+    // Handle gallery images upload
+    const galleryUrls: string[] = [];
+    let galleryIndex = 0;
+    
+    while (formData.get(`gallery_${galleryIndex}`)) {
+      const galleryFile = formData.get(`gallery_${galleryIndex}`) as File;
+      if (galleryFile) {
+        const galleryBuffer = Buffer.from(await galleryFile.arrayBuffer());
+        const galleryUrl = await uploadImageToCloudinary(
+          galleryBuffer,
+          `gallery-${galleryIndex}-${Date.now()}`,
+          slug,
+          true
+        );
+        galleryUrls.push(galleryUrl);
+      }
+      galleryIndex++;
+    }
+
+    if (galleryUrls.length === 0) {
+      return NextResponse.json(
+        { success: false, message: "At least one gallery image is required", error: "MISSING_GALLERY_IMAGES" },
         { status: 400 }
       );
     }
 
     // Normalize strings (trim)
-    data.name = data.name.trim();
-    data.location = data.location.trim();
-    data.type = data.type.trim();
-    data.status = data.status.trim();
-    data.developer = data.developer.trim();
-    data.description = data.description.trim();
-    data.overview = data.overview.trim();
-    data.image = data.image.trim();
-    data.price = data.price.trim();
-
-    // Check for existing project by name (case-insensitive)
-    const existing = await Project.findOne({ name: { $regex: new RegExp(`^${data.name}$`, "i") } });
-    if (existing) {
-      return NextResponse.json(
-        { success: false, message: "Project with this name already exists", error: "DUPLICATE_NAME" },
-        { status: 409 }
-      );
-    }
+    projectData.name = projectData.name.trim();
+    projectData.location = projectData.location.trim();
+    projectData.type = projectData.type.trim();
+    projectData.status = projectData.status.trim();
+    projectData.developer = projectData.developer.trim();
+    projectData.description = projectData.description.trim();
+    projectData.overview = projectData.overview.trim();
+    projectData.price = projectData.price.trim();
 
     // Prepare final object to save
     const projectToSave = {
-      ...data,
-      completionDate: new Date(data.completionDate),
-      launchDate: new Date(data.launchDate),
+      ...projectData,
+      slug,
+      id:'01',
+      developerSlug:'hey',
+      statusSlug:'hey',
+      locationSlug:'hey',
+      coverImage: coverImageUrl,
+      gallery: galleryUrls,
+      image: coverImageUrl, // Use cover image as main image for backward compatibility
+      completionDate: new Date(projectData.completionDate),
+      launchDate: new Date(projectData.launchDate),
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -234,12 +356,16 @@ export async function POST(request: NextRequest) {
         project: {
           id: createdProject._id,
           name: createdProject.name,
+          slug: createdProject.slug,
           location: createdProject.location,
+          coverImage: createdProject.coverImage,
+          gallery: createdProject.gallery,
           createdAt: createdProject.createdAt,
         },
       },
       { status: 201 }
     );
+
   } catch (error: any) {
     console.error("Error creating project:", error);
 
@@ -263,6 +389,18 @@ export async function POST(request: NextRequest) {
           error: "DUPLICATE_ENTRY",
         },
         { status: 409 }
+      );
+    }
+
+    // Handle Cloudinary-specific errors
+    if (error.message && error.message.includes('Cloudinary')) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Image upload failed",
+          error: "IMAGE_UPLOAD_ERROR",
+        },
+        { status: 500 }
       );
     }
 

@@ -2,19 +2,39 @@
 
 import { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Building2, MapPin, Calendar, Users, Eye, Edit, Trash2, MoreHorizontal } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  Plus,
+  Building2,
+  MapPin,
+  Calendar,
+  Users,
+  Eye,
+  Edit,
+  Trash2,
+  MoreHorizontal,
+} from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DeveloperFormModal } from "./developer-form-modal"
 import { DeveloperViewModal } from "./developer-view-modal"
 import { DeleteConfirmationModal } from "./delete-confirmation-modal"
 
 interface Developer {
-  id: number
+  _id: string
   name: string
-  logo: string[]
+  logo: string
   description: string
   location: string
   establishedYear: number
@@ -29,60 +49,6 @@ interface Developer {
   verified: boolean
 }
 
-const sampleDevelopers: Developer[] = [
-  {
-    id: 1,
-    name: "Emaar Properties",
-    logo: ["/placeholder.svg?height=100&width=100"],
-    description: "Leading real estate developer in Dubai, known for iconic projects like Burj Khalifa and Dubai Mall.",
-    location: "Dubai, UAE",
-    establishedYear: 1997,
-    totalProjects: 150,
-    activeProjects: 25,
-    completedProjects: 125,
-    website: "www.emaar.com",
-    email: "info@emaar.com",
-    phone: "+971 4 367 3333",
-    specialization: ["Luxury Residential", "Commercial", "Hospitality"],
-    rating: 4.8,
-    verified: true,
-  },
-  {
-    id: 2,
-    name: "Danube Properties",
-    logo: ["/placeholder.svg?height=100&width=100"],
-    description: "Affordable luxury developer focusing on modern residential and commercial projects across Dubai.",
-    location: "Dubai, UAE",
-    establishedYear: 2014,
-    totalProjects: 45,
-    activeProjects: 12,
-    completedProjects: 33,
-    website: "www.danubeproperties.ae",
-    email: "info@danubeproperties.ae",
-    phone: "+971 4 420 4444",
-    specialization: ["Affordable Housing", "Hotel Apartments", "Commercial"],
-    rating: 4.5,
-    verified: true,
-  },
-  {
-    id: 3,
-    name: "Sobha Realty",
-    logo: ["/placeholder.svg?height=100&width=100"],
-    description: "Premium developer known for high-quality construction and luxury residential communities.",
-    location: "Dubai, UAE",
-    establishedYear: 1976,
-    totalProjects: 78,
-    activeProjects: 18,
-    completedProjects: 60,
-    website: "www.sobharealty.com",
-    email: "info@sobharealty.com",
-    phone: "+971 4 440 1111",
-    specialization: ["Luxury Villas", "Premium Apartments", "Golf Communities"],
-    rating: 4.7,
-    verified: true,
-  },
-]
-
 function DeveloperCard({
   developer,
   onView,
@@ -94,13 +60,14 @@ function DeveloperCard({
   onEdit: (developer: Developer) => void
   onDelete: (developer: Developer) => void
 }) {
+  
   return (
     <Card className="hover:shadow-lg transition-shadow">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-3">
             <img
-              src={developer.logo[0] || "/placeholder.svg"}
+              src={developer?.logo || "/placeholder.svg"}
               alt={developer.name}
               className="w-12 h-12 object-cover rounded-lg border"
             />
@@ -187,14 +154,38 @@ export function DevelopersPage() {
   const searchParams = useSearchParams()
   const action = searchParams.get("action")
 
-  const [developers, setDevelopers] = useState(sampleDevelopers)
+  const [developers, setDevelopers] = useState<Developer[]>([])
+  const [loading, setLoading] = useState(true)
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [selectedDeveloper, setSelectedDeveloper] = useState<Developer | null>(null)
 
-  // Handle URL action parameter
+  // Fetch all developers
+  useEffect(() => {
+    const fetchDevelopers = async () => {
+      try {
+        const res = await fetch("/api/developers/fetch")
+        const json = await res.json()
+        if (json.success) {
+          setDevelopers(json.data)
+          console.log(json.data)
+        } else {
+          console.error("Failed to fetch developers:", json.message)
+        }
+      } catch (err) {
+        console.error("Error fetching developers:", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchDevelopers()
+  }, [])
+
+  // Handle modal trigger from URL
   useEffect(() => {
     if (action === "new") {
       setIsAddModalOpen(true)
@@ -219,17 +210,17 @@ export function DevelopersPage() {
   const handleSaveDeveloper = (developerData: Developer) => {
     if (selectedDeveloper) {
       setDevelopers((prev) =>
-        prev.map((d) => (d.id === selectedDeveloper.id ? { ...developerData, id: selectedDeveloper.id } : d)),
+        prev.map((d) => (d._id === selectedDeveloper._id ? { ...developerData, _id: selectedDeveloper._id } : d)),
       )
     } else {
-      const newDeveloper = { ...developerData, id: Date.now() }
+      const newDeveloper = { ...developerData, _id: Date.now().toString() }
       setDevelopers((prev) => [...prev, newDeveloper])
     }
   }
 
   const handleConfirmDelete = () => {
     if (selectedDeveloper) {
-      setDevelopers((prev) => prev.filter((d) => d.id !== selectedDeveloper.id))
+      setDevelopers((prev) => prev.filter((d) => d._id !== selectedDeveloper._id))
     }
     setIsDeleteModalOpen(false)
     setSelectedDeveloper(null)
@@ -256,7 +247,9 @@ export function DevelopersPage() {
     },
     {
       title: "Avg Rating",
-      value: (developers.reduce((sum, d) => sum + d.rating, 0) / developers.length).toFixed(1),
+      value: developers.length
+        ? (developers.reduce((sum, d) => sum + d.rating, 0) / developers.length).toFixed(1)
+        : "0.0",
       icon: Users,
       color: "text-yellow-600",
     },
@@ -291,23 +284,27 @@ export function DevelopersPage() {
       </div>
 
       {/* Developers Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {developers.map((developer) => (
-          <DeveloperCard
-            key={developer.id}
-            developer={developer}
-            onView={handleView}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
-        ))}
-      </div>
+      {loading ? (
+        <p className="text-gray-500">Loading developers...</p>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {developers.map((developer) => (
+            <DeveloperCard
+              key={developer._id}
+              developer={developer}
+              onView={handleView}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Modals */}
       <DeveloperFormModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        onSave={handleSaveDeveloper}
+        // onSave={handleSaveDeveloper}
         mode="add"
       />
 
@@ -317,7 +314,7 @@ export function DevelopersPage() {
           setIsEditModalOpen(false)
           setSelectedDeveloper(null)
         }}
-        onSave={handleSaveDeveloper}
+        // onSave={handleSaveDeveloper}
         developer={selectedDeveloper}
         mode="edit"
       />
