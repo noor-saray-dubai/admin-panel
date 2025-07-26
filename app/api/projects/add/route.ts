@@ -50,6 +50,7 @@ interface ProjectData {
   type: string;
   status: string;
   developer: string;
+  developerSlug: string;
   price: string;
   priceNumeric: number;
   description: string;
@@ -113,9 +114,9 @@ async function uploadImageToCloudinary(
 function validateProjectData(data: ProjectData): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
 
-  // Required string fields
+  // Required string fields - ADDED developerSlug here
   const requiredStringFields: (keyof ProjectData)[] = [
-    "name", "location", "type", "status", "developer",
+    "name", "location", "type", "status", "developer", "developerSlug",
     "price", "description", "overview"
   ];
   
@@ -227,6 +228,8 @@ export async function POST(request: NextRequest) {
     
     // Extract project data
     const projectDataString = formData.get('projectData') as string;
+    console.log(formData)
+    console.log(projectDataString)
     if (!projectDataString) {
       return NextResponse.json(
         { success: false, message: "Project data is required", error: "MISSING_PROJECT_DATA" },
@@ -237,6 +240,14 @@ export async function POST(request: NextRequest) {
     let projectData: ProjectData;
     try {
       projectData = JSON.parse(projectDataString);
+      
+      // Add debugging logs
+      console.log("Received project data:", {
+        name: projectData.name,
+        developer: projectData.developer,
+        developerSlug: projectData.developerSlug
+      });
+      
     } catch {
       return NextResponse.json(
         { success: false, message: "Invalid project data JSON", error: "INVALID_JSON" },
@@ -247,6 +258,7 @@ export async function POST(request: NextRequest) {
     // Validate project data
     const validation = validateProjectData(projectData);
     if (!validation.isValid) {
+      console.log("Validation errors:", validation.errors);
       return NextResponse.json(
         { 
           success: false, 
@@ -320,24 +332,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Normalize strings (trim)
+    // Normalize strings (trim) - ADDED developerSlug here
     projectData.name = projectData.name.trim();
     projectData.location = projectData.location.trim();
     projectData.type = projectData.type.trim();
     projectData.status = projectData.status.trim();
     projectData.developer = projectData.developer.trim();
+    projectData.developerSlug = projectData.developerSlug.trim();
     projectData.description = projectData.description.trim();
     projectData.overview = projectData.overview.trim();
     projectData.price = projectData.price.trim();
 
     // Prepare final object to save
     const projectToSave = {
+      // Spread all project data first
       ...projectData,
+      // Then override/add specific fields
       slug,
-      id:'01',
-      developerSlug:'hey',
-      statusSlug:'hey',
-      locationSlug:'hey',
+     
+      statusSlug: 'hey',
+      locationSlug: 'hey',
       coverImage: coverImageUrl,
       gallery: galleryUrls,
       image: coverImageUrl, // Use cover image as main image for backward compatibility
@@ -346,6 +360,14 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+
+    // Add debugging log to see what's being saved
+    console.log("Project data being saved:", {
+      name: projectToSave.name,
+      developer: projectToSave.developer,
+      developerSlug: projectToSave.developerSlug,
+      slug: projectToSave.slug
+    });
 
     const createdProject = await Project.create(projectToSave);
 
@@ -358,6 +380,8 @@ export async function POST(request: NextRequest) {
           name: createdProject.name,
           slug: createdProject.slug,
           location: createdProject.location,
+          developer: createdProject.developer,
+          developerSlug: createdProject.developerSlug,
           coverImage: createdProject.coverImage,
           gallery: createdProject.gallery,
           createdAt: createdProject.createdAt,
@@ -370,6 +394,7 @@ export async function POST(request: NextRequest) {
     console.error("Error creating project:", error);
 
     if (error.name === "ValidationError") {
+      console.log("MongoDB validation error details:", error.errors);
       return NextResponse.json(
         {
           success: false,
