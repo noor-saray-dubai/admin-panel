@@ -26,7 +26,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { slug: str
 
     // Delete gallery images
     if (Array.isArray(project.gallery)) {
-      const galleryDestroyPromises = project.gallery.map((_, index) =>
+      const galleryDestroyPromises = project.gallery.map((_:any, index:any) =>
         cloudinary.uploader.destroy(`${slug}/gallery-${index}`, { resource_type: "image" })
       )
       await Promise.all(galleryDestroyPromises)
