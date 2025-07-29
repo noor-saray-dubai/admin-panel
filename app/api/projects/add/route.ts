@@ -349,7 +349,7 @@ export async function POST(request: NextRequest) {
       ...projectData,
       // Then override/add specific fields
       slug,
-     
+      id:slug,
       statusSlug: 'hey',
       locationSlug: 'hey',
       coverImage: coverImageUrl,

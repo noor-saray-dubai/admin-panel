@@ -46,7 +46,7 @@ interface IFlags {
 }
 
 interface IProject extends Document {
-  id: number;
+  id: string;
   slug: string;
   name: string;
   location: string;
@@ -122,7 +122,7 @@ const FlagsSchema = new Schema<IFlags>({
 
 const ProjectSchema = new Schema<IProject>(
   {
-    id: { type: Number, required: true, unique: true },
+    id: { type: String, required: true, unique: true },
     slug: { type: String, required: true, unique: true },
     name: { type: String, required: true },
     location: { type: String, required: true },

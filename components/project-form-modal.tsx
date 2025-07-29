@@ -48,7 +48,7 @@ interface ProjectFormData {
   type: string
   status: string
   developer: string
-  developerSlug: string  // Added developer slug field
+  developerSlug: string
   price: string
   priceNumeric: number
   coverImage: File | null
@@ -69,7 +69,57 @@ interface ProjectFormData {
     highValue: boolean
   }
 }
+interface Developer {
+  id: string;
+  name: string;
+  slug?: string;
+}
 
+interface IProject {
+  _id: string;
+  id: number;
+  slug: string;
+  name: string;
+  location: string;
+  locationSlug: string;
+  type: string;
+  status: string;
+  statusSlug: string;
+  developer: string;
+  developerSlug: string;
+  price: string;
+  priceNumeric: number;
+  image: string;
+  description: string;
+  overview: string;
+  completionDate: string;
+  totalUnits: number;
+  amenities: any[];
+  unitTypes: any[];
+  gallery: string[];
+  paymentPlan: PaymentPlan;
+  locationDetails: LocationDetails;
+  categories: string[];
+  featured: boolean;
+  launchDate: string;
+  registrationOpen: boolean;
+  flags: {
+    elite: boolean;
+    exclusive: boolean;
+    featured: boolean;
+    highValue: boolean;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ProjectFormModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (projectData: any) => void;
+  project?: IProject | null;
+  mode: 'add' | 'edit';
+}
 
 const initialFormData: ProjectFormData = {
   name: "",
@@ -77,7 +127,7 @@ const initialFormData: ProjectFormData = {
   type: "",
   status: "",
   developer: "",
-  developerSlug: "",  // Initialize developer slug
+  developerSlug: "",
   price: "",
   priceNumeric: 0,
   coverImage: null,
@@ -106,24 +156,91 @@ const initialFormData: ProjectFormData = {
     highValue: false,
   },
 }
-export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+
+export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: ProjectFormModalProps) {
   const [formData, setFormData] = useState<ProjectFormData>(initialFormData)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [activeTab, setActiveTab] = useState("basic")
   const [coverImagePreview, setCoverImagePreview] = useState<string | null>(null)
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
-  const [developers, setDevelopers] = useState([])
-  const
-    handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const { name, value, type } = e.target
+ const [developers, setDevelopers] = useState<Developer[]>([])
 
-      if (type === 'number') {
-        setFormData(prev => ({ ...prev, [name]: Number(value) }))
-      } else {
-        setFormData(prev => ({ ...prev, [name]: value }))
-      }
+  // Convert project data to form data format
+  const convertProjectToFormData = (project: IProject): ProjectFormData => {
+    return {
+      name: project.name || "",
+      location: project.location || "",
+      type: project.type || "",
+      status: project.status || "",
+      developer: project.developer || "",
+      developerSlug: project.developerSlug || "",
+      price: project.price || "",
+      priceNumeric: project.priceNumeric || 0,
+      coverImage: null, // Will be handled separately for existing images
+      gallery: [], // Will be handled separately for existing images
+      description: project.description || "",
+      completionDate: project.completionDate ? project.completionDate.split('T')[0] : "",
+      totalUnits: project.totalUnits || 0,
+      registrationOpen: project.registrationOpen || false,
+      launchDate: project.launchDate ? project.launchDate.split('T')[0] : "",
+      featured: project.featured || false,
+      locationDetails: {
+        description: project.locationDetails?.description || "",
+        nearby: project.locationDetails?.nearby || [],
+        coordinates: {
+          latitude: project.locationDetails?.coordinates?.latitude || 0,
+          longitude: project.locationDetails?.coordinates?.longitude || 0,
+        },
+      },
+      paymentPlan: {
+        booking: project.paymentPlan?.booking || "",
+        construction: project.paymentPlan?.construction || [{ milestone: "", percentage: "" }],
+        handover: project.paymentPlan?.handover || "",
+      },
+      overview: project.overview || "",
+      flags: {
+        elite: project.flags?.elite || false,
+        exclusive: project.flags?.exclusive || false,
+        featured: project.flags?.featured || false,
+        highValue: project.flags?.highValue || false,
+      },
     }
+  }
+
+  // Initialize form data based on mode
+  useEffect(() => {
+    if (isOpen) {
+      if (mode === 'edit' && project) {
+        const convertedData = convertProjectToFormData(project)
+        setFormData(convertedData)
+        
+        // Set image previews for existing project
+        if (project.image) {
+          setCoverImagePreview(project.image)
+        }
+        if (project.gallery && project.gallery.length > 0) {
+          setGalleryPreviews(project.gallery)
+        }
+      } else {
+        // Reset form for add mode
+        setFormData(initialFormData)
+        setCoverImagePreview(null)
+        setGalleryPreviews([])
+      }
+      setActiveTab("basic")
+    }
+  }, [isOpen, mode, project])
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target
+
+    if (type === 'number') {
+      setFormData(prev => ({ ...prev, [name]: Number(value) }))
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }))
+    }
+  }
 
   const handleCheckboxChange = (flagName: keyof ProjectFormData['flags'], checked: boolean) => {
     setFormData(prev => ({
@@ -241,16 +358,17 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
     const newNearby = formData.locationDetails.nearby.filter((_, i) => i !== index)
     updateLocationDetailsField("nearby", newNearby)
   }
-  const handleDeveloperChange = (selectedDeveloperId: string) => {
-    const selectedDeveloper = developers.find(dev => dev?.id === selectedDeveloperId)
-    if (selectedDeveloper) {
-      setFormData(prev => ({
-        ...prev,
-        developer: selectedDeveloper.name,
-        developerSlug: selectedDeveloper.slug || selectedDeveloper.name.toLowerCase().replace(/\s+/g, '-')
-      }))
-    }
+
+const handleDeveloperChange = (selectedDeveloperId: string) => {
+  const selectedDeveloper = developers.find(dev => dev.id === selectedDeveloperId)
+  if (selectedDeveloper) {
+    setFormData(prev => ({
+      ...prev,
+      developer: selectedDeveloper.name,
+      developerSlug: selectedDeveloper.slug || selectedDeveloper.name.toLowerCase().replace(/\s+/g, '-')
+    }))
   }
+}
 
   // Update nearby place
   const updateNearbyPlace = (index: number, field: keyof NearbyPlace, value: string) => {
@@ -340,8 +458,13 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
     if (!formData.developer.trim()) errors.push("Developer is required")
     if (!formData.description.trim()) errors.push("Description is required")
     if (!formData.overview.trim()) errors.push("Overview is required")
-    if (!formData.coverImage) errors.push("Cover image is required")
-    if (formData.gallery.length === 0) errors.push("At least one gallery image is required")
+    
+    // For add mode, cover image and gallery are required
+    // For edit mode, they're optional (can keep existing images)
+    if (mode === 'add') {
+      if (!formData.coverImage) errors.push("Cover image is required")
+      if (formData.gallery.length === 0) errors.push("At least one gallery image is required")
+    }
 
     if (!formData.locationDetails.description.trim()) {
       errors.push("Location details description is required")
@@ -363,6 +486,7 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
 
     return errors
   }
+
   useEffect(() => {
     const fetchDevelopers = async () => {
       try {
@@ -370,7 +494,6 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
         const json = await res.json()
         if (json.success) {
           setDevelopers(json.data)
-          console.log(json.data)
         } else {
           console.error("Failed to fetch developers:", json.message)
         }
@@ -396,12 +519,12 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
       // Create FormData for file upload
       const submitData = new FormData()
 
-      // Add cover image
+      // Add cover image only if a new file was selected
       if (formData.coverImage) {
         submitData.append('coverImage', formData.coverImage)
       }
 
-      // Add gallery images
+      // Add gallery images only if new files were selected
       formData.gallery.forEach((file, index) => {
         submitData.append(`gallery_${index}`, file)
       })
@@ -416,19 +539,32 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
         completionDate: new Date(formData.completionDate).toISOString(),
       }))
 
-      const res = await fetch("/api/projects/add", {
-        method: "POST",
+      // Use different endpoints based on mode
+      const url = mode === 'edit' && project 
+        ? `/api/projects/update/${project.slug}` 
+        : "/api/projects/add"
+      
+      const method = mode === 'edit' ? 'PUT' : 'POST'
+
+      const res = await fetch(url, {
+        method: method,
         body: submitData,
       })
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.message || "Something went wrong")
 
-      toast.success("Project saved successfully!")
+      toast.success(`Project ${mode === 'edit' ? 'updated' : 'created'} successfully!`)
+      
+      // Call the onSave callback to refresh the parent component
+      if (onSave) {
+        onSave(data)
+      }
+      
       handleClose()
     } catch (err: any) {
       console.error("Save failed:", err)
-      toast.error(`Failed to save project: ${err.message}`)
+      toast.error(`Failed to ${mode === 'edit' ? 'update' : 'create'} project: ${err.message}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -446,7 +582,9 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-6xl max-h-[95vh] p-0 flex flex-col">
         <DialogHeader className="p-6 pb-0 flex-shrink-0">
-          <DialogTitle className="text-2xl font-bold">Add New Project</DialogTitle>
+          <DialogTitle className="text-2xl font-bold">
+            {mode === 'edit' ? 'Edit Project' : 'Add New Project'}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0">
@@ -699,7 +837,9 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
             {/* Cover Image */}
             <Card>
               <CardHeader>
-                <CardTitle>Cover Image *</CardTitle>
+                <CardTitle>
+                  Cover Image {mode === 'add' ? '*' : '(Optional - leave blank to keep existing)'}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -708,7 +848,9 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
                       <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                       <div>
                         <Label htmlFor="coverImage" className="cursor-pointer">
-                          <span className="text-blue-600 hover:text-blue-500">Upload cover image</span>
+                          <span className="text-blue-600 hover:text-blue-500">
+                            {mode === 'edit' ? 'Upload new cover image' : 'Upload cover image'}
+                          </span>
                           <Input
                             id="coverImage"
                             type="file"
@@ -744,7 +886,9 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
             {/* Gallery Images */}
             <Card>
               <CardHeader>
-                <CardTitle>Gallery Images *</CardTitle>
+                <CardTitle>
+                  Gallery Images {mode === 'add' ? '*' : '(Optional - leave blank to keep existing)'}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -752,7 +896,9 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
                     <Upload className="mx-auto h-10 w-10 text-gray-400 mb-3" />
                     <div>
                       <Label htmlFor="galleryImages" className="cursor-pointer">
-                        <span className="text-blue-600 hover:text-blue-500">Upload gallery images</span>
+                        <span className="text-blue-600 hover:text-blue-500">
+                          {mode === 'edit' ? 'Upload additional gallery images' : 'Upload gallery images'}
+                        </span>
                         <Input
                           id="galleryImages"
                           type="file"
@@ -1150,7 +1296,10 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
                 Cancel
               </Button>
               <Button onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : "Save Project"}
+                {isSubmitting ? 
+                  (mode === 'edit' ? "Updating..." : "Saving...") : 
+                  (mode === 'edit' ? "Update Project" : "Save Project")
+                }
               </Button>
             </div>
           </div>
@@ -1159,3 +1308,6 @@ export function ProjectFormModal({ isOpen, onClose }: { isOpen: boolean, onClose
     </Dialog>
   )
 }
+
+
+

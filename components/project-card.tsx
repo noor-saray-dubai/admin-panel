@@ -6,34 +6,90 @@ import { Button } from "@/components/ui/button"
 import { MoreHorizontal, MapPin, Building, Calendar, DollarSign, Eye, Edit, Trash2 } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
-interface Project {
-  id: number
-  slug: string
-  name: string
-  location: string
-  type: string
-  status: string
-  developer: string
-  price: string
-  priceNumeric: number
-  image: string
-  description: string
-  completionDate: string
-  totalUnits: number
-  featured: boolean
-  flags: {
-    elite: boolean
-    exclusive: boolean
-    featured: boolean
-    highValue: boolean
-  }
+// Use the same interfaces as in the main component
+interface IPaymentMilestone {
+  milestone: string;
+  percentage: string;
+}
+
+interface IPaymentPlan {
+  booking: string;
+  construction: IPaymentMilestone[];
+  handover: string;
+}
+
+interface INearbyPlace {
+  name: string;
+  distance: string;
+}
+
+interface ICoordinates {
+  latitude: number;
+  longitude: number;
+}
+
+interface ILocationDetails {
+  description: string;
+  nearby: INearbyPlace[];
+  coordinates: ICoordinates;
+}
+
+interface IAmenityCategory {
+  category: string;
+  items: string[];
+}
+
+interface IUnitType {
+  type: string;
+  size: string;
+  price: string;
+}
+
+interface IFlags {
+  elite: boolean;
+  exclusive: boolean;
+  featured: boolean;
+  highValue: boolean;
+}
+
+interface IProject {
+  _id: string;
+  id: number;
+  slug: string;
+  name: string;
+  location: string;
+  locationSlug: string;
+  type: string;
+  status: string;
+  statusSlug: string;
+  developer: string;
+  developerSlug: string;
+  price: string;
+  priceNumeric: number;
+  image: string;
+  description: string;
+  overview: string;
+  completionDate: string;
+  totalUnits: number;
+  amenities: IAmenityCategory[];
+  unitTypes: IUnitType[];
+  gallery: string[];
+  paymentPlan: IPaymentPlan;
+  locationDetails: ILocationDetails;
+  categories: string[];
+  featured: boolean;
+  launchDate: string;
+  registrationOpen: boolean;
+  flags: IFlags;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface ProjectCardProps {
-  project: Project
-  onView: (project: Project) => void
-  onEdit: (project: Project) => void
-  onDelete: (project: Project) => void
+  project: IProject
+  onView: (project: IProject) => void
+  onEdit: (project: IProject) => void
+  onDelete: (project: IProject) => void
 }
 
 export function ProjectCard({ project, onView, onEdit, onDelete }: ProjectCardProps) {

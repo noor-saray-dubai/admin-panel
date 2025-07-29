@@ -3,84 +3,90 @@
 import { useState, useEffect } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Star, Rocket, FileText, Plus } from "lucide-react"
+import { Star, Rocket, FileText, Plus, Loader2 } from "lucide-react"
 import { ProjectCard } from "./project-card"
 import { ProjectFormModal } from "./project-form-modal"
 import { ProjectViewModal } from "./project-view-modal"
 import { DeleteConfirmationModal } from "./delete-confirmation-modal"
 
-// Sample real estate projects data
-const realEstateProjects = [
-  {
-    id: 105,
-    slug: "danube-aspirz",
-    name: "Danube Aspirz",
-    location: "Dubai",
-    type: "Convertible Hotel Apartments and Offices",
-    status: "Under Construction",
-    developer: "Danube Properties",
-    price: "Starting from AED 850K",
-    priceNumeric: 850000,
-    image: "https://res.cloudinary.com/dvrvydbzl/image/upload/v1752125662/cover_n2wyka.png",
-    description:
-      "Danube Aspirz offers modern convertible hotel apartments and office units in a prime Dubai location. The project features premium amenities, flexible living and working spaces, and excellent connectivity.",
-    completionDate: "2028-12-31T00:00:00.000Z",
-    totalUnits: 506,
-    featured: false,
-    flags: {
-      elite: true,
-      exclusive: false,
-      featured: false,
-      highValue: true,
-    },
-  },
-  {
-    id: 106,
-    slug: "emaar-creek-beach",
-    name: "Emaar Creek Beach",
-    location: "Dubai Creek Harbour",
-    type: "Luxury Apartments",
-    status: "Launching Soon",
-    developer: "Emaar Properties",
-    price: "Starting from AED 1.2M",
-    priceNumeric: 1200000,
-    image: "/placeholder.svg?height=300&width=400",
-    description:
-      "Premium waterfront living with stunning creek views and world-class amenities in Dubai Creek Harbour.",
-    completionDate: "2027-06-30T00:00:00.000Z",
-    totalUnits: 320,
-    featured: true,
-    flags: {
-      elite: false,
-      exclusive: true,
-      featured: true,
-      highValue: true,
-    },
-  },
-  {
-    id: 107,
-    slug: "sobha-hartland-villas",
-    name: "Sobha Hartland Villas",
-    location: "Mohammed Bin Rashid City",
-    type: "Luxury Villas",
-    status: "Ready to Move",
-    developer: "Sobha Realty",
-    price: "Starting from AED 3.5M",
-    priceNumeric: 3500000,
-    image: "/placeholder.svg?height=300&width=400",
-    description:
-      "Exclusive collection of luxury villas with private gardens and premium finishes in a gated community.",
-    completionDate: "2024-12-31T00:00:00.000Z",
-    totalUnits: 150,
-    featured: false,
-    flags: {
-      elite: true,
-      exclusive: true,
-      featured: false,
-      highValue: true,
-    },
-  },
-]
+// Define types based on your schema
+interface IPaymentMilestone {
+  milestone: string;
+  percentage: string;
+}
+
+interface IPaymentPlan {
+  booking: string;
+  construction: IPaymentMilestone[];
+  handover: string;
+}
+
+interface INearbyPlace {
+  name: string;
+  distance: string;
+}
+
+interface ICoordinates {
+  latitude: number;
+  longitude: number;
+}
+
+interface ILocationDetails {
+  description: string;
+  nearby: INearbyPlace[];
+  coordinates: ICoordinates;
+}
+
+interface IAmenityCategory {
+  category: string;
+  items: string[];
+}
+
+interface IUnitType {
+  type: string;
+  size: string;
+  price: string;
+}
+
+interface IFlags {
+  elite: boolean;
+  exclusive: boolean;
+  featured: boolean;
+  highValue: boolean;
+}
+
+interface IProject {
+  _id: string;
+  id: number;
+  slug: string;
+  name: string;
+  location: string;
+  locationSlug: string;
+  type: string;
+  status: string;
+  statusSlug: string;
+  developer: string;
+  developerSlug: string;
+  price: string;
+  priceNumeric: number;
+  image: string;
+  description: string;
+  overview: string;
+  completionDate: string;
+  totalUnits: number;
+  amenities: IAmenityCategory[];
+  unitTypes: IUnitType[];
+  gallery: string[];
+  paymentPlan: IPaymentPlan;
+  locationDetails: ILocationDetails;
+  categories: string[];
+  featured: boolean;
+  launchDate: string;
+  registrationOpen: boolean;
+  flags: IFlags;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface ProjectTabsProps {
   initialModalOpen?: boolean
@@ -89,12 +95,44 @@ interface ProjectTabsProps {
 
 export function ProjectTabs({ initialModalOpen = false, onModalClose }: ProjectTabsProps) {
   const [activeTab, setActiveTab] = useState("all")
-  const [projects, setProjects] = useState(realEstateProjects)
+  const [projects, setProjects] = useState<IProject[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [isAddModalOpen, setIsAddModalOpen] = useState(initialModalOpen)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
-  const [selectedProject, setSelectedProject] = useState(null)
+  const [selectedProject, setSelectedProject] = useState<IProject | null>(null)
+
+  // Fetch projects from API
+  const fetchProjects = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const response = await fetch('/api/projects/fetch')
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch projects')
+      }
+
+      if (data.success) {
+        setProjects(data.projects)
+      } else {
+        throw new Error(data.message || 'API returned unsuccessful response')
+      }
+    } catch (err: any) {
+      console.error('Error fetching projects:', err)
+      setError(err.message || 'Failed to fetch projects')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchProjects()
+  }, [])
 
   useEffect(() => {
     if (initialModalOpen) {
@@ -109,37 +147,74 @@ export function ProjectTabs({ initialModalOpen = false, onModalClose }: ProjectT
     return projects
   }
 
-  const handleView = (project) => {
+  const handleView = (project: IProject) => {
     setSelectedProject(project)
     setIsViewModalOpen(true)
   }
 
-  const handleEdit = (project) => {
+  const handleEdit = (project: IProject) => {
     setSelectedProject(project)
     setIsEditModalOpen(true)
   }
 
-  const handleDelete = (project) => {
+  const handleDelete = (project: IProject) => {
     setSelectedProject(project)
     setIsDeleteModalOpen(true)
   }
 
-  const handleSaveProject = (projectData) => {
-    if (selectedProject) {
-      // Edit existing project
-      setProjects((prev) =>
-        prev.map((p) => (p.id === selectedProject.id ? { ...projectData, id: selectedProject.id } : p)),
-      )
-    } else {
-      // Add new project
-      const newProject = { ...projectData, id: Date.now() }
-      setProjects((prev) => [...prev, newProject])
+  const handleSaveProject = async (projectData: any) => {
+    try {
+      if (selectedProject) {
+        // Edit existing project - you'll need to implement PUT/PATCH endpoint
+        const response = await fetch(`/api/projects/${selectedProject._id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(projectData),
+        })
+
+        if (response.ok) {
+          // Refresh projects list
+          await fetchProjects()
+        }
+      } else {
+        // Add new project - you'll need to implement POST endpoint
+        const response = await fetch('/api/projects', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(projectData),
+        })
+
+        if (response.ok) {
+          // Refresh projects list
+          await fetchProjects()
+        }
+      }
+    } catch (error) {
+      console.error('Error saving project:', error)
+      // You might want to show an error toast here
     }
   }
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (selectedProject) {
-      setProjects((prev) => prev.filter((p) => p.id !== selectedProject.id))
+      try {
+        // You'll need to implement DELETE endpoint
+        const response = await fetch(`/api/projects/delet/${selectedProject.slug}`, {
+          method: 'DELETE',
+        })
+
+        if (response.ok) {
+          // Refresh projects list
+          await fetchProjects()
+        }
+      } catch (error) {
+        console.error('Error deleting project:', error)
+        // You might want to show an error toast here
+      }
     }
     setIsDeleteModalOpen(false)
     setSelectedProject(null)
@@ -152,6 +227,28 @@ export function ProjectTabs({ initialModalOpen = false, onModalClose }: ProjectT
     }
   }
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">Loading projects...</span>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <p className="text-red-500 mb-4">Error: {error}</p>
+        <Button onClick={fetchProjects}>
+          Try Again
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -159,15 +256,15 @@ export function ProjectTabs({ initialModalOpen = false, onModalClose }: ProjectT
           <TabsList className="grid w-fit grid-cols-3">
             <TabsTrigger value="all" className="flex items-center space-x-2">
               <FileText className="h-4 w-4" />
-              <span>All Projects</span>
+              <span>All Projects ({filterProjects("all").length})</span>
             </TabsTrigger>
             <TabsTrigger value="elite" className="flex items-center space-x-2">
               <Star className="h-4 w-4" />
-              <span>Elite</span>
+              <span>Elite ({filterProjects("elite").length})</span>
             </TabsTrigger>
             <TabsTrigger value="new-launch" className="flex items-center space-x-2">
               <Rocket className="h-4 w-4" />
-              <span>New Launch</span>
+              <span>New Launch ({filterProjects("new-launch").length})</span>
             </TabsTrigger>
           </TabsList>
 
@@ -178,50 +275,73 @@ export function ProjectTabs({ initialModalOpen = false, onModalClose }: ProjectT
         </div>
 
         <TabsContent value="all" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filterProjects("all").map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onView={handleView}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
+          {filterProjects("all").length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No projects found</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filterProjects("all").map((project) => (
+                <ProjectCard
+                  key={project._id}
+                  project={project}
+                  onView={handleView}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="elite" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filterProjects("elite").map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onView={handleView}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
+          {filterProjects("elite").length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No elite projects found</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filterProjects("elite").map((project) => (
+                <ProjectCard
+                  key={project._id}
+                  project={project}
+                  onView={handleView}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="new-launch" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filterProjects("new-launch").map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onView={handleView}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
+          {filterProjects("new-launch").length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No new launch projects found</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filterProjects("new-launch").map((project) => (
+                <ProjectCard
+                  key={project._id}
+                  project={project}
+                  onView={handleView}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
       {/* Modals */}
-      <ProjectFormModal isOpen={isAddModalOpen} onClose={handleAddModalClose} onSave={handleSaveProject} mode="add" />
+      <ProjectFormModal
+        isOpen={isAddModalOpen}
+        onClose={handleAddModalClose}
+        onSave={handleSaveProject}
+        mode="add"
+      />
 
       <ProjectFormModal
         isOpen={isEditModalOpen}
