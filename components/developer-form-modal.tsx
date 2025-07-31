@@ -390,7 +390,7 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
         }
       }
 
-      const endpoint = mode === 'add' ? '/api/developers/add' : `/api/developers/${developer?._id}`
+      const endpoint = mode === 'add' ? '/api/developers/add' : `/api/developers/update/${developer?.slug}`
       const method = mode === 'add' ? 'POST' : 'PUT'
 
       const response = await fetch(endpoint, {

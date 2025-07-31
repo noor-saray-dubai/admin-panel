@@ -9,7 +9,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+   
       <body><div className="flex h-screen bg-gray-50">
             {/* Luxury Sidebar */}
             <div className="w-64 flex-shrink-0">
@@ -22,7 +22,7 @@ export default function RootLayout({
               <main className="flex-1 overflow-y-auto p-8">{children}</main>
             </div>
           </div></body>
-    </html>
+ 
   )
 }
 

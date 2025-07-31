@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { v2 as cloudinary } from 'cloudinary'
 import sharp from 'sharp'
-import Developer from "../../../../models/developers"
+import Developer from "@/models/developers"
 import { connectToDatabase } from "@/lib/db"
 
 // Configure Cloudinary
@@ -22,37 +22,44 @@ function generateSlug(name: string): string {
 }
 
 // Helper to ensure unique slug
-async function ensureUniqueSlug(baseSlug: string): Promise<string> {
+async function ensureUniqueSlug(baseSlug: string, currentSlug?: string): Promise<string> {
   let slug = baseSlug
   let counter = 1
 
   while (true) {
+    // If this is the current developer's slug, it's allowed
+    if (slug === currentSlug) {
+      return slug
+    }
+
+    // Check if slug exists
     const existingDeveloper = await Developer.findOne({ slug })
     
     if (!existingDeveloper) {
       return slug
     }
 
+    // Generate new slug with counter
     slug = `${baseSlug}-${counter}`
     counter++
   }
 }
 
-// Helper function to compress and convert image to WebP
+// Helper to compress and convert image to WebP
 async function processImage(file: File): Promise<Buffer> {
   const bytes = await file.arrayBuffer()
   const buffer = Buffer.from(bytes)
   
   return await sharp(buffer)
     .webp({ quality: 80 })
-    .resize(800, 600, { 
+    .resize(800, 600, {
       fit: 'inside',
-      withoutEnlargement: true 
+      withoutEnlargement: true,
     })
     .toBuffer()
 }
 
-// Helper function to upload to Cloudinary
+// Helper to upload to Cloudinary
 async function uploadToCloudinary(buffer: Buffer, folder: string, fileName: string): Promise<string> {
   return new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
@@ -74,10 +81,11 @@ async function uploadToCloudinary(buffer: Buffer, folder: string, fileName: stri
   })
 }
 
-// POST - Create new developer
-export async function POST(req: NextRequest) {
+// PUT - Update existing developer
+export async function PUT(req: NextRequest, { params }: { params: { slug: string } }) {
   try {
     await connectToDatabase()
+    const { slug: currentSlug } = params
 
     const formData = await req.formData()
 
@@ -96,7 +104,7 @@ export async function POST(req: NextRequest) {
     const verified = formData.get('verified') === 'true'
     const specialization = JSON.parse(formData.get('specialization') as string || '[]')
 
-    // Extract files
+    // Extract new files if provided
     const logoFile = formData.get('logoFile') as File | null
     const coverImageFile = formData.get('coverImageFile') as File | null
 
@@ -105,72 +113,67 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Generate unique slug from name
-    const baseSlug = generateSlug(name)
-    const slug = await ensureUniqueSlug(baseSlug)
+    const developer = await Developer.findOne({ slug: currentSlug })
 
-    let logoUrl = ''
-    let coverImageUrl = ''
+    if (!developer) {
+      return NextResponse.json({ error: "Developer not found" }, { status: 404 })
+    }
 
-    // Process and upload logo
+    // Auto-generate new slug if name changed (slug is not from form data)
+    let newSlug = currentSlug
+    if (name !== developer.name) {
+      const baseSlug = generateSlug(name)
+      newSlug = await ensureUniqueSlug(baseSlug, currentSlug)
+    }
+
+    // Update logo if provided
     if (logoFile) {
       try {
         const processedLogo = await processImage(logoFile)
-        logoUrl = await uploadToCloudinary(processedLogo, slug, 'logo')
+        const logoUrl = await uploadToCloudinary(processedLogo, newSlug, 'logo')
+        developer.logo = logoUrl
       } catch (error) {
         console.error('Error processing logo:', error)
         return NextResponse.json({ error: "Failed to process logo image" }, { status: 500 })
       }
     }
 
-    // Process and upload cover image
+    // Update cover image if provided
     if (coverImageFile) {
       try {
         const processedCover = await processImage(coverImageFile)
-        coverImageUrl = await uploadToCloudinary(processedCover, slug, 'cover')
+        const coverImageUrl = await uploadToCloudinary(processedCover, newSlug, 'cover')
+        developer.coverImage = coverImageUrl
       } catch (error) {
         console.error('Error processing cover image:', error)
         return NextResponse.json({ error: "Failed to process cover image" }, { status: 500 })
       }
     }
 
-    // Create developer in database
-    const newDeveloper = await Developer.create({
-      name,
-      slug,
-      logo: logoUrl,
-      coverImage: coverImageUrl,
-      description,
-      location,
-      establishedYear,
-      totalProjects,
-      activeProjects,
-      completedProjects,
-      website,
-      email,
-      phone,
-      specialization,
-      rating,
-      verified,
-    })
+    // Update all fields (slug is auto-generated, not from form)
+    developer.name = name
+    developer.slug = newSlug  // This is the auto-generated slug
+    developer.description = description
+    developer.location = location
+    developer.establishedYear = establishedYear
+    developer.totalProjects = totalProjects
+    developer.activeProjects = activeProjects
+    developer.completedProjects = completedProjects
+    developer.website = website
+    developer.email = email
+    developer.phone = phone
+    developer.rating = rating
+    developer.verified = verified
+    developer.specialization = specialization
 
-    return NextResponse.json(newDeveloper, { status: 201 })
-  } catch (error) {
-    console.error("Error creating developer:", error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : "Internal Server Error" 
-    }, { status: 500 })
-  }
-}
+    await developer.save()
 
-// GET - Fetch all developers
-export async function GET() {
-  try {
-    await connectToDatabase()
-    const developers = await Developer.find({}).sort({ createdAt: -1 })
-    return NextResponse.json(developers)
+    return NextResponse.json(developer, { status: 200 })
   } catch (error) {
-    console.error("Error fetching developers:", error)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    console.error("Error updating developer:", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Internal Server Error" },
+      { status: 500 }
+    )
   }
 }
