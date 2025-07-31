@@ -32,9 +32,11 @@ import { DeveloperViewModal } from "./developer-view-modal"
 import { DeleteConfirmationModal } from "./delete-confirmation-modal"
 
 interface Developer {
-  _id: string
+  _id?: string
   name: string
+  slug?: string // Make optional
   logo: string
+  coverImage?: string // Make optional
   description: string
   location: string
   establishedYear: number
@@ -48,7 +50,6 @@ interface Developer {
   rating: number
   verified: boolean
 }
-
 function DeveloperCard({
   developer,
   onView,
@@ -299,7 +300,6 @@ export function DevelopersPage() {
           ))}
         </div>
       )}
-
       {/* Modals */}
       <DeveloperFormModal
         isOpen={isAddModalOpen}
@@ -307,7 +307,6 @@ export function DevelopersPage() {
         // onSave={handleSaveDeveloper}
         mode="add"
       />
-
       <DeveloperFormModal
         isOpen={isEditModalOpen}
         onClose={() => {

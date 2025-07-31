@@ -3,9 +3,11 @@ import { Badge } from "@/components/ui/badge"
 import { MapPin, Calendar, Globe, Mail, Phone, Star } from "lucide-react"
 
 interface Developer {
-  id: number
+  _id?: string
   name: string
-  logo: string[]
+  slug?: string
+  logo: string
+  coverImage?: string
   description: string
   location: string
   establishedYear: number
