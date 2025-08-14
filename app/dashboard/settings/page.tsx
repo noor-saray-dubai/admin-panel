@@ -13,7 +13,7 @@ export default function Settings() {
             {/* <span className="text-2xl">⚙️</span> */}
           </div>
           <p className="text-lg font-medium text-gray-900">Settings</p>
-          <p className="text-sm text-gray-600">Coming soon</p>
+          <p className="text-sm text-gray-600">Coming sooon</p>
         </div>
       </div>
     
