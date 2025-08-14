@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         path: "/",
         expires: new Date(0),
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: true,
         sameSite: "lax",
         domain: host ? `.${host.split('.').slice(-2).join('.')}` : undefined // Clear for subdomain
       })
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         path: "/",
         expires: new Date(0),
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: true,
         sameSite: "lax",
         domain: ".noorsaray.com" // Adjust domain as needed
       })
