@@ -239,10 +239,12 @@ export function BlogsPage() {
   }
 
   const handleSaveBlog = (blogData: Blog) => {
+    // Ensure 'views' is present for both add and edit
+    const blogWithViews = { ...blogData, views: blogData.views ?? 0 }
     if (selectedBlog) {
-      setBlogs((prev) => prev.map((b) => (b.id === selectedBlog.id ? { ...blogData, id: selectedBlog.id } : b)))
+      setBlogs((prev) => prev.map((b) => (b.id === selectedBlog.id ? { ...blogWithViews, id: selectedBlog.id } : b)))
     } else {
-      const newBlog = { ...blogData, id: Date.now(), views: 0 }
+      const newBlog = { ...blogWithViews, id: Date.now() }
       setBlogs((prev) => [...prev, newBlog])
     }
   }

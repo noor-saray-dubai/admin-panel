@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ImageUpload } from "./image-upload"
 
 interface Blog {
-  id?: number
+  id: number
   title: string
   slug: string
   excerpt: string
@@ -25,6 +25,7 @@ interface Blog {
   status: "Published" | "Draft" | "Scheduled"
   publishDate: string
   readTime: number
+  views: number
   featured: boolean
 }
 
@@ -40,6 +41,7 @@ const categories = ["Investment", "Development", "Legal", "Sustainability", "Mar
 
 export function BlogFormModal({ isOpen, onClose, onSave, blog, mode }: BlogFormModalProps) {
   const [formData, setFormData] = useState<Blog>({
+    id: 0,
     title: "",
     slug: "",
     excerpt: "",
@@ -51,6 +53,7 @@ export function BlogFormModal({ isOpen, onClose, onSave, blog, mode }: BlogFormM
     status: "Draft",
     publishDate: new Date().toISOString(),
     readTime: 5,
+    views: 0,
     featured: false,
   })
 
@@ -61,6 +64,7 @@ export function BlogFormModal({ isOpen, onClose, onSave, blog, mode }: BlogFormM
       setFormData(blog)
     } else {
       setFormData({
+        id: 0,
         title: "",
         slug: "",
         excerpt: "",
@@ -72,6 +76,7 @@ export function BlogFormModal({ isOpen, onClose, onSave, blog, mode }: BlogFormM
         status: "Draft",
         publishDate: new Date().toISOString(),
         readTime: 5,
+        views: 0,
         featured: false,
       })
     }
