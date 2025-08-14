@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 }
     )
-    
+    const host = request.headers.get("host"); // admin.noorsaray.com
     // Clear all authentication cookies
     AUTH_COOKIES.forEach(cookieName => {
       // Clear for current path
@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
         expires: new Date(0),
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax"
+        sameSite: "lax",
+        domain: host ? `.${host.split('.').slice(-2).join('.')}` : undefined // Clear for subdomain
       })
       
       // Clear for root domain (if different)
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        domain: process.env.NODE_ENV === "production" ? `.${process.env.NEXT_PUBLIC_DOMAIN}` : undefined
+        domain: ".noorsaray.com" // Adjust domain as needed
       })
     })
     
