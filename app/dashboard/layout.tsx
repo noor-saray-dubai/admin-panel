@@ -10,7 +10,7 @@ export default function RootLayout({
 }) {
   return (
    
-      <body><div className="flex h-screen bg-gray-50">
+      <div><div className="flex h-screen bg-gray-50">
             {/* Luxury Sidebar */}
             <div className="w-64 flex-shrink-0">
               <LuxurySidebar />
@@ -21,11 +21,11 @@ export default function RootLayout({
               <LuxuryHeader  />
               <main className="flex-1 overflow-y-auto p-8">{children}</main>
             </div>
-          </div></body>
+          </div></div>
  
   )
 }
 
 export const metadata = {
-      generator: 'v0.dev'
+      generator: 'afzal'
     };
