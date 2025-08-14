@@ -122,9 +122,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                     Remember me
                   </Label>
                 </div>
-                <button type="button" className="text-sm text-gray-600 hover:text-gray-900">
-                  Forgot password?
-                </button>
+                
               </div>
 
               <Button
@@ -135,15 +133,6 @@ const handleSubmit = async (e: React.FormEvent) => {
                 {isLoading ? "Signing in..." : "Sign In"}
               </Button>
             </form>
-
-            {/* Demo Credentials */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">Demo Credentials:</h4>
-              <div className="text-sm text-gray-600 space-y-1">
-                <p>Email: admin@noorsaray.com</p>
-                <p>Password: noorsaray2024</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
