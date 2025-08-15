@@ -2,30 +2,94 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { MapPin, Building, Calendar, DollarSign, Users } from "lucide-react"
 
-interface Project {
-  id: number
-  name: string
-  location: string
-  type: string
-  status: string
-  developer: string
-  price: string
-  image: string
-  description: string
-  completionDate: string
-  totalUnits: number
+interface PaymentMilestone {
+  milestone: string;
+  percentage: string;
+}
+
+interface PaymentPlan {
+  booking: string;
+  construction: PaymentMilestone[];
+  handover: string;
+}
+
+interface NearbyPlace {
+  name: string;
+  distance: string;
+}
+
+interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
+interface LocationDetails {
+  description: string;
+  nearby: NearbyPlace[];
+  coordinates: Coordinates;
+}
+
+interface AmenityCategory {
+  category: string;
+  items: string[];
+}
+
+interface UnitType {
+  type: string;
+  size: string;
+  price: string;
+}
+
+
+
+interface Developer {
+  id: string;
+  name: string;
+  slug?: string;
+}
+
+interface IProject {
+  _id: string;
+  id: string;
+  slug: string;
+  name: string;
+  location: string;
+  locationSlug: string;
+  type: string;
+  status: string;
+  statusSlug: string;
+  developer: string;
+  developerSlug: string;
+  price: string;
+  priceNumeric: number;
+  image: string;
+  description: string;
+  overview: string;
+  completionDate: string;
+  totalUnits: number;
+  amenities: AmenityCategory[];
+  unitTypes: UnitType[];
+  gallery: string[];
+  paymentPlan: PaymentPlan;
+  locationDetails: LocationDetails;
+  categories: string[];
+  featured: boolean;
+  launchDate: string;
+  registrationOpen: boolean;
   flags: {
-    elite: boolean
-    exclusive: boolean
-    featured: boolean
-    highValue: boolean
-  }
+    elite: boolean;
+    exclusive: boolean;
+    featured: boolean;
+    highValue: boolean;
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface ProjectViewModalProps {
   isOpen: boolean
   onClose: () => void
-  project: Project | null
+  project: IProject | null
 }
 
 export function ProjectViewModal({ isOpen, onClose, project }: ProjectViewModalProps) {

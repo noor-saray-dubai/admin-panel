@@ -10,54 +10,55 @@ import { ProjectViewModal } from "./project-view-modal"
 import { DeleteConfirmationModal } from "./delete-confirmation-modal"
 
 // Define types based on your schema
-interface IPaymentMilestone {
+interface PaymentMilestone {
   milestone: string;
   percentage: string;
 }
 
-interface IPaymentPlan {
+interface PaymentPlan {
   booking: string;
-  construction: IPaymentMilestone[];
+  construction: PaymentMilestone[];
   handover: string;
 }
 
-interface INearbyPlace {
+interface NearbyPlace {
   name: string;
   distance: string;
 }
 
-interface ICoordinates {
+interface Coordinates {
   latitude: number;
   longitude: number;
 }
 
-interface ILocationDetails {
+interface LocationDetails {
   description: string;
-  nearby: INearbyPlace[];
-  coordinates: ICoordinates;
+  nearby: NearbyPlace[];
+  coordinates: Coordinates;
 }
 
-interface IAmenityCategory {
+interface AmenityCategory {
   category: string;
   items: string[];
 }
 
-interface IUnitType {
+interface UnitType {
   type: string;
   size: string;
   price: string;
 }
 
-interface IFlags {
-  elite: boolean;
-  exclusive: boolean;
-  featured: boolean;
-  highValue: boolean;
+
+
+interface Developer {
+  id: string;
+  name: string;
+  slug?: string;
 }
 
 interface IProject {
   _id: string;
-  id: number;
+  id: string;
   slug: string;
   name: string;
   location: string;
@@ -74,16 +75,21 @@ interface IProject {
   overview: string;
   completionDate: string;
   totalUnits: number;
-  amenities: IAmenityCategory[];
-  unitTypes: IUnitType[];
+  amenities: AmenityCategory[];
+  unitTypes: UnitType[];
   gallery: string[];
-  paymentPlan: IPaymentPlan;
-  locationDetails: ILocationDetails;
+  paymentPlan: PaymentPlan;
+  locationDetails: LocationDetails;
   categories: string[];
   featured: boolean;
   launchDate: string;
   registrationOpen: boolean;
-  flags: IFlags;
+  flags: {
+    elite: boolean;
+    exclusive: boolean;
+    featured: boolean;
+    highValue: boolean;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -163,40 +169,40 @@ export function ProjectTabs({ initialModalOpen = false, onModalClose }: ProjectT
   }
 
   const handleSaveProject = async (projectData: any) => {
-    try {
-      if (selectedProject) {
-        // Edit existing project - you'll need to implement PUT/PATCH endpoint
-        const response = await fetch(`/api/projects/${selectedProject._id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(projectData),
-        })
+    // try {
+    //   if (selectedProject) {
+    //     // Edit existing project - you'll need to implement PUT/PATCH endpoint
+    //     const response = await fetch(`/api/projects/${selectedProject._id}`, {
+    //       method: 'PUT',
+    //       headers: {
+    //         'Content-Type': 'application/json',
+    //       },
+    //       body: JSON.stringify(projectData),
+    //     })
 
-        if (response.ok) {
-          // Refresh projects list
-          await fetchProjects()
-        }
-      } else {
-        // Add new project - you'll need to implement POST endpoint
-        const response = await fetch('/api/projects', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(projectData),
-        })
+    //     if (response.ok) {
+    //       // Refresh projects list
+    //       await fetchProjects()
+    //     }
+    //   } else {
+    //     // Add new project - you'll need to implement POST endpoint
+    //     const response = await fetch('/api/projects', {
+    //       method: 'POST',
+    //       headers: {
+    //         'Content-Type': 'application/json',
+    //       },
+    //       body: JSON.stringify(projectData),
+    //     })
 
-        if (response.ok) {
-          // Refresh projects list
-          await fetchProjects()
-        }
-      }
-    } catch (error) {
-      console.error('Error saving project:', error)
-      // You might want to show an error toast here
-    }
+    //     if (response.ok) {
+    //       // Refresh projects list
+    //       await fetchProjects()
+    //     }
+    //   }
+    // } catch (error) {
+    //   console.error('Error saving project:', error)
+    //   // You might want to show an error toast here
+    // }
   }
 
   const handleConfirmDelete = async () => {

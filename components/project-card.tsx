@@ -7,54 +7,55 @@ import { MoreHorizontal, MapPin, Building, Calendar, DollarSign, Eye, Edit, Tras
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 // Use the same interfaces as in the main component
-interface IPaymentMilestone {
+interface PaymentMilestone {
   milestone: string;
   percentage: string;
 }
 
-interface IPaymentPlan {
+interface PaymentPlan {
   booking: string;
-  construction: IPaymentMilestone[];
+  construction: PaymentMilestone[];
   handover: string;
 }
 
-interface INearbyPlace {
+interface NearbyPlace {
   name: string;
   distance: string;
 }
 
-interface ICoordinates {
+interface Coordinates {
   latitude: number;
   longitude: number;
 }
 
-interface ILocationDetails {
+interface LocationDetails {
   description: string;
-  nearby: INearbyPlace[];
-  coordinates: ICoordinates;
+  nearby: NearbyPlace[];
+  coordinates: Coordinates;
 }
 
-interface IAmenityCategory {
+interface AmenityCategory {
   category: string;
   items: string[];
 }
 
-interface IUnitType {
+interface UnitType {
   type: string;
   size: string;
   price: string;
 }
 
-interface IFlags {
-  elite: boolean;
-  exclusive: boolean;
-  featured: boolean;
-  highValue: boolean;
+
+
+interface Developer {
+  id: string;
+  name: string;
+  slug?: string;
 }
 
 interface IProject {
   _id: string;
-  id: number;
+  id: string;
   slug: string;
   name: string;
   location: string;
@@ -71,20 +72,24 @@ interface IProject {
   overview: string;
   completionDate: string;
   totalUnits: number;
-  amenities: IAmenityCategory[];
-  unitTypes: IUnitType[];
+  amenities: AmenityCategory[];
+  unitTypes: UnitType[];
   gallery: string[];
-  paymentPlan: IPaymentPlan;
-  locationDetails: ILocationDetails;
+  paymentPlan: PaymentPlan;
+  locationDetails: LocationDetails;
   categories: string[];
   featured: boolean;
   launchDate: string;
   registrationOpen: boolean;
-  flags: IFlags;
+  flags: {
+    elite: boolean;
+    exclusive: boolean;
+    featured: boolean;
+    highValue: boolean;
+  };
   createdAt: string;
   updatedAt: string;
 }
-
 interface ProjectCardProps {
   project: IProject
   onView: (project: IProject) => void

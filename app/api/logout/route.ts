@@ -1,4 +1,4 @@
-// app/api/logout/route.ts - CORRECTED VERSION
+// app/api/logout/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { adminAuth } from "@/lib/firebaseAdmin";
@@ -27,27 +27,27 @@ const AUTH_COOKIES = [
 ];
 
 export async function POST(request: NextRequest) {
-  console.log("🚀 Enhanced logout API called");
+  console.log(" Enhanced logout API called");
   const startTime = Date.now();
 
   try {
     // Get all cookies from request for comprehensive clearing
     const allCookies = request.cookies.getAll();
-    console.log("📋 Found cookies:", allCookies.map(c => c.name));
+    console.log("Found cookies:", allCookies.map(c => c.name));
 
     // Connect to database (don't let DB errors stop logout)
     try {
       await connectToDatabase();
-      console.log("✅ Database connected");
+      console.log("Database connected");
     } catch (dbErr) {
-      console.warn("⚠️ Database connection failed during logout:", dbErr);
+      console.warn("Database connection failed during logout:", dbErr);
     }
 
     // 1️⃣ Revoke Firebase session aggressively
     const sessionCookie = request.cookies.get("__session")?.value;
     if (sessionCookie && sessionCookie.length > 10) {
       try {
-        console.log("🔥 Revoking Firebase session...");
+        console.log(" Revoking Firebase session...");
         const decodedToken = await adminAuth.verifySessionCookie(sessionCookie, true);
         
         // Revoke ALL refresh tokens for this user
@@ -56,9 +56,9 @@ export async function POST(request: NextRequest) {
         // Clear custom claims
         await adminAuth.setCustomUserClaims(decodedToken.uid, {});
         
-        console.log(`✅ Firebase session revoked for user: ${decodedToken.uid}`);
+        console.log(` Firebase session revoked for user: ${decodedToken.uid}`);
       } catch (firebaseErr) {
-        console.error("❌ Firebase revocation failed:", firebaseErr);
+        console.error(" Firebase revocation failed:", firebaseErr);
         // Continue - don't let Firebase errors block logout
       }
     } else {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // 3️⃣ Generate all domain variations for cookie clearing
+    // 3 Generate all domain variations for cookie clearing
     const hostname = request.headers.get("host") || "localhost";
     const domains = [
       undefined, // host-only cookies
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       domains.push("localhost", ".localhost", "127.0.0.1");
     }
 
-    console.log("🍪 Clearing cookies for domains:", domains);
+    console.log(" Clearing cookies for domains:", domains);
 
     // 4️⃣ Clear ALL predefined auth cookies
     AUTH_COOKIES.forEach(cookieName => {
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // 5️⃣ Clear ALL cookies found in the request (nuclear option)
+    //  Clear ALL cookies found in the request (nuclear option)
     allCookies.forEach(cookie => {
       domains.forEach(domain => {
         const cookieOptions: any = {
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    console.log(`✅ Logout completed successfully in ${Date.now() - startTime}ms`);
+    console.log(` Logout completed successfully in ${Date.now() - startTime}ms`);
     return response;
 
   } catch (error) {
