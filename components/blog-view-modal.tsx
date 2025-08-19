@@ -3,12 +3,12 @@ import { Badge } from "@/components/ui/badge"
 import { Calendar, User, Clock, Eye } from "lucide-react"
 
 interface Blog {
-  id: number
+  _id?: string
   title: string
-  slug: string
+  slug?: string
   excerpt: string
   content: string
-  featuredImage: string[]
+  featuredImage: string
   author: string
   category: string
   tags: string[]
@@ -18,6 +18,7 @@ interface Blog {
   views: number
   featured: boolean
 }
+
 
 interface BlogViewModalProps {
   isOpen: boolean

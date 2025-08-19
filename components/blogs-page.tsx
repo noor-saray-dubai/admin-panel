@@ -12,12 +12,12 @@ import { BlogViewModal } from "./blog-view-modal"
 import { DeleteConfirmationModal } from "./delete-confirmation-modal"
 
 interface Blog {
-  id: number
+  _id?: string
   title: string
-  slug: string
+  slug?: string
   excerpt: string
   content: string
-  featuredImage: string[]
+  featuredImage: string
   author: string
   category: string
   tags: string[]
@@ -27,81 +27,6 @@ interface Blog {
   views: number
   featured: boolean
 }
-
-const sampleBlogs: Blog[] = [
-  {
-    id: 1,
-    title: "Top 10 Investment Areas in Dubai 2024",
-    slug: "top-10-investment-areas-dubai-2024",
-    excerpt:
-      "Discover the most promising real estate investment opportunities in Dubai for 2024, from emerging neighborhoods to established luxury districts.",
-    content:
-      "Dubai's real estate market continues to evolve, offering investors numerous opportunities across different price points and property types. In this comprehensive guide, we explore the top 10 areas that present the best investment potential for 2024...",
-    featuredImage: ["/placeholder.svg?height=300&width=500"],
-    author: "Sarah Ahmed",
-    category: "Investment",
-    tags: ["Dubai", "Investment", "Real Estate", "2024"],
-    status: "Published",
-    publishDate: "2024-01-15T10:00:00.000Z",
-    readTime: 8,
-    views: 2450,
-    featured: true,
-  },
-  {
-    id: 2,
-    title: "Dubai Creek Harbour: The Future of Waterfront Living",
-    slug: "dubai-creek-harbour-future-waterfront-living",
-    excerpt:
-      "Explore Dubai Creek Harbour's transformation into a world-class waterfront destination with luxury residences and commercial spaces.",
-    content:
-      "Dubai Creek Harbour represents the pinnacle of modern urban planning, combining luxury living with sustainable development practices. This mega-development spans over 6 square kilometers...",
-    featuredImage: ["/placeholder.svg?height=300&width=500"],
-    author: "Ahmed Hassan",
-    category: "Development",
-    tags: ["Dubai Creek Harbour", "Waterfront", "Luxury", "Development"],
-    status: "Published",
-    publishDate: "2024-01-12T14:30:00.000Z",
-    readTime: 6,
-    views: 1890,
-    featured: false,
-  },
-  {
-    id: 3,
-    title: "Understanding Dubai's New Real Estate Regulations",
-    slug: "understanding-dubai-new-real-estate-regulations",
-    excerpt:
-      "A comprehensive guide to the latest real estate regulations in Dubai and how they affect buyers, sellers, and investors.",
-    content:
-      "The Dubai real estate market has seen significant regulatory changes in recent years, aimed at protecting investors and ensuring market stability...",
-    featuredImage: ["/placeholder.svg?height=300&width=500"],
-    author: "Fatima Al-Zahra",
-    category: "Legal",
-    tags: ["Regulations", "Legal", "Dubai", "Real Estate Law"],
-    status: "Draft",
-    publishDate: "2024-01-20T09:00:00.000Z",
-    readTime: 12,
-    views: 0,
-    featured: false,
-  },
-  {
-    id: 4,
-    title: "Sustainable Living: Green Buildings in Dubai",
-    slug: "sustainable-living-green-buildings-dubai",
-    excerpt:
-      "Discover Dubai's commitment to sustainable architecture and the rise of eco-friendly residential and commercial developments.",
-    content:
-      "Dubai's vision for a sustainable future is reflected in its growing portfolio of green buildings and eco-friendly developments...",
-    featuredImage: ["/placeholder.svg?height=300&width=500"],
-    author: "Omar Khalil",
-    category: "Sustainability",
-    tags: ["Sustainability", "Green Buildings", "Environment", "Dubai"],
-    status: "Scheduled",
-    publishDate: "2024-01-25T11:00:00.000Z",
-    readTime: 10,
-    views: 0,
-    featured: true,
-  },
-]
 
 function BlogCard({
   blog,
@@ -114,12 +39,22 @@ function BlogCard({
   onEdit: (blog: Blog) => void
   onDelete: (blog: Blog) => void
 }) {
+  // Determine actual status based on publish date
+  const getActualStatus = (publishDate: string) => {
+    const now = new Date()
+    const pubDate = new Date(publishDate)
+    
+    if (pubDate <= now) {
+      return "Published"
+    } else {
+      return "Scheduled"
+    }
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Published":
         return "default"
-      case "Draft":
-        return "secondary"
       case "Scheduled":
         return "outline"
       default:
@@ -131,6 +66,8 @@ function BlogCard({
     return new Date(dateString).toLocaleDateString()
   }
 
+  const actualStatus = getActualStatus(blog.publishDate)
+
   return (
     <Card className="hover:shadow-lg transition-shadow">
       <div className="relative">
@@ -140,8 +77,8 @@ function BlogCard({
           className="w-full h-48 object-cover rounded-t-lg"
         />
         {blog.featured && <Badge className="absolute top-2 left-2 bg-yellow-500">Featured</Badge>}
-        <Badge variant={getStatusColor(blog.status)} className="absolute top-2 right-2">
-          {blog.status}
+        <Badge variant={getStatusColor(actualStatus)} className="absolute top-2 right-2">
+          {actualStatus}
         </Badge>
       </div>
 
@@ -209,12 +146,36 @@ export function BlogsPage() {
   const searchParams = useSearchParams()
   const action = searchParams.get("action")
 
-  const [blogs, setBlogs] = useState(sampleBlogs)
+  const [blogs, setBlogs] = useState<Blog[]>([])
+  const [loading, setLoading] = useState(true)
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [selectedBlog, setSelectedBlog] = useState<Blog | null>(null)
+
+  // Fetch all blogs
+  const fetchBlogs = async () => {
+    try {
+      const res = await fetch("/api/blog/fetch")
+      const json = await res.json()
+      if (json.success) {
+        setBlogs(json.blogs)
+        console.log(json.blogs)
+      } else {
+        console.error("Failed to fetch blogs:", json.message)
+      }
+    } catch (err) {
+      console.error("Error fetching blogs:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => {
+
+    fetchBlogs()
+  }, [])
 
   // Handle URL action parameter
   useEffect(() => {
@@ -239,22 +200,48 @@ export function BlogsPage() {
   }
 
   const handleSaveBlog = (blogData: Blog) => {
-    // Ensure 'views' is present for both add and edit
-    const blogWithViews = { ...blogData, views: blogData.views ?? 0 }
     if (selectedBlog) {
-      setBlogs((prev) => prev.map((b) => (b.id === selectedBlog.id ? { ...blogWithViews, id: selectedBlog.id } : b)))
+      setBlogs((prev) =>
+        prev.map((b) => (b._id === selectedBlog._id ? { ...blogData, _id: selectedBlog._id } : b))
+      )
     } else {
-      const newBlog = { ...blogWithViews, id: Date.now() }
+      const newBlog = { ...blogData, _id: Date.now().toString() }
       setBlogs((prev) => [...prev, newBlog])
     }
   }
 
-  const handleConfirmDelete = () => {
+
+    const handleConfirmDelete = async () => {
     if (selectedBlog) {
-      setBlogs((prev) => prev.filter((b) => b.id !== selectedBlog.id))
+      try {
+        // You'll need to implement DELETE endpoint
+        const response = await fetch(`/api/blog/delete/${selectedBlog.slug }`, {
+          method: 'DELETE',
+        })
+
+        if (response.ok) {
+          // Refresh projects list
+          await fetchBlogs()
+        }
+      } catch (error) {
+        console.error('Error deleting project:', error)
+        // You might want to show an error toast here
+      }
     }
     setIsDeleteModalOpen(false)
     setSelectedBlog(null)
+  }
+
+
+  // Calculate stats based on actual publish dates
+  const getPublishedBlogs = () => {
+    const now = new Date()
+    return blogs.filter(blog => new Date(blog.publishDate) <= now)
+  }
+
+  const getScheduledBlogs = () => {
+    const now = new Date()
+    return blogs.filter(blog => new Date(blog.publishDate) > now)
   }
 
   const blogStats = [
@@ -266,14 +253,14 @@ export function BlogsPage() {
     },
     {
       title: "Published",
-      value: blogs.filter((b) => b.status === "Published").length.toString(),
+      value: getPublishedBlogs().length.toString(),
       icon: Eye,
       color: "text-green-600",
     },
     {
-      title: "Drafts",
-      value: blogs.filter((b) => b.status === "Draft").length.toString(),
-      icon: Edit,
+      title: "Scheduled",
+      value: getScheduledBlogs().length.toString(),
+      icon: Calendar,
       color: "text-orange-600",
     },
     {
@@ -313,17 +300,21 @@ export function BlogsPage() {
       </div>
 
       {/* Blogs Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {blogs.map((blog) => (
-          <BlogCard key={blog.id} blog={blog} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} />
-        ))}
-      </div>
+      {loading ? (
+        <p className="text-gray-500">Loading blogs...</p>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {blogs.map((blog) => (
+            <BlogCard key={blog._id} blog={blog} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} />
+          ))}
+        </div>
+      )}
 
       {/* Modals */}
       <BlogFormModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        onSave={handleSaveBlog}
+        // onSave={handleSaveBlog}
         mode="add"
       />
 
@@ -333,7 +324,7 @@ export function BlogsPage() {
           setIsEditModalOpen(false)
           setSelectedBlog(null)
         }}
-        onSave={handleSaveBlog}
+        // onSave={handleSaveBlog}
         blog={selectedBlog}
         mode="edit"
       />
