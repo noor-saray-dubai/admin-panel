@@ -1,11 +1,12 @@
 import { CareersPage } from "@/components/careers-page";
+import { Suspense } from "react";
 
 
 
 export default function Careers() {
   return (
-    
-      <CareersPage />
+    <Suspense fallback={<div>Loading...</div>}> <CareersPage /></Suspense>
+     
  
   )
 }
