@@ -5,7 +5,7 @@ import { connectToDatabase } from "@/lib/db";
 import { withAuth } from "@/lib/auth-utils";
 import { rateLimit } from "@/lib/rate-limiter";
 
-export const runtime = "nodejs"; // Force Node.js runtime (sharp + Cloudinary safe)
+export const runtime = "nodejs";
 
 interface BlogData {
   title: string;
@@ -42,29 +42,18 @@ async function ensureUniqueSlug(baseSlug: string): Promise<string> {
   }
 }
 
-// Process image to WebP using sharp (lazy-loaded)
-async function processImage(file: File): Promise<Buffer> {
-  const sharp = (await import("sharp")).default;
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-
-  return await sharp(buffer)
-    .webp({ quality: 80 })
-    .resize(1200, 800, {
-      fit: "inside",
-      withoutEnlargement: true,
-    })
-    .toBuffer();
-}
-
-// Upload to Cloudinary (lazy-loaded + config inside function)
-async function uploadToCloudinary(buffer: Buffer, folder: string, fileName: string): Promise<string> {
+// Upload to Cloudinary without Sharp processing
+async function uploadToCloudinary(file: File, folder: string, fileName: string): Promise<string> {
   const { v2: cloudinary } = await import("cloudinary");
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
     api_key: process.env.CLOUDINARY_API_KEY!,
     api_secret: process.env.CLOUDINARY_API_SECRET!,
   });
+
+  // Convert File to Buffer
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
 
   return new Promise((resolve, reject) => {
     cloudinary.uploader
@@ -74,6 +63,14 @@ async function uploadToCloudinary(buffer: Buffer, folder: string, fileName: stri
           folder: `blogs/${folder}`,
           public_id: fileName,
           format: "webp",
+          quality: "auto:good",
+          fetch_format: "auto",
+          // Let Cloudinary handle the optimization
+          transformation: [
+            { width: 1200, height: 800, crop: "limit" },
+            { quality: "auto:good" },
+            { format: "auto" }
+          ],
           overwrite: true,
         },
         (error, result) => {
@@ -85,14 +82,11 @@ async function uploadToCloudinary(buffer: Buffer, folder: string, fileName: stri
   });
 }
 
-/**
- * Comprehensive validation function
- */
+// Validation and sanitization functions remain the same...
 function validateBlogData(data: BlogData): { isValid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Helper function for string validation
   const validateString = (value: any, fieldName: string, minLength = 1, maxLength = Infinity): boolean => {
     if (!value || typeof value !== "string") {
       errors.push(`${fieldName} is required and must be a string.`);
@@ -113,30 +107,25 @@ function validateBlogData(data: BlogData): { isValid: boolean; errors: string[];
     return true;
   };
 
-  // Required string fields with length limits
   validateString(data.title, "title", 2, 200);
   validateString(data.excerpt, "excerpt", 10, 500);
   validateString(data.content, "content", 50, 20000);
   validateString(data.author, "author", 2, 100);
   validateString(data.category, "category", 2, 100);
 
-  // Validate enums
   const validStatuses = ['Published', 'Draft', 'Scheduled'];
   if (!validStatuses.includes(data.status)) {
     errors.push(`status must be one of: ${validStatuses.join(', ')}`);
   }
 
-  // Numeric validations
   if (typeof data.readTime !== "number" || data.readTime <= 0) {
     errors.push("readTime must be a positive number.");
   }
 
-  // Boolean validations
   if (typeof data.featured !== "boolean") {
     errors.push("featured must be a boolean.");
   }
 
-  // Array validations
   if (!Array.isArray(data.tags)) {
     errors.push("tags must be an array.");
   } else {
@@ -145,7 +134,6 @@ function validateBlogData(data: BlogData): { isValid: boolean; errors: string[];
     });
   }
 
-  // Date validation
   const publishDate = new Date(data.publishDate);
   if (isNaN(publishDate.getTime())) {
     errors.push("publishDate must be a valid date.");
@@ -158,9 +146,6 @@ function validateBlogData(data: BlogData): { isValid: boolean; errors: string[];
   };
 }
 
-/**
- * Clean and sanitize blog data
- */
 function sanitizeBlogData(data: BlogData): BlogData {
   const sanitizeString = (str: string): string => str.trim().replace(/\s+/g, ' ');
   
@@ -178,7 +163,6 @@ function sanitizeBlogData(data: BlogData): BlogData {
 // POST - Create new blog post with authentication
 export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
   try {
-    // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
     if (!rateLimitResult.success) {
       return NextResponse.json(
@@ -196,7 +180,6 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
 
     const formData = await request.formData();
 
-    // Extract form fields
     const title = formData.get("title") as string;
     const excerpt = formData.get("excerpt") as string;
     const content = formData.get("content") as string;
@@ -210,7 +193,6 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
 
     const featuredImageFile = formData.get("featuredImageFile") as File | null;
 
-    // Create blog data object
     let blogData: BlogData = {
       title,
       excerpt,
@@ -224,7 +206,6 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       featured,
     };
 
-    // Basic required field check
     if (!title || !excerpt || !content || !author || !category) {
       return NextResponse.json({ 
         success: false, 
@@ -232,10 +213,8 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       }, { status: 400 });
     }
 
-    // Sanitize data
     blogData = sanitizeBlogData(blogData);
 
-    // Validate blog data
     const validation = validateBlogData(blogData);
     if (!validation.isValid) {
       return NextResponse.json(
@@ -253,7 +232,6 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
     const baseSlug = generateSlug(title);
     const slug = await ensureUniqueSlug(baseSlug);
 
-    // Check for existing blog by title
     const existingBlog = await Blog.findOne({
       title: { $regex: new RegExp(`^${title}$`, "i") },
       isActive: true
@@ -272,21 +250,19 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
 
     let featuredImageUrl = "";
 
-    // Process and upload featured image
+    // Upload image directly to Cloudinary (let Cloudinary handle optimization)
     if (featuredImageFile) {
       try {
-        const processedImage = await processImage(featuredImageFile);
-        featuredImageUrl = await uploadToCloudinary(processedImage, slug, "featured");
+        featuredImageUrl = await uploadToCloudinary(featuredImageFile, slug, "featured");
       } catch (err) {
-        console.error("Error processing featured image:", err);
+        console.error("Error uploading featured image:", err);
         return NextResponse.json({ 
           success: false,
-          error: "Failed to process featured image" 
+          error: "Failed to upload featured image" 
         }, { status: 500 });
       }
     }
 
-    // Prepare blog data for database
     const blogToSave = {
       title,
       slug,
@@ -302,7 +278,6 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       views: 0,
       featured,
       
-      // Audit info
       createdBy: audit,
       updatedBy: audit,
       version: 1,
@@ -311,14 +286,12 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
 
     const newBlog = await Blog.create(blogToSave);
 
-    // Log successful creation
     console.log(`Blog post created successfully by ${user.email}:`, {
       id: newBlog._id,
       title: newBlog.title,
       slug: newBlog.slug
     });
 
-    // Return success response
     return NextResponse.json(
       {
         success: true,
@@ -349,7 +322,6 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
   } catch (error: any) {
     console.error("Error creating blog post:", error);
 
-    // Handle specific error types
     if (error.name === "ValidationError") {
       return NextResponse.json(
         {
@@ -373,7 +345,6 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       );
     }
 
-    // Generic server error
     return NextResponse.json(
       { 
         success: false, 
