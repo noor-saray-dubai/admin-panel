@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Project from "@/models/project";
-import { v2 as cloudinary } from 'cloudinary';
 import { withAuth } from "@/lib/auth-utils";
 import { updateProjectSlugs } from "@/lib/slug-utils";
 import { rateLimit } from "@/lib/rate-limiter";
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+// Force Node.js runtime
+export const runtime = "nodejs";
 
 interface NearbyPlace {
   name: string;
@@ -83,28 +78,49 @@ interface ProjectData {
 }
 
 /**
- * Enhanced image upload with retry logic and optimization
+ * Enhanced image upload with Cloudinary optimization (no Sharp dependency)
  */
 async function uploadImageToCloudinary(
-  fileBuffer: Buffer,
+  file: File,
   fileName: string,
   folderName: string,
   isGallery: boolean = false,
   retryCount: number = 3
 ): Promise<string> {
+  // Lazy load Cloudinary to avoid potential Sharp conflicts
+  const { v2: cloudinary } = await import('cloudinary');
+  
+  // Configure Cloudinary
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+    api_key: process.env.CLOUDINARY_API_KEY!,
+    api_secret: process.env.CLOUDINARY_API_SECRET!,
+  });
+
+  // Convert File to Buffer
+  const bytes = await file.arrayBuffer();
+  const fileBuffer = Buffer.from(bytes);
+
   const uploadConfig = {
     folder: folderName,
     public_id: fileName,
     format: 'webp',
     quality: 'auto:good',
     fetch_format: 'auto',
-    width: isGallery ? 1200 : 1920,
-    height: isGallery ? 800 : 1080,
-    crop: 'limit',
+    // Let Cloudinary handle all optimization
+    transformation: [
+      { 
+        width: isGallery ? 1200 : 1920, 
+        height: isGallery ? 800 : 1080, 
+        crop: 'limit' 
+      },
+      { quality: 'auto:good' },
+      { format: 'auto' }
+    ],
     resource_type: 'image' as const,
     secure: true,
-    invalidate: true, // Invalidate CDN cache
-    overwrite: false, // Prevent accidental overwrites
+    invalidate: true,
+    overwrite: false,
   };
 
   for (let attempt = 1; attempt <= retryCount; attempt++) {
@@ -130,6 +146,7 @@ async function uploadImageToCloudinary(
         throw new Error('Upload succeeded but no secure URL returned');
       }
 
+      console.log(`Image uploaded successfully on attempt ${attempt}:`, result.secure_url);
       return result.secure_url;
     } catch (error: any) {
       console.error(`Upload attempt ${attempt}/${retryCount} failed:`, error.message);
@@ -214,7 +231,6 @@ function validateProjectData(data: ProjectData): { isValid: boolean; errors: str
   // Date validations
   const completionDate = new Date(data.completionDate);
   const launchDate = new Date(data.launchDate);
-  const now = new Date();
   
   if (isNaN(completionDate.getTime())) {
     errors.push("completionDate must be a valid date.");
@@ -327,6 +343,8 @@ function validateProjectData(data: ProjectData): { isValid: boolean; errors: str
   // Categories validation
   if (!Array.isArray(data.categories)) {
     errors.push("categories must be an array.");
+  } else if (data.categories.length === 0) {
+    errors.push("At least one category is required.");
   } else {
     data.categories.forEach((cat, idx) => {
       validateString(cat, `categories[${idx}]`, 1, 100);
@@ -383,6 +401,33 @@ function sanitizeProjectData(data: ProjectData): ProjectData {
     categories: data.categories.map(cat => sanitizeString(cat)).filter(cat => cat.length > 0),
     tags: data.tags?.map(tag => sanitizeString(tag)).filter(tag => tag.length > 0) || []
   };
+}
+
+/**
+ * Validate image file
+ */
+function validateImageFile(file: File, fieldName: string, maxSizeMB: number = 10): { isValid: boolean; error?: string } {
+  if (!file || file.size === 0) {
+    return { isValid: false, error: `${fieldName} is required` };
+  }
+
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowedTypes.includes(file.type)) {
+    return { 
+      isValid: false, 
+      error: `${fieldName} must be one of: ${allowedTypes.join(', ')}` 
+    };
+  }
+
+  const maxBytes = maxSizeMB * 1024 * 1024;
+  if (file.size > maxBytes) {
+    return { 
+      isValid: false, 
+      error: `${fieldName} must be less than ${maxSizeMB}MB` 
+    };
+  }
+
+  return { isValid: true };
 }
 
 /**
@@ -471,27 +516,19 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       );
     }
 
-    // Handle cover image upload
+    // Validate cover image
     const coverImageFile = formData.get('coverImage') as File;
-    if (!coverImageFile || coverImageFile.size === 0) {
+    const coverValidation = validateImageFile(coverImageFile, "Cover image");
+    if (!coverValidation.isValid) {
       return NextResponse.json(
-        { success: false, message: "Cover image is required", error: "MISSING_COVER_IMAGE" },
-        { status: 400 }
-      );
-    }
-
-    // Validate image file
-    if (coverImageFile.size > 10 * 1024 * 1024) { // 10MB limit
-      return NextResponse.json(
-        { success: false, message: "Cover image must be less than 10MB", error: "FILE_TOO_LARGE" },
+        { success: false, message: coverValidation.error, error: "INVALID_COVER_IMAGE" },
         { status: 400 }
       );
     }
 
     // Upload cover image
-    const coverImageBuffer = Buffer.from(await coverImageFile.arrayBuffer());
     const coverImageUrl = await uploadImageToCloudinary(
-      coverImageBuffer,
+      coverImageFile,
       `cover-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       slugs.slug,
       false
@@ -506,16 +543,16 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       const galleryFile = formData.get(`gallery_${galleryIndex}`) as File;
       
       if (galleryFile && galleryFile.size > 0) {
-        if (galleryFile.size > 10 * 1024 * 1024) {
+        const galleryValidation = validateImageFile(galleryFile, `Gallery image ${galleryIndex + 1}`);
+        if (!galleryValidation.isValid) {
           return NextResponse.json(
-            { success: false, message: `Gallery image ${galleryIndex + 1} must be less than 10MB`, error: "FILE_TOO_LARGE" },
+            { success: false, message: galleryValidation.error, error: "INVALID_GALLERY_IMAGE" },
             { status: 400 }
           );
         }
 
-        const galleryBuffer = Buffer.from(await galleryFile.arrayBuffer());
         const galleryUrl = await uploadImageToCloudinary(
-          galleryBuffer,
+          galleryFile,
           `gallery-${galleryIndex}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           slugs.slug,
           true
@@ -555,7 +592,9 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
     console.log(`Project created successfully by ${user.email}:`, {
       id: createdProject._id,
       name: createdProject.name,
-      slug: createdProject.slug
+      slug: createdProject.slug,
+      coverImage: createdProject.image,
+      galleryCount: createdProject.gallery.length
     });
 
     // Return success response
