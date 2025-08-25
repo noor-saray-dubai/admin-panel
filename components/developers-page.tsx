@@ -34,6 +34,7 @@ import { DeleteConfirmationModal } from "./delete-confirmation-modal"
 interface Developer {
   _id: string
   name: string
+  slug: string
   logo: string
   description: string
   location: string
@@ -164,23 +165,23 @@ export function DevelopersPage() {
   const [selectedDeveloper, setSelectedDeveloper] = useState<Developer | null>(null)
 
   // Fetch all developers
-  useEffect(() => {
-    const fetchDevelopers = async () => {
-      try {
-        const res = await fetch("/api/developers/fetch")
-        const json = await res.json()
-        if (json.success) {
-          setDevelopers(json.data)
-          console.log(json.data)
-        } else {
-          console.error("Failed to fetch developers:", json.message)
-        }
-      } catch (err) {
-        console.error("Error fetching developers:", err)
-      } finally {
-        setLoading(false)
+  const fetchDevelopers = async () => {
+    try {
+      const res = await fetch("/api/developers/fetch")
+      const json = await res.json()
+      if (json.success) {
+        setDevelopers(json.data)
+        console.log(json.data)
+      } else {
+        console.error("Failed to fetch developers:", json.message)
       }
+    } catch (err) {
+      console.error("Error fetching developers:", err)
+    } finally {
+      setLoading(false)
     }
+  }
+  useEffect(() => {
 
     fetchDevelopers()
   }, [])
@@ -218,9 +219,22 @@ export function DevelopersPage() {
     }
   }
 
-  const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
     if (selectedDeveloper) {
-      setDevelopers((prev) => prev.filter((d) => d._id !== selectedDeveloper._id))
+      try {
+        // You'll need to implement DELETE endpoint
+        const response = await fetch(`/api/blog/delete/${selectedDeveloper.slug }`, {
+          method: 'DELETE',
+        })
+
+        if (response.ok) {
+          // Refresh projects list
+          await fetchDevelopers()
+        }
+      } catch (error) {
+        console.error('Error deleting project:', error)
+        // You might want to show an error toast here
+      }
     }
     setIsDeleteModalOpen(false)
     setSelectedDeveloper(null)
