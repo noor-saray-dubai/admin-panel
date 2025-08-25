@@ -223,7 +223,7 @@ export function DevelopersPage() {
     if (selectedDeveloper) {
       try {
         // You'll need to implement DELETE endpoint
-        const response = await fetch(`/api/blog/delete/${selectedDeveloper.slug }`, {
+        const response = await fetch(`/api/developers/delete/${selectedDeveloper.slug }`, {
           method: 'DELETE',
         })
 
