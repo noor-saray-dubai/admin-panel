@@ -450,25 +450,25 @@ export const POST = withAuth(async (req: NextRequest, { user, audit }) => {
       );
     }
 
+    // Generate base slug from name
     const baseSlug = generateSlug(name);
-    const slug = await ensureUniqueSlug(baseSlug);
-
-    // Check for existing developer by email (name can be duplicate)
-    const existingDeveloper = await Developer.findOne({
-      email: { $regex: new RegExp(`^${email}$`, "i") }
-    });
-
+    
+    // Check if developer already exists by slug (this is our only uniqueness check)
+    const existingDeveloper = await Developer.findOne({ slug: baseSlug });
     if (existingDeveloper) {
       return NextResponse.json(
         { 
           success: false, 
-          message: "Developer with this email already exists", 
-          error: "DUPLICATE_EMAIL",
-          errors: { email: ["This email is already registered"] }
+          message: "This developer already exists", 
+          error: "DEVELOPER_EXISTS",
+          errors: { name: ["This developer already exists in the system."] }
         },
         { status: 409 }
       );
     }
+
+    // Since no existing developer found, use the base slug
+    const slug = baseSlug;
 
     let logoUrl = "";
     let coverImageUrl = "";
@@ -560,14 +560,23 @@ export const POST = withAuth(async (req: NextRequest, { user, audit }) => {
       );
     }
 
+    // Handle MongoDB duplicate key errors - now only for slug
     if (error.code === 11000) {
       const duplicatedField = Object.keys(error.keyPattern || {})[0] || 'unknown';
+      let errorMessage = `This ${duplicatedField} already exists`;
+      let userMessage = `Duplicate ${duplicatedField} error`;
+      
+      if (duplicatedField === 'slug') {
+        errorMessage = "This developer already exists in the system.";
+        userMessage = "Developer already exists";
+      }
+      
       return NextResponse.json(
         {
           success: false,
-          message: `Duplicate ${duplicatedField} error`,
+          message: userMessage,
           error: "DUPLICATE_ENTRY",
-          errors: { [duplicatedField]: [`This ${duplicatedField} already exists`] }
+          errors: { [duplicatedField]: [errorMessage] }
         },
         { status: 409 }
       );

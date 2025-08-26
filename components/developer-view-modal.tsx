@@ -51,6 +51,7 @@ export function DeveloperViewModal({ isOpen, onClose, developer }: DeveloperView
       minute: '2-digit'
     })
   }
+  console.log(developer);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

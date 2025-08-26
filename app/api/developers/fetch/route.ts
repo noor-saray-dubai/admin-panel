@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     
     // Only select necessary fields for the card view
     const developers = await Developer.find(searchQuery)
-      .select('name slug logo location establishedYear specialization verified createdAt updatedAt')
+      .select('name slug logo location website description overview coverImage email phone awards establishedYear specialization verified createdAt updatedAt')
       .sort(sortObject)
       .skip(skip)
       .limit(limit)
