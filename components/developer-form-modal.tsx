@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,25 +11,33 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { Upload, X, Eye, Star, MapPin, Calendar, Building, Phone, Mail, Globe } from "lucide-react"
+import { Upload, X, Eye, Star, MapPin, Calendar, Building, Phone, Mail, Globe, Plus, Minus, AlertCircle } from "lucide-react"
+
+interface IDescriptionSection {
+  title?: string
+  description: string
+}
+
+interface IAward {
+  name: string
+  year: number
+}
 
 interface Developer {
   _id?: string
   name: string
   slug?: string
   logo: string
-  coverImage?: string
-  description: string
+  coverImage: string
+  description: IDescriptionSection[]
+  overview: string
   location: string
   establishedYear: number
-  totalProjects: number
-  activeProjects: number
-  completedProjects: number
   website: string
   email: string
   phone: string
   specialization: string[]
-  rating: number
+  awards: IAward[]
   verified: boolean
 }
 
@@ -37,18 +45,32 @@ interface DeveloperFormData {
   name: string
   logo: File | null
   coverImage: File | null
-  description: string
+  description: IDescriptionSection[]
+  overview: string
   location: string
   establishedYear: number
-  totalProjects: number
-  activeProjects: number
-  completedProjects: number
   website: string
   email: string
   phone: string
   specialization: string[]
-  rating: number
+  awards: IAward[]
   verified: boolean
+}
+
+interface FieldErrors {
+  [key: string]: string
+}
+
+interface ApiError {
+  message: string
+  error: string
+  errors?: Record<string, string[]>
+}
+
+interface SubmissionState {
+  isSubmitting: boolean
+  apiError: ApiError | null
+  networkError: boolean
 }
 
 interface DeveloperFormModalProps {
@@ -76,21 +98,250 @@ const initialFormData: DeveloperFormData = {
   name: "",
   logo: null,
   coverImage: null,
-  description: "",
+  description: [{ description: "" }],
+  overview: "",
   location: "",
   establishedYear: new Date().getFullYear(),
-  totalProjects: 0,
-  activeProjects: 0,
-  completedProjects: 0,
   website: "",
-  email: "",
-  phone: "",
+  email: "nsr@noorsaray.com",
+  phone: "+971 509856282",
   specialization: [],
-  rating: 0,
-  verified: false,
+  awards: [],
+  verified: true,
 }
 
-// Image upload component
+// Real-time validation functions
+const validateField = (field: string, value: any, formData: DeveloperFormData): string => {
+  switch (field) {
+    case 'name':
+      if (!value || typeof value !== 'string') return 'Name is required'
+      if (value.trim().length < 2) return 'Name must be at least 2 characters'
+      if (value.trim().length > 100) return 'Name cannot exceed 100 characters'
+      return ''
+
+    case 'overview':
+      if (!value || typeof value !== 'string') return 'Overview is required'
+      const wordCount = value.trim().split(/\s+/).filter(word => word.length > 0).length
+      if (wordCount > 20) return `Overview cannot exceed 20 words (${wordCount}/20)`
+      return ''
+
+    case 'location':
+      if (!value || typeof value !== 'string') return 'Location is required'
+      if (value.trim().length < 2) return 'Location must be at least 2 characters'
+      if (value.trim().length > 100) return 'Location cannot exceed 100 characters'
+      return ''
+
+    case 'email':
+      if (!value || typeof value !== 'string') return 'Email is required'
+      const emailRegex = /^\S+@\S+\.\S+$/
+      if (!emailRegex.test(value)) return 'Please provide a valid email address'
+      return ''
+
+    case 'phone':
+      if (!value || typeof value !== 'string') return 'Phone is required'
+      if (value.trim().length < 5) return 'Phone must be at least 5 characters'
+      return ''
+
+    case 'website':
+      if (value && value.trim() && !value.startsWith('http')) {
+        return 'Website URL must start with http:// or https://'
+      }
+      return ''
+
+    case 'establishedYear':
+      const currentYear = new Date().getFullYear()
+      if (typeof value !== 'number') return 'Established year is required'
+      if (value < 1800) return 'Year cannot be before 1800'
+      if (value > currentYear) return 'Year cannot be in the future'
+      return ''
+
+    default:
+      return ''
+  }
+}
+
+// Character counter component
+const CharacterCounter = ({ current, max }: { current: number; max: number }) => {
+  const isNearLimit = current > max * 0.8
+  const isOverLimit = current > max
+  
+  return (
+    <div className={`text-xs mt-1 ${isOverLimit ? 'text-red-500' : isNearLimit ? 'text-yellow-500' : 'text-gray-400'}`}>
+      {current}/{max}
+    </div>
+  )
+}
+
+// Word counter component
+const WordCounter = ({ current, max }: { current: number; max: number }) => {
+  const isOverLimit = current > max
+  
+  return (
+    <div className={`text-xs mt-1 ${isOverLimit ? 'text-red-500' : current > max * 0.8 ? 'text-yellow-500' : 'text-gray-400'}`}>
+      {current}/{max} words
+    </div>
+  )
+}
+
+// Enhanced Input with validation
+const ValidatedInput = ({ 
+  label, 
+  field, 
+  value, 
+  onChange, 
+  formData, 
+  errors, 
+  setErrors,
+  type = "text",
+  placeholder = "",
+  required = false,
+  maxLength,
+  className = ""
+}: {
+  label: string
+  field: string
+  value: string | number
+  onChange: (value: string | number) => void
+  formData: DeveloperFormData
+  errors: FieldErrors
+  setErrors: React.Dispatch<React.SetStateAction<FieldErrors>>
+  type?: string
+  placeholder?: string
+  required?: boolean
+  maxLength?: number
+  className?: string
+}) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let newValue: string | number = e.target.value
+    
+    if (type === 'number') {
+      newValue = parseInt(newValue) || 0
+    }
+    
+    if (maxLength && typeof newValue === 'string' && newValue.length > maxLength) {
+      return
+    }
+    
+    onChange(newValue)
+    
+    const error = validateField(field, newValue, formData)
+    setErrors(prev => ({ ...prev, [field]: error }))
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const pastedText = e.clipboardData.getData('text')
+    if (maxLength && pastedText.length > maxLength) {
+      e.preventDefault()
+      const trimmedText = pastedText.slice(0, maxLength)
+      onChange(trimmedText)
+      setErrors(prev => ({ ...prev, [field]: validateField(field, trimmedText, formData) }))
+    }
+  }
+
+  return (
+    <div className={className}>
+      <Label htmlFor={field}>
+        {label} {required && <span className="text-red-500">*</span>}
+      </Label>
+      <Input
+        id={field}
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={handleChange}
+        onPaste={handlePaste}
+        className={`mt-1 ${errors[field] ? 'border-red-500' : ''}`}
+      />
+      {maxLength && typeof value === 'string' && (
+        <CharacterCounter current={value.length} max={maxLength} />
+      )}
+      {errors[field] && (
+        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+          <AlertCircle className="h-3 w-3" />
+          {errors[field]}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Enhanced Textarea with validation
+const ValidatedTextarea = ({ 
+  label, 
+  field, 
+  value, 
+  onChange, 
+  formData, 
+  errors, 
+  setErrors,
+  placeholder = "",
+  required = false,
+  maxLength,
+  rows = 3
+}: {
+  label: string
+  field: string
+  value: string
+  onChange: (value: string) => void
+  formData: DeveloperFormData
+  errors: FieldErrors
+  setErrors: React.Dispatch<React.SetStateAction<FieldErrors>>
+  placeholder?: string
+  required?: boolean
+  maxLength?: number
+  rows?: number
+}) => {
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    let newValue = e.target.value
+    
+    if (maxLength && newValue.length > maxLength) {
+      return
+    }
+    
+    onChange(newValue)
+    
+    const error = validateField(field, newValue, formData)
+    setErrors(prev => ({ ...prev, [field]: error }))
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const pastedText = e.clipboardData.getData('text')
+    if (maxLength && pastedText.length > maxLength) {
+      e.preventDefault()
+      const trimmedText = pastedText.slice(0, maxLength)
+      onChange(trimmedText)
+      setErrors(prev => ({ ...prev, [field]: validateField(field, trimmedText, formData) }))
+    }
+  }
+
+  return (
+    <div>
+      <Label htmlFor={field}>
+        {label} {required && <span className="text-red-500">*</span>}
+      </Label>
+      <Textarea
+        id={field}
+        placeholder={placeholder}
+        value={value}
+        onChange={handleChange}
+        onPaste={handlePaste}
+        rows={rows}
+        className={`mt-1 ${errors[field] ? 'border-red-500' : ''}`}
+      />
+      {maxLength && (
+        <CharacterCounter current={value.length} max={maxLength} />
+      )}
+      {errors[field] && (
+        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+          <AlertCircle className="h-3 w-3" />
+          {errors[field]}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Enhanced Image upload with drag & drop and paste
 const ImageUpload = ({ 
   label, 
   value, 
@@ -98,7 +349,9 @@ const ImageUpload = ({
   preview,
   onRemove,
   accept = "image/*",
-  required = false
+  required = false,
+  errors,
+  field
 }: { 
   label: string
   value: File | null
@@ -107,28 +360,83 @@ const ImageUpload = ({
   onRemove: () => void
   accept?: string
   required?: boolean
+  errors: FieldErrors
+  field: string
 }) => {
+  const [isDragOver, setIsDragOver] = useState(false)
+
+  const validateAndSetFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select a valid image file (PNG, JPEG, JPG)')
+      return false
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size should be less than 5MB')
+      return false
+    }
+    onChange(file)
+    return true
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null
+    const file = e.target.files?.[0]
     if (file) {
-      if (!file.type.startsWith('image/')) {
-        toast.error('Please select a valid image file (PNG, JPEG, JPG)')
-        return
+      validateAndSetFile(file)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    const imageFile = files.find(file => file.type.startsWith('image/'))
+    
+    if (imageFile) {
+      validateAndSetFile(imageFile)
+    }
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items)
+    const imageItem = items.find(item => item.type.startsWith('image/'))
+    
+    if (imageItem) {
+      const file = imageItem.getAsFile()
+      if (file) {
+        validateAndSetFile(file)
       }
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB')
-        return
-      }
-      onChange(file)
     }
   }
 
   return (
     <div className="space-y-2">
-      <Label>{label} {required && '*'}</Label>
+      <Label>
+        {label} {required && <span className="text-red-500">*</span>}
+      </Label>
       {!preview ? (
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-          <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+        <div 
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer
+            ${isDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}
+            ${errors[field] ? 'border-red-500' : ''}
+          `}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onPaste={handlePaste}
+          tabIndex={0}
+        >
+          <Upload className={`mx-auto h-8 w-8 mb-2 ${isDragOver ? 'text-blue-500' : 'text-gray-400'}`} />
           <div>
             <Label htmlFor={label.replace(/\s+/g, '-').toLowerCase()} className="cursor-pointer">
               <span className="text-blue-600 hover:text-blue-500">
@@ -142,7 +450,10 @@ const ImageUpload = ({
                 className="hidden"
               />
             </Label>
-            <p className="text-gray-500 text-xs mt-1">PNG, JPEG, JPG (max 5MB)</p>
+            <p className="text-gray-500 text-xs mt-1">
+              PNG, JPEG, JPG (max 5MB)<br/>
+              Drag & drop, paste, or click to upload
+            </p>
           </div>
         </div>
       ) : (
@@ -163,71 +474,124 @@ const ImageUpload = ({
           </Button>
         </div>
       )}
+      {errors[field] && (
+        <div className="flex items-center gap-1 text-red-500 text-xs">
+          <AlertCircle className="h-3 w-3" />
+          {errors[field]}
+        </div>
+      )}
     </div>
   )
 }
+
+// Error Display Component
+const ErrorDisplay = ({ submissionState, onRetry }: { 
+  submissionState: SubmissionState; 
+  onRetry: () => void;
+}) => {
+  if (!submissionState.apiError) return null;
+
+  const { apiError, networkError } = submissionState;
+  
+  return (
+    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-red-800 mb-1">
+            {networkError ? 'Connection Error' : 'Submission Failed'}
+          </h4>
+          <p className="text-sm text-red-700 mb-3">
+            {apiError.message}
+          </p>
+          
+          {/* Show detailed field errors if available */}
+          {apiError.errors && Object.keys(apiError.errors).length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs font-medium text-red-800 mb-2">Details:</p>
+              <ul className="text-xs text-red-700 space-y-1">
+                {Object.entries(apiError.errors).map(([field, messages]) => (
+                  <li key={field} className="flex items-start gap-1">
+                    <span className="font-medium capitalize">{field}:</span>
+                    <span>{Array.isArray(messages) ? messages.join(', ') : messages}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={onRetry}
+              className="text-red-700 border-red-300 hover:bg-red-100"
+            >
+              Try Again
+            </Button>
+            {networkError && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => window.location.reload()}
+                className="text-red-700 hover:bg-red-100"
+              >
+                Refresh Page
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode }: DeveloperFormModalProps) {
   const [formData, setFormData] = useState<DeveloperFormData>(initialFormData)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [coverImagePreview, setCoverImagePreview] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string>("")
-
-  // Convert developer to form data
-  const convertDeveloperToFormData = (developer: Developer): DeveloperFormData => {
-    return {
-      name: developer.name || "",
-      logo: null,
-      coverImage: null,
-      description: developer.description || "",
-      location: developer.location || "",
-      establishedYear: developer.establishedYear || new Date().getFullYear(),
-      totalProjects: developer.totalProjects || 0,
-      activeProjects: developer.activeProjects || 0,
-      completedProjects: developer.completedProjects || 0,
-      website: developer.website || "",
-      email: developer.email || "",
-      phone: developer.phone || "",
-      specialization: developer.specialization || [],
-      rating: developer.rating || 0,
-      verified: developer.verified || false,
-    }
-  }
+  const [errors, setErrors] = useState<FieldErrors>({})
+  const [submissionState, setSubmissionState] = useState<SubmissionState>({
+    isSubmitting: false,
+    apiError: null,
+    networkError: false
+  });
 
   // Initialize form data
   useEffect(() => {
     if (isOpen) {
       if (mode === "edit" && developer) {
-        const convertedData = convertDeveloperToFormData(developer)
-        setFormData(convertedData)
+        setFormData({
+          name: developer.name || "",
+          logo: null,
+          coverImage: null,
+          description: developer.description || [{ description: "" }],
+          overview: developer.overview || "",
+          location: developer.location || "",
+          establishedYear: developer.establishedYear || new Date().getFullYear(),
+          website: developer.website || "",
+          email: developer.email || "nsr@noorsaray.com",
+          phone: developer.phone || "+971 509856282",
+          verified: developer.verified ?? true,
+          specialization: developer.specialization || [],
+          awards: developer.awards || [],
+        })
         
-        // Set image previews for existing developer
-        if (developer.logo) {
-          setLogoPreview(developer.logo)
-        }
-        if (developer.coverImage) {
-          setCoverImagePreview(developer.coverImage)
-        }
+        if (developer.logo) setLogoPreview(developer.logo)
+        if (developer.coverImage) setCoverImagePreview(developer.coverImage)
       } else {
-        // Reset form for add mode
         setFormData(initialFormData)
         setLogoPreview(null)
         setCoverImagePreview(null)
       }
-      setError("")
+      setErrors({})
+      setSubmissionState({
+        isSubmitting: false,
+        apiError: null,
+        networkError: false
+      });
     }
   }, [developer, mode, isOpen])
-
-  // Generate slug from name
-  const generateSlug = (name: string) => {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .trim()
-  }
 
   const handleInputChange = (field: keyof DeveloperFormData, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -239,6 +603,58 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
       specialization: checked 
         ? [...prev.specialization, spec] 
         : prev.specialization.filter((s) => s !== spec),
+    }))
+  }
+
+  // Description sections management
+  const addDescriptionSection = () => {
+    setFormData(prev => ({
+      ...prev,
+      description: [...prev.description, { description: "" }]
+    }))
+  }
+
+  const removeDescriptionSection = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      description: prev.description.filter((_, i) => i !== index)
+    }))
+  }
+
+  const updateDescriptionSection = (index: number, field: 'title' | 'description', value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      description: prev.description.map((section, i) => 
+        i === index 
+          ? { ...section, [field]: value }
+          : section
+      )
+    }))
+  }
+
+  // Awards management
+  const addAward = () => {
+    setFormData(prev => ({
+      ...prev,
+      awards: [...prev.awards, { name: "", year: new Date().getFullYear() }]
+    }))
+  }
+
+  const removeAward = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      awards: prev.awards.filter((_, i) => i !== index)
+    }))
+  }
+
+  const updateAward = (index: number, field: 'name' | 'year', value: string | number) => {
+    setFormData(prev => ({
+      ...prev,
+      awards: prev.awards.map((award, i) => 
+        i === index 
+          ? { ...award, [field]: value }
+          : award
+      )
     }))
   }
 
@@ -266,16 +682,20 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
     }
   }
 
-  // Remove logo
+  // Remove images
   const removeLogo = () => {
     setFormData(prev => ({ ...prev, logo: null }))
     setLogoPreview(null)
   }
 
-  // Remove cover image
   const removeCoverImage = () => {
     setFormData(prev => ({ ...prev, coverImage: null }))
     setCoverImagePreview(null)
+  }
+
+  // Count words in overview
+  const getWordCount = (text: string) => {
+    return text.trim().split(/\s+/).filter(word => word.length > 0).length
   }
 
   // Fill fake data for testing
@@ -284,111 +704,106 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
       name: "Elite Developers LLC",
       logo: null,
       coverImage: null,
-      description: "A premium real estate development company specializing in luxury residential and commercial projects across Dubai. With over 15 years of experience, we deliver exceptional quality and innovative designs that exceed expectations.",
+      description: [
+        { 
+          title: "About Us", 
+          description: "A premium real estate development company specializing in luxury residential and commercial projects across Dubai." 
+        },
+        { 
+          description: "With over 15 years of experience, we deliver exceptional quality and innovative designs that exceed expectations." 
+        }
+      ],
+      overview: "Leading Dubai developer creating luxury residential and commercial projects with innovative designs and exceptional quality.",
       location: "Dubai, UAE",
       establishedYear: 2008,
-      totalProjects: 45,
-      activeProjects: 8,
-      completedProjects: 37,
       website: "https://www.elitedevelopers.ae",
       email: "info@elitedevelopers.ae",
       phone: "+971 4 123 4567",
       specialization: ["Luxury Residential", "Premium Apartments", "Commercial", "Mixed-Use"],
-      rating: 4.7,
+      awards: [
+        { name: "Best Luxury Developer Award", year: 2023 },
+        { name: "Excellence in Design Award", year: 2022 }
+      ],
       verified: true,
     })
   }
 
-  // Validate form
-  const validateForm = (): string[] => {
-    const errors: string[] = []
-
-    if (!formData.name.trim()) errors.push("Developer name is required")
-    if (!formData.description.trim()) errors.push("Description is required")
-    if (!formData.location.trim()) errors.push("Location is required")
-    if (!formData.email.trim()) errors.push("Email is required")
-    if (!formData.phone.trim()) errors.push("Phone is required")
-    if (formData.establishedYear < 1900 || formData.establishedYear > new Date().getFullYear()) {
-      errors.push("Please enter a valid established year")
-    }
-    if (formData.rating < 0 || formData.rating > 5) {
-      errors.push("Rating must be between 0 and 5")
-    }
-    if (formData.totalProjects < 0) errors.push("Total projects cannot be negative")
-    if (formData.activeProjects < 0) errors.push("Active projects cannot be negative")
-    if (formData.completedProjects < 0) errors.push("Completed projects cannot be negative")
+  // Validate entire form
+  const validateForm = (): boolean => {
+    const newErrors: FieldErrors = {}
     
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (formData.email && !emailRegex.test(formData.email)) {
-      errors.push("Please enter a valid email address")
-    }
+    // Validate all fields
+    Object.keys(formData).forEach(key => {
+      const error = validateField(key, formData[key as keyof DeveloperFormData], formData)
+      if (error) newErrors[key] = error
+    })
 
-    // Website validation
-    if (formData.website && !formData.website.startsWith('http')) {
-      errors.push("Website URL must start with http:// or https://")
-    }
+    // Validate description sections
+    formData.description.forEach((section, index) => {
+      if (!section.description.trim()) {
+        newErrors[`description-${index}`] = 'Description is required'
+      }
+      if (section.description.length > 500) {
+        newErrors[`description-${index}`] = 'Description cannot exceed 500 characters'
+      }
+      if (section.title && section.title.length > 100) {
+        newErrors[`description-title-${index}`] = 'Title cannot exceed 100 characters'
+      }
+    })
 
-    // For add mode, images are required
+    // Validate awards
+    formData.awards.forEach((award, index) => {
+      if (!award.name.trim()) {
+        newErrors[`award-name-${index}`] = 'Award name is required'
+      }
+      if (award.name.length > 200) {
+        newErrors[`award-name-${index}`] = 'Award name cannot exceed 200 characters'
+      }
+    })
+
+    // Image validation for add mode
     if (mode === 'add') {
-      if (!formData.logo) errors.push("Logo is required")
-      if (!formData.coverImage) errors.push("Cover image is required")
+      if (!formData.logo) newErrors['logo'] = 'Logo is required'
+      if (!formData.coverImage) newErrors['coverImage'] = 'Cover image is required'
     }
 
-    return errors
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    const errors = validateForm()
-    if (errors.length > 0) {
-      toast.error(`Please fix the following errors:\n${errors.join('\n')}`)
+    if (!validateForm()) {
+      toast.error("Please fix all validation errors before submitting")
       return
     }
 
-    setIsSubmitting(true)
-    setError("")
+    setSubmissionState({
+      isSubmitting: true,
+      apiError: null,
+      networkError: false
+    });
 
     try {
-      // Generate slug from name
-      const slug = generateSlug(formData.name)
-      
-      // Create FormData for file upload
       const submitData = new FormData()
       
       // Add all form fields
       submitData.append('name', formData.name)
-      submitData.append('slug', slug)
-      submitData.append('description', formData.description)
+      submitData.append('description', JSON.stringify(formData.description))
+      submitData.append('overview', formData.overview)
       submitData.append('location', formData.location)
       submitData.append('establishedYear', formData.establishedYear.toString())
-      submitData.append('totalProjects', formData.totalProjects.toString())
-      submitData.append('activeProjects', formData.activeProjects.toString())
-      submitData.append('completedProjects', formData.completedProjects.toString())
       submitData.append('website', formData.website)
       submitData.append('email', formData.email)
       submitData.append('phone', formData.phone)
-      submitData.append('rating', formData.rating.toString())
       submitData.append('verified', formData.verified.toString())
       submitData.append('specialization', JSON.stringify(formData.specialization))
+      submitData.append('awards', JSON.stringify(formData.awards))
 
       // Add files if provided
-      if (formData.logo) {
-        submitData.append('logoFile', formData.logo)
-      }
-      if (formData.coverImage) {
-        submitData.append('coverImageFile', formData.coverImage)
-      }
-
-      // Add existing URLs for edit mode
-      if (mode === 'edit' && developer) {
-        submitData.append('existingLogo', developer.logo || '')
-        submitData.append('existingCoverImage', developer.coverImage || '')
-        if (developer._id) {
-          submitData.append('_id', developer._id)
-        }
-      }
+      if (formData.logo) submitData.append('logoFile', formData.logo)
+      if (formData.coverImage) submitData.append('coverImageFile', formData.coverImage)
 
       const endpoint = mode === 'add' ? '/api/developers/add' : `/api/developers/update/${developer?.slug}`
       const method = mode === 'add' ? 'POST' : 'PUT'
@@ -401,19 +816,61 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to save developer')
+        // Handle different types of API errors
+        const apiError: ApiError = {
+          message: result.message || 'An error occurred',
+          error: result.error || 'UNKNOWN_ERROR',
+          errors: result.errors || {}
+        };
+
+        // Set field-specific errors if they exist
+        if (result.errors && typeof result.errors === 'object') {
+          const newFieldErrors: FieldErrors = {};
+          
+          Object.entries(result.errors).forEach(([field, messages]) => {
+            if (Array.isArray(messages) && messages.length > 0) {
+              newFieldErrors[field] = messages[0]; // Take first error message
+            }
+          });
+          
+          setErrors(prev => ({ ...prev, ...newFieldErrors }));
+        }
+
+        setSubmissionState({
+          isSubmitting: false,
+          apiError,
+          networkError: false
+        });
+
+        // Show toast for immediate feedback
+        toast.error(apiError.message);
+        return;
       }
 
+      // Success
       toast.success(`Developer ${mode === 'edit' ? 'updated' : 'created'} successfully!`)
-      onSuccess?.(result)
+      onSuccess?.(result.developer)
       handleClose()
+
     } catch (error) {
       console.error('Error saving developer:', error)
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred'
-      setError(errorMessage)
-      toast.error(`Failed to ${mode === 'edit' ? 'update' : 'create'} developer: ${errorMessage}`)
-    } finally {
-      setIsSubmitting(false)
+      
+      // Handle network errors
+      const isNetworkError = error instanceof TypeError && error.message.includes('fetch');
+      const errorMessage = isNetworkError 
+        ? 'Network error. Please check your connection and try again.' 
+        : error instanceof Error ? error.message : 'An unexpected error occurred';
+
+      setSubmissionState({
+        isSubmitting: false,
+        apiError: {
+          message: errorMessage,
+          error: isNetworkError ? 'NETWORK_ERROR' : 'UNEXPECTED_ERROR'
+        },
+        networkError: isNetworkError
+      });
+
+      toast.error(errorMessage);
     }
   }
 
@@ -421,7 +878,12 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
     setFormData(initialFormData)
     setLogoPreview(null)
     setCoverImagePreview(null)
-    setError("")
+    setErrors({})
+    setSubmissionState({
+      isSubmitting: false,
+      apiError: null,
+      networkError: false
+    });
     onClose()
   }
 
@@ -437,12 +899,6 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
         <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0">
           <div className="space-y-8 py-4">
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                {error}
-              </div>
-            )}
-
             {/* Basic Information */}
             <Card>
               <CardHeader>
@@ -450,39 +906,171 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="name">Developer Name *</Label>
-                    <Input
-                      id="name"
-                      placeholder="Enter developer name"
-                      value={formData.name}
-                      onChange={(e) => handleInputChange("name", e.target.value)}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="location">Location *</Label>
-                    <Input
-                      id="location"
-                      placeholder="e.g., Dubai, UAE"
-                      value={formData.location}
-                      onChange={(e) => handleInputChange("location", e.target.value)}
-                      className="mt-1"
-                    />
-                  </div>
+                  <ValidatedInput
+                    label="Developer Name"
+                    field="name"
+                    value={formData.name}
+                    onChange={(value) => handleInputChange("name", value)}
+                    formData={formData}
+                    errors={errors}
+                    setErrors={setErrors}
+                    placeholder="Enter developer name"
+                    required
+                    maxLength={100}
+                  />
+                  <ValidatedInput
+                    label="Location"
+                    field="location"
+                    value={formData.location}
+                    onChange={(value) => handleInputChange("location", value)}
+                    formData={formData}
+                    errors={errors}
+                    setErrors={setErrors}
+                    placeholder="e.g., Dubai, UAE"
+                    required
+                    maxLength={100}
+                  />
                 </div>
 
                 <div>
-                  <Label htmlFor="description">Description *</Label>
+                  <Label htmlFor="overview">
+                    Overview <span className="text-red-500">*</span>
+                  </Label>
                   <Textarea
-                    id="description"
-                    placeholder="Enter developer description"
-                    value={formData.description}
-                    onChange={(e) => handleInputChange("description", e.target.value)}
-                    rows={4}
-                    className="mt-1"
+                    id="overview"
+                    placeholder="Brief overview (max 20 words)"
+                    value={formData.overview}
+                    onChange={(e) => {
+                      const newValue = e.target.value
+                      const wordCount = getWordCount(newValue)
+                      if (wordCount <= 20) {
+                        handleInputChange("overview", newValue)
+                        setErrors(prev => ({ ...prev, overview: validateField("overview", newValue, formData) }))
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const pastedText = e.clipboardData.getData('text')
+                      const wordCount = getWordCount(pastedText)
+                      if (wordCount > 20) {
+                        e.preventDefault()
+                        const words = pastedText.trim().split(/\s+/).slice(0, 20)
+                        const trimmedText = words.join(' ')
+                        handleInputChange("overview", trimmedText)
+                        setErrors(prev => ({ ...prev, overview: validateField("overview", trimmedText, formData) }))
+                      }
+                    }}
+                    rows={2}
+                    className={`mt-1 ${errors.overview ? 'border-red-500' : ''}`}
                   />
+                  <WordCounter current={getWordCount(formData.overview)} max={20} />
+                  {errors.overview && (
+                    <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.overview}
+                    </div>
+                  )}
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Description Sections */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Description Sections
+                  <Button type="button" variant="outline" size="sm" onClick={addDescriptionSection}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Section
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {formData.description.map((section, index) => (
+                  <div key={index} className="border p-4 rounded-lg space-y-3">
+                    <div className="flex justify-between items-center">
+                      <Label>Section {index + 1}</Label>
+                      {formData.description.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeDescriptionSection(index)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <Label>Title (Optional)</Label>
+                      <Input
+                        placeholder="Section title"
+                        value={section.title || ""}
+                        onChange={(e) => {
+                          const newValue = e.target.value
+                          if (newValue.length <= 100) {
+                            updateDescriptionSection(index, 'title', newValue)
+                          }
+                        }}
+                        onPaste={(e) => {
+                          const pastedText = e.clipboardData.getData('text')
+                          if (pastedText.length > 100) {
+                            e.preventDefault()
+                            const trimmedText = pastedText.slice(0, 100)
+                            updateDescriptionSection(index, 'title', trimmedText)
+                          }
+                        }}
+                        className={`mt-1 ${errors[`description-title-${index}`] ? 'border-red-500' : ''}`}
+                      />
+                      <CharacterCounter current={(section.title || "").length} max={100} />
+                      {errors[`description-title-${index}`] && (
+                        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                          <AlertCircle className="h-3 w-3" />
+                          {errors[`description-title-${index}`]}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label>Description <span className="text-red-500">*</span></Label>
+                      <Textarea
+                        placeholder="Section description"
+                        value={section.description}
+                        onChange={(e) => {
+                          const newValue = e.target.value
+                          if (newValue.length <= 500) {
+                            updateDescriptionSection(index, 'description', newValue)
+                            setErrors(prev => ({ 
+                              ...prev, 
+                              [`description-${index}`]: newValue.trim() ? '' : 'Description is required'
+                            }))
+                          }
+                        }}
+                        onPaste={(e) => {
+                          const pastedText = e.clipboardData.getData('text')
+                          if (pastedText.length > 500) {
+                            e.preventDefault()
+                            const trimmedText = pastedText.slice(0, 500)
+                            updateDescriptionSection(index, 'description', trimmedText)
+                            setErrors(prev => ({ 
+                              ...prev, 
+                              [`description-${index}`]: trimmedText.trim() ? '' : 'Description is required'
+                            }))
+                          }
+                        }}
+                        rows={3}
+                        className={`mt-1 ${errors[`description-${index}`] ? 'border-red-500' : ''}`}
+                      />
+                      <CharacterCounter current={section.description.length} max={500} />
+                      {errors[`description-${index}`] && (
+                        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                          <AlertCircle className="h-3 w-3" />
+                          {errors[`description-${index}`]}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </CardContent>
             </Card>
 
@@ -493,77 +1081,39 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="establishedYear">Established Year *</Label>
-                    <Input
-                      id="establishedYear"
-                      type="number"
-                      min="1900"
-                      max={new Date().getFullYear()}
-                      value={formData.establishedYear}
-                      onChange={(e) => handleInputChange("establishedYear", Number.parseInt(e.target.value) || new Date().getFullYear())}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="rating">Rating (0-5) *</Label>
-                    <Input
-                      id="rating"
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="5"
-                      value={formData.rating}
-                      onChange={(e) => handleInputChange("rating", Number.parseFloat(e.target.value) || 0)}
-                      className="mt-1"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="totalProjects">Total Projects</Label>
-                    <Input
-                      id="totalProjects"
-                      type="number"
-                      min="0"
-                      value={formData.totalProjects}
-                      onChange={(e) => handleInputChange("totalProjects", Number.parseInt(e.target.value) || 0)}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="activeProjects">Active Projects</Label>
-                    <Input
-                      id="activeProjects"
-                      type="number"
-                      min="0"
-                      value={formData.activeProjects}
-                      onChange={(e) => handleInputChange("activeProjects", Number.parseInt(e.target.value) || 0)}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="completedProjects">Completed Projects</Label>
-                    <Input
-                      id="completedProjects"
-                      type="number"
-                      min="0"
-                      value={formData.completedProjects}
-                      onChange={(e) => handleInputChange("completedProjects", Number.parseInt(e.target.value) || 0)}
-                      className="mt-1"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2 pt-2">
-                  <Checkbox
-                    id="verified"
-                    checked={formData.verified}
-                    onCheckedChange={(checked) => handleInputChange("verified", checked as boolean)}
+                  <ValidatedInput
+                    label="Established Year"
+                    field="establishedYear"
+                    type="number"
+                    value={formData.establishedYear}
+                    onChange={(value) => handleInputChange("establishedYear", value)}
+                    formData={formData}
+                    errors={errors}
+                    setErrors={setErrors}
+                    required
                   />
-                  <Label htmlFor="verified">Verified Developer</Label>
+                  <div>
+                    <div className="flex items-center space-x-2 pt-6">
+                      <Checkbox
+                        id="verified"
+                        checked={formData.verified}
+                        onCheckedChange={(checked) => handleInputChange("verified", checked as boolean)}
+                      />
+                      <Label htmlFor="verified">Verified Developer</Label>
+                    </div>
+                  </div>
                 </div>
+
+                <ValidatedInput
+                  label="Website"
+                  field="website"
+                  value={formData.website}
+                  onChange={(value) => handleInputChange("website", value)}
+                  formData={formData}
+                  errors={errors}
+                  setErrors={setErrors}
+                  placeholder="https://www.example.com"
+                />
               </CardContent>
             </Card>
 
@@ -573,38 +1123,30 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                 <CardTitle>Contact Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="website">Website</Label>
-                    <Input
-                      id="website"
-                      placeholder="https://www.example.com"
-                      value={formData.website}
-                      onChange={(e) => handleInputChange("website", e.target.value)}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="email">Email *</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="info@example.com"
-                      value={formData.email}
-                      onChange={(e) => handleInputChange("email", e.target.value)}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="phone">Phone *</Label>
-                    <Input
-                      id="phone"
-                      placeholder="+971 4 123 4567"
-                      value={formData.phone}
-                      onChange={(e) => handleInputChange("phone", e.target.value)}
-                      className="mt-1"
-                    />
-                  </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <ValidatedInput
+                    label="Email"
+                    field="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(value) => handleInputChange("email", value)}
+                    formData={formData}
+                    errors={errors}
+                    setErrors={setErrors}
+                    placeholder="nsr@noorsaray.com"
+                    required
+                  />
+                  <ValidatedInput
+                    label="Phone"
+                    field="phone"
+                    value={formData.phone}
+                    onChange={(value) => handleInputChange("phone", value)}
+                    formData={formData}
+                    errors={errors}
+                    setErrors={setErrors}
+                    placeholder="+971 509856282"
+                    required
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -613,7 +1155,7 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
             <Card>
               <CardHeader>
                 <CardTitle>
-                  Images {mode === 'add' ? '*' : '(Optional - leave blank to keep existing)'}
+                  Images {mode === 'add' ? <span className="text-red-500">*</span> : '(Optional - leave blank to keep existing)'}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -625,6 +1167,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                     preview={logoPreview}
                     onRemove={removeLogo}
                     required={mode === 'add'}
+                    errors={errors}
+                    field="logo"
                   />
                   <ImageUpload
                     label="Cover Image"
@@ -633,6 +1177,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                     preview={coverImagePreview}
                     onRemove={removeCoverImage}
                     required={mode === 'add'}
+                    errors={errors}
+                    field="coverImage"
                   />
                 </div>
               </CardContent>
@@ -658,6 +1204,112 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                     </div>
                   ))}
                 </div>
+                {errors.specialization && (
+                  <div className="flex items-center gap-1 text-red-500 text-xs mt-2">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.specialization}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Awards */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Awards (Optional)
+                  <Button type="button" variant="outline" size="sm" onClick={addAward}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Award
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {formData.awards.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No awards added yet. Click "Add Award" to add awards.</p>
+                ) : (
+                  formData.awards.map((award, index) => (
+                    <div key={index} className="border p-4 rounded-lg space-y-3">
+                      <div className="flex justify-between items-center">
+                        <Label>Award {index + 1}</Label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeAward(index)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Award Name <span className="text-red-500">*</span></Label>
+                          <Input
+                            placeholder="Award name"
+                            value={award.name}
+                            onChange={(e) => {
+                              const newValue = e.target.value
+                              if (newValue.length <= 200) {
+                                updateAward(index, 'name', newValue)
+                                setErrors(prev => ({ 
+                                  ...prev, 
+                                  [`award-name-${index}`]: newValue.trim() ? '' : 'Award name is required'
+                                }))
+                              }
+                            }}
+                            onPaste={(e) => {
+                              const pastedText = e.clipboardData.getData('text')
+                              if (pastedText.length > 200) {
+                                e.preventDefault()
+                                const trimmedText = pastedText.slice(0, 200)
+                                updateAward(index, 'name', trimmedText)
+                                setErrors(prev => ({ 
+                                  ...prev, 
+                                  [`award-name-${index}`]: trimmedText.trim() ? '' : 'Award name is required'
+                                }))
+                              }
+                            }}
+                            className={`mt-1 ${errors[`award-name-${index}`] ? 'border-red-500' : ''}`}
+                          />
+                          <CharacterCounter current={award.name.length} max={200} />
+                          {errors[`award-name-${index}`] && (
+                            <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                              <AlertCircle className="h-3 w-3" />
+                              {errors[`award-name-${index}`]}
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <Label>Year <span className="text-red-500">*</span></Label>
+                          <Input
+                            type="number"
+                            placeholder="2023"
+                            min="1900"
+                            max={new Date().getFullYear()}
+                            value={award.year}
+                            onChange={(e) => {
+                              const year = parseInt(e.target.value) || new Date().getFullYear()
+                              updateAward(index, 'year', year)
+                              const currentYear = new Date().getFullYear()
+                              const error = year < 1900 ? 'Year cannot be before 1900' : 
+                                           year > currentYear ? 'Year cannot be in the future' : ''
+                              setErrors(prev => ({ ...prev, [`award-year-${index}`]: error }))
+                            }}
+                            className={`mt-1 ${errors[`award-year-${index}`] ? 'border-red-500' : ''}`}
+                          />
+                          {errors[`award-year-${index}`] && (
+                            <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                              <AlertCircle className="h-3 w-3" />
+                              {errors[`award-year-${index}`]}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
 
@@ -694,12 +1346,6 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                           <Calendar className="h-4 w-4" />
                           Est. {formData.establishedYear}
                         </div>
-                        {formData.rating > 0 && (
-                          <div className="flex items-center gap-1">
-                            <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                            {formData.rating}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -709,30 +1355,48 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                   )}
                 </div>
 
-                {/* Description */}
-                <div>
-                  <h4 className="font-semibold mb-2">About</h4>
-                  <p className="text-gray-700">{formData.description || "No description provided"}</p>
-                </div>
+                {/* Overview */}
+                {formData.overview && (
+                  <div>
+                    <h4 className="font-semibold mb-2">Overview</h4>
+                    <p className="text-gray-700">{formData.overview}</p>
+                  </div>
+                )}
 
-                {/* Stats */}
-                <div>
-                  <h4 className="font-semibold mb-3">Projects Overview</h4>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-blue-600">{formData.totalProjects}</div>
-                      <div className="text-sm text-gray-600">Total Projects</div>
-                    </div>
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-green-600">{formData.activeProjects}</div>
-                      <div className="text-sm text-gray-600">Active Projects</div>
-                    </div>
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-purple-600">{formData.completedProjects}</div>
-                      <div className="text-sm text-gray-600">Completed Projects</div>
+                {/* Description */}
+                {formData.description.some(section => section.description.trim()) && (
+                  <div>
+                    <h4 className="font-semibold mb-2">About</h4>
+                    <div className="space-y-3">
+                      {formData.description
+                        .filter(section => section.description.trim())
+                        .map((section, index) => (
+                        <div key={index}>
+                          {section.title && (
+                            <h5 className="font-medium mb-1">{section.title}</h5>
+                          )}
+                          <p className="text-gray-700">{section.description}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* Awards */}
+                {formData.awards.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-3">Awards & Recognition</h4>
+                    <div className="space-y-2">
+                      {formData.awards.map((award, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Star className="h-4 w-4 text-yellow-500" />
+                          <span className="font-medium">{award.name}</span>
+                          <span className="text-gray-500">({award.year})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Specialization */}
                 {formData.specialization.length > 0 && (
@@ -786,16 +1450,27 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
 
         {/* Action Buttons */}
         <div className="border-t p-6 bg-gray-50 flex-shrink-0">
+          {/* Error Display */}
+          <ErrorDisplay 
+            submissionState={submissionState}
+            onRetry={() => {
+              setSubmissionState(prev => ({ ...prev, apiError: null, networkError: false }));
+            }}
+          />
+          
           <div className="flex gap-2 justify-between">
-            <Button variant="outline" onClick={fillFakeData}>
+            <Button variant="outline" onClick={fillFakeData} disabled={submissionState.isSubmitting}>
               Fill Test Data
             </Button>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
+              <Button variant="outline" onClick={handleClose} disabled={submissionState.isSubmitting}>
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? 
+              <Button 
+                onClick={handleSubmit} 
+                disabled={submissionState.isSubmitting || Object.keys(errors).some(key => errors[key])}
+              >
+                {submissionState.isSubmitting ? 
                   (mode === "edit" ? "Updating..." : "Creating...") : 
                   (mode === "edit" ? "Update Developer" : "Create Developer")
                 }

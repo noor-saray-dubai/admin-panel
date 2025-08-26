@@ -1,21 +1,29 @@
 import mongoose, { Schema, Document, model, models } from "mongoose"
 
+interface IDescriptionSection {
+  title?: string
+  description: string
+}
+
+interface IAward {
+  name: string
+  year: number
+}
+
 interface IDeveloper extends Document {
   name: string
   slug: string
   logo: string
   coverImage: string
-  description: string
+  description: IDescriptionSection[]
+  overview: string
   location: string
   establishedYear: number
-  totalProjects: number
-  activeProjects: number
-  completedProjects: number
   website: string
   email: string
   phone: string
   specialization: string[]
-  rating: number
+  awards: IAward[]
   verified: boolean
   createdAt: Date
   updatedAt: Date
@@ -41,9 +49,7 @@ const DeveloperSchema = new Schema<IDeveloper>(
       type: String, 
       required: [true, 'Logo is required'],
       validate: {
-        validator: function(v: string) {
-          return /^https?:\/\/.+/.test(v) || v === ''
-        },
+        validator: (v: string) => /^https?:\/\/.+/.test(v) || v === '',
         message: 'Logo must be a valid URL'
       }
     },
@@ -51,17 +57,32 @@ const DeveloperSchema = new Schema<IDeveloper>(
       type: String, 
       required: [true, 'Cover image is required'],
       validate: {
-        validator: function(v: string) {
-          return /^https?:\/\/.+/.test(v) || v === ''
-        },
+        validator: (v: string) => /^https?:\/\/.+/.test(v) || v === '',
         message: 'Cover image must be a valid URL'
       }
     },
-    description: { 
+    description: [{
+      title: { 
+        type: String, 
+        trim: true,
+        maxlength: [100, 'Section title cannot exceed 100 characters']
+      },
+      description: { 
+        type: String, 
+        required: [true, 'Description is required'],
+        trim: true,
+        maxlength: [500, 'Section description cannot exceed 500 characters']
+      },
+      _id: false
+    }],
+    overview: { 
       type: String, 
-      required: [true, 'Description is required'],
+      required: [true, 'Overview is required'],
       trim: true,
-      maxlength: [1000, 'Description cannot exceed 1000 characters']
+      validate: {
+        validator: (v: string) => v.trim().split(/\s+/).length <= 20,
+        message: 'Overview cannot exceed 20 words'
+      }
     },
     location: { 
       type: String, 
@@ -75,31 +96,9 @@ const DeveloperSchema = new Schema<IDeveloper>(
       min: [1800, 'Established year cannot be before 1800'],
       max: [new Date().getFullYear(), 'Established year cannot be in the future']
     },
-    totalProjects: { 
-      type: Number, 
-      required: [true, 'Total projects is required'],
-      min: [0, 'Total projects cannot be negative']
-    },
-    activeProjects: { 
-      type: Number, 
-      required: [true, 'Active projects is required'],
-      min: [0, 'Active projects cannot be negative']
-    },
-    completedProjects: { 
-      type: Number, 
-      required: [true, 'Completed projects is required'],
-      min: [0, 'Completed projects cannot be negative']
-    },
     website: { 
       type: String, 
-      required: false,
-      trim: true,
-    //   validate: {
-    //     validator: function(v: string) {
-    //       return !v || /^https?:\/\/.+/.test(v)
-    //     },
-    //     message: 'Website must be a valid URL'
-    //   }
+      trim: true
     },
     email: { 
       type: String, 
@@ -117,21 +116,30 @@ const DeveloperSchema = new Schema<IDeveloper>(
       type: [String], 
       required: [true, 'At least one specialization is required'],
       validate: {
-        validator: function(v: string[]) {
-          return v && v.length > 0
-        },
+        validator: (v: string[]) => v?.length > 0,
         message: 'At least one specialization must be selected'
       }
     },
-    rating: { 
-      type: Number, 
-      required: [true, 'Rating is required'],
-      min: [0, 'Rating cannot be less than 0'],
-      max: [5, 'Rating cannot be more than 5']
+    awards: {
+      type: [{
+        name: { 
+          type: String, 
+          required: [true, 'Award name is required'],
+          trim: true,
+          maxlength: [200, 'Award name cannot exceed 200 characters']
+        },
+        year: { 
+          type: Number, 
+          required: [true, 'Award year is required'],
+          min: [1900, 'Award year cannot be before 1900'],
+          max: [new Date().getFullYear(), 'Award year cannot be in the future']
+        },
+        _id: false
+      }],
+      default: []
     },
     verified: { 
       type: Boolean, 
-      required: [true, 'Verified status is required'],
       default: false
     }
   },
@@ -142,30 +150,11 @@ const DeveloperSchema = new Schema<IDeveloper>(
   }
 )
 
-// Indexes for better query performance
-DeveloperSchema.index({ slug: 1 })
-DeveloperSchema.index({ name: 1 })
-DeveloperSchema.index({ location: 1 })
-DeveloperSchema.index({ verified: 1 })
-DeveloperSchema.index({ rating: -1 })
+// Optimized compound indexes for common queries
+DeveloperSchema.index({ verified: 1, location: 1 })
+DeveloperSchema.index({ verified: 1, specialization: 1 })
+DeveloperSchema.index({ slug: 1 }, { unique: true })
 DeveloperSchema.index({ createdAt: -1 })
-
-// Virtual for calculating project completion percentage
-DeveloperSchema.virtual('completionRate').get(function() {
-  if (this.totalProjects === 0) return 0
-  return Math.round((this.completedProjects / this.totalProjects) * 100)
-})
-
-// Pre-save middleware to ensure data consistency
-DeveloperSchema.pre('save', function(next) {
-  // Ensure total projects is at least the sum of active and completed
-  const minTotal = this.activeProjects + this.completedProjects
-  if (this.totalProjects < minTotal) {
-    this.totalProjects = minTotal
-  }
-  
-  next()
-})
 
 // Static method to find developers by specialization
 DeveloperSchema.statics.findBySpecialization = function(specialization: string) {
@@ -182,10 +171,10 @@ DeveloperSchema.methods.getSummary = function() {
   return {
     name: this.name,
     location: this.location,
-    rating: this.rating,
-    totalProjects: this.totalProjects,
+    totalAwards: this.awards.length,
     verified: this.verified,
-    specialization: this.specialization
+    specialization: this.specialization,
+    overview: this.overview
   }
 }
 
