@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useMemo, memo } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   Card,
@@ -81,7 +81,25 @@ interface PaginationData {
   limit: number
 }
 
-function DeveloperCard({
+// Custom debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
+
+// Memoized DeveloperCard component
+const DeveloperCard = memo(function DeveloperCard({
   developer,
   onView,
   onEdit,
@@ -92,15 +110,15 @@ function DeveloperCard({
   onEdit: (developer: Developer) => void
   onDelete: (developer: Developer) => void
 }) {
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
     })
-  }
+  }, [])
 
-  const getTimeAgo = (dateString: string) => {
+  const getTimeAgo = useCallback((dateString: string) => {
     const now = new Date()
     const date = new Date(dateString)
     const diffInMs = now.getTime() - date.getTime()
@@ -111,7 +129,35 @@ function DeveloperCard({
     if (diffInDays < 7) return `${diffInDays} days ago`
     if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`
     return formatDate(dateString)
-  }
+  }, [formatDate])
+
+  const handleView = useCallback(() => onView(developer), [onView, developer])
+  const handleEdit = useCallback(() => onEdit(developer), [onEdit, developer])
+  const handleDelete = useCallback(() => onDelete(developer), [onDelete, developer])
+
+  // Memoize specialization badges
+  const specializationBadges = useMemo(() => {
+    const visibleSpecs = developer.specialization.slice(0, 3)
+    const remainingCount = developer.specialization.length - 3
+
+    return (
+      <div className="flex flex-wrap gap-1">
+        {visibleSpecs.map((spec, index) => (
+          <Badge key={`${spec}-${index}`} variant="outline" className="text-xs">
+            {spec}
+          </Badge>
+        ))}
+        {remainingCount > 0 && (
+          <Badge variant="outline" className="text-xs">
+            +{remainingCount} more
+          </Badge>
+        )}
+      </div>
+    )
+  }, [developer.specialization])
+
+  const createdTime = useMemo(() => getTimeAgo(developer.createdAt), [getTimeAgo, developer.createdAt])
+  const updatedTime = useMemo(() => getTimeAgo(developer.updatedAt), [getTimeAgo, developer.updatedAt])
 
   return (
     <Card className="hover:shadow-lg transition-shadow">
@@ -122,6 +168,7 @@ function DeveloperCard({
               src={developer?.logo || "/placeholder.svg"}
               alt={developer.name}
               className="w-12 h-12 object-cover rounded-lg border"
+              loading="lazy"
             />
             <div>
               <CardTitle className="text-lg">{developer.name}</CardTitle>
@@ -145,15 +192,15 @@ function DeveloperCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onView(developer)}>
+              <DropdownMenuItem onClick={handleView}>
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onEdit(developer)}>
+              <DropdownMenuItem onClick={handleEdit}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Developer
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDelete(developer)} className="text-red-600">
+              <DropdownMenuItem onClick={handleDelete} className="text-red-600">
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Developer
               </DropdownMenuItem>
@@ -163,18 +210,7 @@ function DeveloperCard({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-1">
-          {developer.specialization.slice(0, 3).map((spec, index) => (
-            <Badge key={index} variant="outline" className="text-xs">
-              {spec}
-            </Badge>
-          ))}
-          {developer.specialization.length > 3 && (
-            <Badge variant="outline" className="text-xs">
-              +{developer.specialization.length - 3} more
-            </Badge>
-          )}
-        </div>
+        {specializationBadges}
 
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center space-x-1">
@@ -184,13 +220,64 @@ function DeveloperCard({
         </div>
 
         <div className="space-y-2 text-xs text-muted-foreground">
-          <div>Created: {getTimeAgo(developer.createdAt)}</div>
-          <div>Updated: {getTimeAgo(developer.updatedAt)}</div>
+          <div>Created: {createdTime}</div>
+          <div>Updated: {updatedTime}</div>
         </div>
       </CardContent>
     </Card>
   )
-}
+})
+
+// Memoized LoadingCard component
+const LoadingCard = memo(function LoadingCard() {
+  return (
+    <Card className="animate-pulse">
+      <CardHeader>
+        <div className="flex items-center space-x-3">
+          <div className="w-12 h-12 bg-gray-200 rounded-lg" />
+          <div className="space-y-2">
+            <div className="h-4 bg-gray-200 rounded w-32" />
+            <div className="h-3 bg-gray-200 rounded w-24" />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="h-6 bg-gray-200 rounded w-16" />
+            <div className="h-6 bg-gray-200 rounded w-20" />
+          </div>
+          <div className="h-4 bg-gray-200 rounded w-24" />
+        </div>
+      </CardContent>
+    </Card>
+  )
+})
+
+// Memoized StatsCard component
+const StatsCard = memo(function StatsCard({
+  title,
+  value,
+  icon: Icon,
+  color
+}: {
+  title: string
+  value: string
+  icon: React.ComponentType<{ className?: string }>
+  color: string
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <Icon className={`h-4 w-4 ${color}`} />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+      </CardContent>
+    </Card>
+  )
+})
 
 export function DevelopersPage() {
   const searchParams = useSearchParams()
@@ -206,20 +293,24 @@ export function DevelopersPage() {
   const [sortOrder, setSortOrder] = useState("desc")
   const [currentPage, setCurrentPage] = useState(1)
 
+  // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [selectedDeveloper, setSelectedDeveloper] = useState<Developer | null>(null)
 
-  // Fetch developers with pagination and search
-  const fetchDevelopers = async () => {
+  // Debounce search query
+  const debouncedSearchQuery = useDebounce(searchQuery, 500)
+
+  // Memoized fetch function
+  const fetchDevelopers = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: '20',
-        search: searchQuery,
+        search: debouncedSearchQuery,
         sortBy: sortBy,
         sortOrder: sortOrder
       })
@@ -238,11 +329,11 @@ export function DevelopersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage, debouncedSearchQuery, sortBy, sortOrder])
 
   useEffect(() => {
     fetchDevelopers()
-  }, [currentPage, searchQuery, sortBy, sortOrder])
+  }, [fetchDevelopers])
 
   // Handle modal trigger from URL
   useEffect(() => {
@@ -251,22 +342,23 @@ export function DevelopersPage() {
     }
   }, [action])
 
-  const handleView = (developer: Developer) => {
+  // Memoized event handlers
+  const handleView = useCallback((developer: Developer) => {
     setSelectedDeveloper(developer)
     setIsViewModalOpen(true)
-  }
+  }, [])
 
-  const handleEdit = (developer: Developer) => {
+  const handleEdit = useCallback((developer: Developer) => {
     setSelectedDeveloper(developer)
     setIsEditModalOpen(true)
-  }
+  }, [])
 
-  const handleDelete = (developer: Developer) => {
+  const handleDelete = useCallback((developer: Developer) => {
     setSelectedDeveloper(developer)
     setIsDeleteModalOpen(true)
-  }
+  }, [])
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = useCallback(async () => {
     if (selectedDeveloper) {
       try {
         const response = await fetch(`/api/developers/delete/${selectedDeveloper.slug}`, {
@@ -282,24 +374,51 @@ export function DevelopersPage() {
     }
     setIsDeleteModalOpen(false)
     setSelectedDeveloper(null)
-  }
+  }, [selectedDeveloper, fetchDevelopers])
 
-  const handleSearch = (value: string) => {
+  const handleSearch = useCallback((value: string) => {
     setSearchQuery(value)
     setCurrentPage(1) // Reset to first page when searching
-  }
+  }, [])
 
-  const handleSortChange = (value: string) => {
+  const handleSortChange = useCallback((value: string) => {
     setSortBy(value)
     setCurrentPage(1)
-  }
+  }, [])
 
-  const handleSortOrderChange = (value: string) => {
+  const handleSortOrderChange = useCallback((value: string) => {
     setSortOrder(value)
     setCurrentPage(1)
-  }
+  }, [])
 
-  const developerStats = [
+  // Memoized modal close handlers
+  const handleAddModalClose = useCallback(() => {
+    setIsAddModalOpen(false)
+    fetchDevelopers() // Refresh list after add
+  }, [fetchDevelopers])
+
+  const handleEditModalClose = useCallback(() => {
+    setIsEditModalOpen(false)
+    setSelectedDeveloper(null)
+    fetchDevelopers() // Refresh list after edit
+  }, [fetchDevelopers])
+
+  const handleViewModalClose = useCallback(() => {
+    setIsViewModalOpen(false)
+    setSelectedDeveloper(null)
+  }, [])
+
+  const handleDeleteModalClose = useCallback(() => {
+    setIsDeleteModalOpen(false)
+    setSelectedDeveloper(null)
+  }, [])
+
+  const handleOpenAddModal = useCallback(() => {
+    setIsAddModalOpen(true)
+  }, [])
+
+  // Memoized stats calculation
+  const developerStats = useMemo(() => [
     {
       title: "Total Developers",
       value: pagination?.totalDevelopers.toString() || "0",
@@ -324,7 +443,38 @@ export function DevelopersPage() {
       icon: Users,
       color: "text-yellow-600",
     },
-  ]
+  ], [pagination, developers])
+
+  // Memoized pagination controls
+  const paginationNumbers = useMemo(() => {
+    if (!pagination) return []
+    
+    return Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+      let pageNumber;
+      if (pagination.totalPages <= 5) {
+        pageNumber = i + 1;
+      } else if (pagination.currentPage <= 3) {
+        pageNumber = i + 1;
+      } else if (pagination.currentPage >= pagination.totalPages - 2) {
+        pageNumber = pagination.totalPages - 4 + i;
+      } else {
+        pageNumber = pagination.currentPage - 2 + i;
+      }
+      return pageNumber;
+    })
+  }, [pagination])
+
+  const handlePrevPage = useCallback(() => {
+    setCurrentPage(currentPage - 1)
+  }, [currentPage])
+
+  const handleNextPage = useCallback(() => {
+    setCurrentPage(currentPage + 1)
+  }, [currentPage])
+
+  const handlePageClick = useCallback((pageNumber: number) => {
+    setCurrentPage(pageNumber)
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -333,7 +483,7 @@ export function DevelopersPage() {
           <h1 className="text-3xl font-bold text-gray-900">Developers</h1>
           <p className="text-gray-600">Manage real estate developers and their profiles</p>
         </div>
-        <Button onClick={() => setIsAddModalOpen(true)}>
+        <Button onClick={handleOpenAddModal}>
           <Plus className="h-4 w-4 mr-2" />
           Add Developer
         </Button>
@@ -342,15 +492,13 @@ export function DevelopersPage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {developerStats.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              <stat.icon className={`h-4 w-4 ${stat.color}`} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
-            </CardContent>
-          </Card>
+          <StatsCard
+            key={stat.title}
+            title={stat.title}
+            value={stat.value}
+            icon={stat.icon}
+            color={stat.color}
+          />
         ))}
       </div>
 
@@ -392,26 +540,7 @@ export function DevelopersPage() {
       {loading ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[...Array(8)].map((_, index) => (
-            <Card key={index} className="animate-pulse">
-              <CardHeader>
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-gray-200 rounded-lg" />
-                  <div className="space-y-2">
-                    <div className="h-4 bg-gray-200 rounded w-32" />
-                    <div className="h-3 bg-gray-200 rounded w-24" />
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex gap-2">
-                    <div className="h-6 bg-gray-200 rounded w-16" />
-                    <div className="h-6 bg-gray-200 rounded w-20" />
-                  </div>
-                  <div className="h-4 bg-gray-200 rounded w-24" />
-                </div>
-              </CardContent>
-            </Card>
+            <LoadingCard key={index} />
           ))}
         </div>
       ) : (
@@ -438,42 +567,29 @@ export function DevelopersPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(currentPage - 1)}
+                  onClick={handlePrevPage}
                   disabled={!pagination.hasPrevPage}
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Previous
                 </Button>
                 <div className="flex items-center space-x-1">
-                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                    let pageNumber;
-                    if (pagination.totalPages <= 5) {
-                      pageNumber = i + 1;
-                    } else if (pagination.currentPage <= 3) {
-                      pageNumber = i + 1;
-                    } else if (pagination.currentPage >= pagination.totalPages - 2) {
-                      pageNumber = pagination.totalPages - 4 + i;
-                    } else {
-                      pageNumber = pagination.currentPage - 2 + i;
-                    }
-                    
-                    return (
-                      <Button
-                        key={pageNumber}
-                        variant={pagination.currentPage === pageNumber ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setCurrentPage(pageNumber)}
-                        className="w-8 h-8 p-0"
-                      >
-                        {pageNumber}
-                      </Button>
-                    );
-                  })}
+                  {paginationNumbers.map((pageNumber) => (
+                    <Button
+                      key={pageNumber}
+                      variant={pagination.currentPage === pageNumber ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handlePageClick(pageNumber)}
+                      className="w-8 h-8 p-0"
+                    >
+                      {pageNumber}
+                    </Button>
+                  ))}
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(currentPage + 1)}
+                  onClick={handleNextPage}
                   disabled={!pagination.hasNextPage}
                 >
                   Next
@@ -491,7 +607,7 @@ export function DevelopersPage() {
                 {searchQuery ? 'Try adjusting your search criteria' : 'Get started by adding your first developer'}
               </p>
               {!searchQuery && (
-                <Button onClick={() => setIsAddModalOpen(true)}>
+                <Button onClick={handleOpenAddModal}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Developer
                 </Button>
@@ -504,39 +620,26 @@ export function DevelopersPage() {
       {/* Modals */}
       <DeveloperFormModal
         isOpen={isAddModalOpen}
-        onClose={() => {
-          setIsAddModalOpen(false)
-          fetchDevelopers() // Refresh list after add
-        }}
+        onClose={handleAddModalClose}
         mode="add"
       />
 
       <DeveloperFormModal
         isOpen={isEditModalOpen}
-        onClose={() => {
-          setIsEditModalOpen(false)
-          setSelectedDeveloper(null)
-          fetchDevelopers() // Refresh list after edit
-        }}
+        onClose={handleEditModalClose}
         developer={selectedDeveloper}
         mode="edit"
       />
 
       <DeveloperViewModal
         isOpen={isViewModalOpen}
-        onClose={() => {
-          setIsViewModalOpen(false)
-          setSelectedDeveloper(null)
-        }}
+        onClose={handleViewModalClose}
         developer={selectedDeveloper}
       />
 
       <DeleteConfirmationModal
         isOpen={isDeleteModalOpen}
-        onClose={() => {
-          setIsDeleteModalOpen(false)
-          setSelectedDeveloper(null)
-        }}
+        onClose={handleDeleteModalClose}
         onConfirm={handleConfirmDelete}
         itemName={selectedDeveloper?.name || ""}
         itemType="Developer"

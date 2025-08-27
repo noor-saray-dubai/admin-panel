@@ -174,7 +174,7 @@ export function BlogsPage() {
   }
   useEffect(() => {
 
-    fetchBlogs()
+    // fetchBlogs()
   }, [])
 
   // Handle URL action parameter
@@ -300,7 +300,7 @@ export function BlogsPage() {
       </div>
 
       {/* Blogs Grid */}
-      {loading ? (
+      {/* {loading ? (
         <p className="text-gray-500">Loading blogs...</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -308,7 +308,7 @@ export function BlogsPage() {
             <BlogCard key={blog._id} blog={blog} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} />
           ))}
         </div>
-      )}
+      )} */}
 
       {/* Modals */}
       <BlogFormModal

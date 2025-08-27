@@ -615,9 +615,12 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
     
     // 3. Replace placeholder URLs with actual uploaded URLs in content blocks
     const processedContentBlocks = blogData.contentBlocks.map((block, index) => {
-      if (block.type === 'image' && block.url === '__UPLOAD_PLACEHOLDER__') {
+      console.log(`Processing content block at index ${index}:`, block);
+      if (block.type === 'image' && block.url === '') {
         const uploadedUrl = contentImageUrls[index];
+        console.log(`Processing image block at index ${index}: placeholder URL found .,contentImageUrls:`, contentImageUrls);
         if (uploadedUrl) {
+          console.log(`Replacing placeholder URL in block ${index} with uploaded URL: ${uploadedUrl}`);
           return {
             ...block,
             url: uploadedUrl
@@ -649,7 +652,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       version: 1,
       isActive: true,
     };
-
+    console.log("Prepared blog document for creation:", blogDocument);
     // Create blog post in database
     const newBlog = await Blog.create(blogDocument);
 

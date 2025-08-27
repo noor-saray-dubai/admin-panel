@@ -97,7 +97,7 @@ interface IBlog extends Document {
   excerpt: string;
   
   // Dynamic content blocks (replacing simple content string)
-  contentBlocks: (IParagraphBlock | IHeadingBlock | IImageBlock | ILinkBlock | IQuoteBlock | IListBlock)[];
+  contentBlocks: IContentBlock[];
   
   featuredImage?: string; // Single optional featured image
   author: string;
@@ -126,7 +126,6 @@ interface IBlog extends Document {
 // Content Segment Discriminator Schema
 // ----------------------
 const ContentSegmentSchema = new Schema({
-  type: { type: String, required: true },
   content: { type: String, required: true, trim: true, maxlength: 500 }
 }, { 
   discriminatorKey: 'type',
@@ -166,17 +165,16 @@ const TextFormattingSchema = new Schema({
   color: { type: String, default: "#000000", trim: true }
 }, { _id: false });
 
-// Content segment schemas (removed - now using discriminators above)
-
 // List item schema
 const ListItemSchema = new Schema({
   text: { type: String, required: true, trim: true, maxlength: 300 },
   subItems: [{ type: String, trim: true, maxlength: 300 }]
 }, { _id: false });
 
-// Content block schemas
+// ----------------------
+// Content Block Schemas
+// ----------------------
 const ParagraphBlockSchema = new Schema({
-  type: { type: String, enum: ["paragraph"], required: true },
   order: { type: Number, required: true, min: 1 },
   content: {
     type: [ContentSegmentSchema],
@@ -191,7 +189,6 @@ const ParagraphBlockSchema = new Schema({
 }, { _id: false });
 
 const HeadingBlockSchema = new Schema({
-  type: { type: String, enum: ["heading"], required: true },
   order: { type: Number, required: true, min: 1 },
   level: { type: Number, enum: [1, 2, 3, 4, 5, 6], required: true },
   content: { 
@@ -210,7 +207,6 @@ const HeadingBlockSchema = new Schema({
 }, { _id: false });
 
 const ImageBlockSchema = new Schema({
-  type: { type: String, enum: ["image"], required: true },
   order: { type: Number, required: true, min: 1 },
   url: { 
     type: String, 
@@ -226,7 +222,6 @@ const ImageBlockSchema = new Schema({
 }, { _id: false });
 
 const LinkBlockSchema = new Schema({
-  type: { type: String, enum: ["link"], required: true },
   order: { type: Number, required: true, min: 1 },
   url: { 
     type: String, 
@@ -244,7 +239,6 @@ const LinkBlockSchema = new Schema({
 }, { _id: false });
 
 const QuoteBlockSchema = new Schema({
-  type: { type: String, enum: ["quote"], required: true },
   order: { type: Number, required: true, min: 1 },
   content: {
     type: [ContentSegmentSchema],
@@ -261,7 +255,6 @@ const QuoteBlockSchema = new Schema({
 }, { _id: false });
 
 const ListBlockSchema = new Schema({
-  type: { type: String, enum: ["list"], required: true },
   order: { type: Number, required: true, min: 1 },
   listType: { type: String, enum: ["ordered", "unordered"], required: true },
   title: { type: String, required: true, trim: true, maxlength: 200 },
@@ -280,7 +273,9 @@ const ListBlockSchema = new Schema({
   color: { type: String, required: true, default: "#000000", trim: true }
 }, { _id: false });
 
+// ----------------------
 // Audit info schema
+// ----------------------
 const AuditInfoSchema = new Schema<IAuditInfo>(
   {
     email: { type: String, required: true, lowercase: true, trim: true },
@@ -295,7 +290,6 @@ const AuditInfoSchema = new Schema<IAuditInfo>(
 // Content Block Discriminator Schema
 // ----------------------
 const ContentBlockSchema = new Schema({
-  type: { type: String, required: true },
   order: { type: Number, required: true, min: 1 }
 }, { 
   discriminatorKey: 'type',
@@ -419,8 +413,6 @@ BlogSchema.methods.incrementViews = function (): Promise<IBlog> {
 
 BlogSchema.methods.validateContentStructure = function (): boolean {
   try {
-    // Additional custom validation logic can be added here
-    // This method can be used for complex content validation
     return this.contentBlocks && this.contentBlocks.length > 0;
   } catch (error) {
     return false;
