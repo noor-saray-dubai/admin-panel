@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -8,13 +8,49 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { Upload, X, Eye, Plus, Trash2 } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { Upload, X, Eye, Plus, Trash2, Search, AlertCircle } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-// Define the project interface for better type safety
+// Enums from schema
+const PROJECT_TYPES = ['Residential', 'Commercial', 'Mixed Use', 'Industrial', 'Hospitality', 'Retail']
+const PROJECT_STATUSES = ['Pre-Launch', 'Launched', 'Under Construction', 'Ready to Move', 'Completed', 'Sold Out']
+
+// Predefined amenity categories with their items
+const AMENITY_CATEGORIES = {
+  'Recreation': ['Swimming Pool', 'Gymnasium', 'Tennis Court', 'Basketball Court', 'Kids Play Area', 'Jogging Track', 'Cycling Track', 'Sports Club', 'Game Room', 'Billiards Room'],
+  'Convenience': ['24/7 Security', 'Concierge Service', 'Parking', 'Elevators', 'Reception', 'Maintenance Service', 'Housekeeping', 'Laundry Service', 'Dry Cleaning'],
+  'Lifestyle': ['Spa & Wellness Center', 'Business Center', 'Restaurant', 'Retail Shops', 'Coffee Shop', 'Library', 'Meeting Rooms', 'Event Hall', 'Rooftop Terrace', 'BBQ Area'],
+  'Utilities': ['High-speed Internet', 'Cable TV', 'Central Air Conditioning', 'Backup Power', 'Water Supply', 'Waste Management', 'Fire Safety', 'CCTV'],
+  'Outdoor': ['Garden', 'Landscaping', 'Water Features', 'Outdoor Seating', 'Children\'s Playground', 'Pet Area', 'Parking Shade', 'Walking Paths']
+}
+
+// Field validation rules based on schema
+const VALIDATION_RULES = {
+  name: { required: true, maxLength: 200, minLength: 3 },
+  location: { required: true, maxLength: 100, minLength: 2 },
+  developer: { required: true, maxLength: 150, minLength: 2 },
+  price: { required: true, maxLength: 100, minLength: 5 },
+  description: { required: true, maxLength: 2000, minLength: 50 },
+  overview: { required: true, maxLength: 5000, minLength: 100 },
+  totalUnits: { required: true, min: 1, max: 10000 },
+  priceNumeric: { required: true, min: 0 },
+  locationDescription: { required: true, maxLength: 1000, minLength: 20 },
+  paymentBooking: { required: true, maxLength: 500, minLength: 10 },
+  paymentHandover: { required: true, maxLength: 500, minLength: 10 },
+  milestone: { required: true, maxLength: 200, minLength: 5 },
+  percentage: { required: true, maxLength: 10, minLength: 2 },
+  nearbyName: { required: true, maxLength: 100, minLength: 2 },
+  nearbyDistance: { required: true, maxLength: 20, minLength: 2 },
+  unitType: { required: true, maxLength: 50, minLength: 2 },
+  unitSize: { required: true, maxLength: 50, minLength: 5 },
+  unitPrice: { required: true, maxLength: 100, minLength: 5 },
+  latitude: { required: true, min: -90, max: 90 },
+  longitude: { required: true, min: -180, max: 180 }
+}
+
+// Enhanced interfaces
 interface PaymentMilestone {
   milestone: string;
   percentage: string;
@@ -52,8 +88,6 @@ interface UnitType {
   size: string;
   price: string;
 }
-
-
 
 interface Developer {
   id: string;
@@ -98,6 +132,7 @@ interface IProject {
   createdAt: string;
   updatedAt: string;
 }
+
 interface ProjectFormData {
   name: string
   location: string
@@ -127,6 +162,10 @@ interface ProjectFormData {
     featured: boolean
     highValue: boolean
   }
+}
+
+interface FormErrors {
+  [key: string]: string | undefined;
 }
 
 interface ProjectFormModalProps {
@@ -176,15 +215,396 @@ const initialFormData: ProjectFormData = {
   },
 }
 
+// Validation helper functions
+const validateField = (value: any, rules: any, fieldName?: string): string | undefined => {
+  if (rules.required && (!value || (typeof value === 'string' && !value.trim()))) {
+    return `${fieldName || 'This field'} is required`
+  }
+  
+  if (typeof value === 'string' && value.trim()) {
+    if (rules.minLength && value.trim().length < rules.minLength) {
+      return `${fieldName || 'This field'} must be at least ${rules.minLength} characters`
+    }
+    if (rules.maxLength && value.trim().length > rules.maxLength) {
+      return `${fieldName || 'This field'} cannot exceed ${rules.maxLength} characters`
+    }
+  }
+  
+  if (typeof value === 'number') {
+    if (rules.min !== undefined && value < rules.min) {
+      return `${fieldName || 'This field'} must be at least ${rules.min}`
+    }
+    if (rules.max !== undefined && value > rules.max) {
+      return `${fieldName || 'This field'} cannot exceed ${rules.max}`
+    }
+  }
+  
+  return undefined
+}
+
+const trimToLimit = (value: string, limit: number): string => {
+  return value.length > limit ? value.substring(0, limit) : value
+}
+
+// Enhanced Input Component with validation
+const ValidatedInput = ({ 
+  label, 
+  value, 
+  onChange, 
+  rules, 
+  fieldName,
+  error,
+  type = "text",
+  placeholder = "",
+  disabled = false,
+  ...props 
+}: any) => {
+  const charCount = typeof value === 'string' ? value.length : 0
+  const maxLength = rules?.maxLength
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let newValue = e.target.value
+    if (type === 'text' && maxLength) {
+      newValue = trimToLimit(newValue, maxLength)
+    }
+    onChange(newValue)
+  }
+
+  return (
+    <div>
+      <Label htmlFor={fieldName}>
+        {label} {rules?.required && <span className="text-red-500">*</span>}
+      </Label>
+      <Input
+        id={fieldName}
+        type={type}
+        value={value}
+        onChange={handleChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`mt-1 ${error ? 'border-red-500 focus:border-red-500' : ''}`}
+        {...props}
+      />
+      <div className="flex justify-between mt-1">
+        {error && (
+          <span className="text-red-500 text-xs flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            {error}
+          </span>
+        )}
+        {maxLength && (
+          <span className={`text-xs ml-auto ${charCount > maxLength * 0.9 ? 'text-amber-600' : 'text-gray-500'}`}>
+            {charCount}/{maxLength}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Enhanced Textarea Component with validation
+const ValidatedTextarea = ({ 
+  label, 
+  value, 
+  onChange, 
+  rules, 
+  fieldName,
+  error,
+  placeholder = "",
+  rows = 3,
+  ...props 
+}: any) => {
+  const charCount = value.length
+  const maxLength = rules?.maxLength
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    let newValue = e.target.value
+    if (maxLength) {
+      newValue = trimToLimit(newValue, maxLength)
+    }
+    onChange(newValue)
+  }
+
+  return (
+    <div>
+      <Label htmlFor={fieldName}>
+        {label} {rules?.required && <span className="text-red-500">*</span>}
+      </Label>
+      <Textarea
+        id={fieldName}
+        value={value}
+        onChange={handleChange}
+        placeholder={placeholder}
+        rows={rows}
+        className={`mt-1 ${error ? 'border-red-500 focus:border-red-500' : ''}`}
+        {...props}
+      />
+      <div className="flex justify-between mt-1">
+        {error && (
+          <span className="text-red-500 text-xs flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            {error}
+          </span>
+        )}
+        {maxLength && (
+          <span className={`text-xs ml-auto ${charCount > maxLength * 0.9 ? 'text-amber-600' : 'text-gray-500'}`}>
+            {charCount}/{maxLength}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Developer Search Component
+const DeveloperSearch = ({ 
+  developers, 
+  value, 
+  onChange, 
+  error 
+}: {
+  developers: Developer[];
+  value: string;
+  onChange: (developer: Developer) => void;
+  error?: string;
+}) => {
+  const [searchTerm, setSearchTerm] = useState("")
+  const [isOpen, setIsOpen] = useState(false)
+
+  const filteredDevelopers = useMemo(() => {
+    if (!searchTerm.trim()) return developers
+    return developers.filter(dev => 
+      dev.name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [developers, searchTerm])
+
+  const selectedDeveloper = developers.find(dev => dev.name === value)
+
+  return (
+    <div className="relative">
+      <Label>
+        Developer <span className="text-red-500">*</span>
+      </Label>
+      <div className="relative mt-1">
+        <div className="flex">
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onFocus={() => setIsOpen(true)}
+            onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+            placeholder="Search developers..."
+            className={`pr-10 ${error ? 'border-red-500' : ''}`}
+          />
+          <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        </div>
+        
+        {isOpen && filteredDevelopers.length > 0 && (
+          <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto mt-1">
+            {filteredDevelopers.map((developer) => (
+              <button
+                key={developer.id}
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-gray-50 focus:bg-gray-50"
+                onMouseDown={() => {
+                  onChange(developer)
+                  setSearchTerm("")
+                  setIsOpen(false)
+                }}
+              >
+                {developer.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      {selectedDeveloper && (
+        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded flex justify-between items-center">
+          <span className="text-sm">Selected: {selectedDeveloper.name}</span>
+          <button
+            type="button"
+            onClick={() => onChange({ id: "", name: "", slug: "" })}
+            className="text-red-500 hover:text-red-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      
+      {error && (
+        <span className="text-red-500 text-xs flex items-center gap-1 mt-1">
+          <AlertCircle className="h-3 w-3" />
+          {error}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: ProjectFormModalProps) {
   const [formData, setFormData] = useState<ProjectFormData>(initialFormData)
+  const [errors, setErrors] = useState<FormErrors>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [activeTab, setActiveTab] = useState("basic")
   const [coverImagePreview, setCoverImagePreview] = useState<string | null>(null)
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [developers, setDevelopers] = useState<Developer[]>([])
   const [newCategory, setNewCategory] = useState("")
+
+  // Comprehensive validation
+  const validateForm = (): FormErrors => {
+    const newErrors: FormErrors = {}
+
+    // Basic fields validation
+    const basicFieldsErrors = validateField(formData.name, VALIDATION_RULES.name, 'Project name')
+    if (basicFieldsErrors) newErrors.name = basicFieldsErrors
+
+    const locationError = validateField(formData.location, VALIDATION_RULES.location, 'Location')
+    if (locationError) newErrors.location = locationError
+
+    if (!formData.type) newErrors.type = 'Project type is required'
+    if (!formData.status) newErrors.status = 'Status is required'
+
+    const developerError = validateField(formData.developer, VALIDATION_RULES.developer, 'Developer')
+    if (developerError) newErrors.developer = developerError
+
+    const priceError = validateField(formData.price, VALIDATION_RULES.price, 'Price')
+    if (priceError) newErrors.price = priceError
+
+    const priceNumericError = validateField(formData.priceNumeric, VALIDATION_RULES.priceNumeric, 'Numeric price')
+    if (priceNumericError) newErrors.priceNumeric = priceNumericError
+
+    const totalUnitsError = validateField(formData.totalUnits, VALIDATION_RULES.totalUnits, 'Total units')
+    if (totalUnitsError) newErrors.totalUnits = totalUnitsError
+
+    const descriptionError = validateField(formData.description, VALIDATION_RULES.description, 'Description')
+    if (descriptionError) newErrors.description = descriptionError
+
+    const overviewError = validateField(formData.overview, VALIDATION_RULES.overview, 'Overview')
+    if (overviewError) newErrors.overview = overviewError
+
+    // Date validations
+    if (!formData.completionDate) {
+      newErrors.completionDate = 'Completion date is required'
+    } else {
+      const completionDate = new Date(formData.completionDate)
+      if (isNaN(completionDate.getTime())) {
+        newErrors.completionDate = 'Invalid completion date'
+      } else if (completionDate < new Date('2020-01-01')) {
+        newErrors.completionDate = 'Completion date must be after 2020'
+      }
+    }
+
+    if (!formData.launchDate) {
+      newErrors.launchDate = 'Launch date is required'
+    } else {
+      const launchDate = new Date(formData.launchDate)
+      if (isNaN(launchDate.getTime())) {
+        newErrors.launchDate = 'Invalid launch date'
+      }
+      
+      if (formData.completionDate && !newErrors.completionDate) {
+        const completionDate = new Date(formData.completionDate)
+        if (launchDate > completionDate) {
+          newErrors.launchDate = 'Launch date cannot be after completion date'
+        }
+      }
+    }
+
+    // File validations for add mode
+    if (mode === 'add') {
+      if (!formData.coverImage) newErrors.coverImage = 'Cover image is required'
+      if (formData.gallery.length === 0) newErrors.gallery = 'At least one gallery image is required'
+    }
+
+    // Location details validation
+    const locationDescError = validateField(formData.locationDetails.description, VALIDATION_RULES.locationDescription, 'Location description')
+    if (locationDescError) newErrors.locationDescription = locationDescError
+
+    const latError = validateField(formData.locationDetails.coordinates.latitude, VALIDATION_RULES.latitude, 'Latitude')
+    if (latError) newErrors.latitude = latError
+
+    const lngError = validateField(formData.locationDetails.coordinates.longitude, VALIDATION_RULES.longitude, 'Longitude')
+    if (lngError) newErrors.longitude = lngError
+
+    // Nearby places validation
+    if (formData.locationDetails.nearby.length === 0) {
+      newErrors.nearby = 'At least one nearby place is required'
+    } else {
+      formData.locationDetails.nearby.forEach((place, index) => {
+        const nameError = validateField(place.name, VALIDATION_RULES.nearbyName)
+        if (nameError) newErrors[`nearby_${index}_name`] = nameError
+
+        const distanceError = validateField(place.distance, VALIDATION_RULES.nearbyDistance)
+        if (distanceError) newErrors[`nearby_${index}_distance`] = distanceError
+      })
+    }
+
+    // Payment plan validation
+    const bookingError = validateField(formData.paymentPlan.booking, VALIDATION_RULES.paymentBooking, 'Booking payment')
+    if (bookingError) newErrors.paymentBooking = bookingError
+
+    const handoverError = validateField(formData.paymentPlan.handover, VALIDATION_RULES.paymentHandover, 'Handover payment')
+    if (handoverError) newErrors.paymentHandover = handoverError
+
+    if (formData.paymentPlan.construction.length === 0) {
+      newErrors.constructionMilestones = 'At least one construction milestone is required'
+    } else {
+      formData.paymentPlan.construction.forEach((milestone, index) => {
+        const milestoneError = validateField(milestone.milestone, VALIDATION_RULES.milestone)
+        if (milestoneError) newErrors[`milestone_${index}`] = milestoneError
+
+        const percentageError = validateField(milestone.percentage, VALIDATION_RULES.percentage)
+        if (percentageError) newErrors[`percentage_${index}`] = percentageError
+      })
+    }
+
+    // Amenities validation
+    if (formData.amenities.length === 0) {
+      newErrors.amenities = 'At least one amenity category is required'
+    } else {
+      formData.amenities.forEach((amenity, index) => {
+        if (!amenity.category) {
+          newErrors[`amenity_category_${index}`] = 'Category is required'
+        }
+        if (amenity.items.length === 0 || !amenity.items.some(item => item.trim())) {
+          newErrors[`amenity_items_${index}`] = 'At least one item is required'
+        }
+      })
+    }
+
+    // Unit types validation
+    if (formData.unitTypes.length === 0) {
+      newErrors.unitTypes = 'At least one unit type is required'
+    } else {
+      formData.unitTypes.forEach((unit, index) => {
+        const typeError = validateField(unit.type, VALIDATION_RULES.unitType)
+        if (typeError) newErrors[`unit_type_${index}`] = typeError
+
+        const sizeError = validateField(unit.size, VALIDATION_RULES.unitSize)
+        if (sizeError) newErrors[`unit_size_${index}`] = sizeError
+
+        const unitPriceError = validateField(unit.price, VALIDATION_RULES.unitPrice)
+        if (unitPriceError) newErrors[`unit_price_${index}`] = unitPriceError
+      })
+    }
+
+    return newErrors
+  }
+
+  // Check if form is valid
+  const isFormValid = useMemo(() => {
+    const formErrors = validateForm()
+    return Object.keys(formErrors).length === 0
+  }, [formData, mode])
+
+  // Update errors whenever form data changes
+  useEffect(() => {
+    if (Object.keys(errors).length > 0) {
+      const newErrors = validateForm()
+      setErrors(newErrors)
+    }
+  }, [formData])
 
   // Convert project data to form data format
   const convertProjectToFormData = (project: IProject): ProjectFormData => {
@@ -197,8 +617,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
       developerSlug: project.developerSlug || "",
       price: project.price || "",
       priceNumeric: project.priceNumeric || 0,
-      coverImage: null, // Will be handled separately for existing images
-      gallery: [], // Will be handled separately for existing images
+      coverImage: null,
+      gallery: [],
       description: project.description || "",
       completionDate: project.completionDate ? project.completionDate.split('T')[0] : "",
       totalUnits: project.totalUnits || 0,
@@ -238,7 +658,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         const convertedData = convertProjectToFormData(project)
         setFormData(convertedData)
         
-        // Set image previews for existing project
         if (project.image) {
           setCoverImagePreview(project.image)
         }
@@ -246,30 +665,95 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
           setGalleryPreviews(project.gallery)
         }
       } else {
-        // Reset form for add mode
         setFormData(initialFormData)
         setCoverImagePreview(null)
         setGalleryPreviews([])
       }
-      setActiveTab("basic")
+      setErrors({})
     }
   }, [isOpen, mode, project])
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target
+  // Fetch developers
+  useEffect(() => {
+    const fetchDevelopers = async () => {
+      try {
+        const res = await fetch("/api/developers/fetch")
+        const json = await res.json()
+        if (json.success) {
+          setDevelopers(json.data)
+        }
+      } catch (err) {
+        console.error("Error fetching developers:", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchDevelopers()
+  }, [])
 
-    if (type === 'number') {
-      setFormData(prev => ({ ...prev, [name]: Number(value) }))
-    } else {
-      setFormData(prev => ({ ...prev, [name]: value }))
+  const handleFieldChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+    
+    // Clear error for this field
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: undefined }))
     }
   }
 
-  const handleCheckboxChange = (flagName: keyof ProjectFormData['flags'], checked: boolean) => {
+  const handleDeveloperChange = (developer: Developer) => {
     setFormData(prev => ({
       ...prev,
-      flags: { ...prev.flags, [flagName]: checked }
+      developer: developer.name,
+      developerSlug: developer.slug || developer.name.toLowerCase().replace(/\s+/g, '-')
     }))
+    
+    if (errors.developer) {
+      setErrors(prev => ({ ...prev, developer: undefined }))
+    }
+  }
+
+  // Enhanced amenity handling with predefined categories
+  const addAmenityCategory = () => {
+    setFormData(prev => ({
+      ...prev,
+      amenities: [...prev.amenities, { category: "", items: [] }]
+    }))
+  }
+
+  const removeAmenityCategory = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      amenities: prev.amenities.filter((_, i) => i !== index)
+    }))
+  }
+
+  const updateAmenityCategory = (index: number, category: string) => {
+    setFormData(prev => ({
+      ...prev,
+      amenities: prev.amenities.map((amenity, i) => 
+        i === index ? { category, items: [] } : amenity
+      )
+    }))
+  }
+
+  const toggleAmenityItem = (categoryIndex: number, item: string) => {
+    setFormData(prev => ({
+      ...prev,
+      amenities: prev.amenities.map((amenity, i) => 
+        i === categoryIndex ? {
+          ...amenity,
+          items: amenity.items.includes(item)
+            ? amenity.items.filter(existingItem => existingItem !== item)
+            : [...amenity.items, item]
+        } : amenity
+      )
+    }))
+  }
+
+  // Get available amenity categories (not already selected)
+  const getAvailableCategories = () => {
+    const selectedCategories = formData.amenities.map(a => a.category).filter(c => c)
+    return Object.keys(AMENITY_CATEGORIES).filter(cat => !selectedCategories.includes(cat))
   }
 
   // Handle cover image upload
@@ -277,7 +761,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
     const file = e.target.files?.[0]
     if (file) {
       if (!file.type.startsWith('image/')) {
-        toast.error('Please select a valid image file (PNG, JPEG, JPG)')
+        toast.error('Please select a valid image file')
         return
       }
       if (file.size > 5 * 1024 * 1024) {
@@ -286,8 +770,11 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
       }
 
       setFormData(prev => ({ ...prev, coverImage: file }))
+      
+      if (errors.coverImage) {
+        setErrors(prev => ({ ...prev, coverImage: undefined }))
+      }
 
-      // Create preview
       const reader = new FileReader()
       reader.onload = (e) => {
         setCoverImagePreview(e.target?.result as string)
@@ -318,7 +805,10 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         gallery: [...prev.gallery, ...validFiles]
       }))
 
-      // Create previews
+      if (errors.gallery) {
+        setErrors(prev => ({ ...prev, gallery: undefined }))
+      }
+
       validFiles.forEach(file => {
         const reader = new FileReader()
         reader.onload = (e) => {
@@ -344,6 +834,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
     setCoverImagePreview(null)
   }
 
+  // Location and payment plan helpers
   const updateLocationDetailsField = <K extends keyof LocationDetails>(
     field: K,
     value: LocationDetails[K]
@@ -370,111 +861,55 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
     }))
   }
 
-  // Add nearby place
   const addNearbyPlace = () => {
     const newNearby = [...formData.locationDetails.nearby, { name: "", distance: "" }]
     updateLocationDetailsField("nearby", newNearby)
   }
 
-  // Remove nearby place
   const removeNearbyPlace = (index: number) => {
     const newNearby = formData.locationDetails.nearby.filter((_, i) => i !== index)
     updateLocationDetailsField("nearby", newNearby)
   }
 
-  const handleDeveloperChange = (selectedDeveloperId: string) => {
-    const selectedDeveloper = developers.find(dev => dev.id === selectedDeveloperId)
-    if (selectedDeveloper) {
-      setFormData(prev => ({
-        ...prev,
-        developer: selectedDeveloper.name,
-        developerSlug: selectedDeveloper.slug || selectedDeveloper.name.toLowerCase().replace(/\s+/g, '-')
-      }))
-    }
-  }
-
-  // Update nearby place
   const updateNearbyPlace = (index: number, field: keyof NearbyPlace, value: string) => {
     const newNearby = [...formData.locationDetails.nearby]
     newNearby[index] = { ...newNearby[index], [field]: value }
     updateLocationDetailsField("nearby", newNearby)
+    
+    // Clear specific error
+    const errorKey = `nearby_${index}_${field}`
+    if (errors[errorKey]) {
+      setErrors(prev => ({ ...prev, [errorKey]: undefined }))
+    }
   }
 
-  // Add construction milestone
   const addConstructionMilestone = () => {
     const newConstruction = [...formData.paymentPlan.construction, { milestone: "", percentage: "" }]
     updatePaymentPlanField("construction", newConstruction)
   }
 
-  // Remove construction milestone
   const removeConstructionMilestone = (index: number) => {
     const newConstruction = formData.paymentPlan.construction.filter((_, i) => i !== index)
     updatePaymentPlanField("construction", newConstruction)
   }
 
-  // Update construction milestone
   const updateConstructionMilestone = (index: number, field: keyof PaymentMilestone, value: string) => {
+    let trimmedValue = value
+    if (field === 'milestone') {
+      trimmedValue = trimToLimit(value, VALIDATION_RULES.milestone.maxLength)
+    } else if (field === 'percentage') {
+      trimmedValue = trimToLimit(value, VALIDATION_RULES.percentage.maxLength)
+    }
+
     const newConstruction = [...formData.paymentPlan.construction]
-    newConstruction[index] = { ...newConstruction[index], [field]: value }
+    newConstruction[index] = { ...newConstruction[index], [field]: trimmedValue }
     updatePaymentPlanField("construction", newConstruction)
-  }
-
-  // Amenities functions
-  const addAmenityCategory = () => {
-    setFormData(prev => ({
-      ...prev,
-      amenities: [...prev.amenities, { category: "", items: [""] }]
-    }))
-  }
-
-  const removeAmenityCategory = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      amenities: prev.amenities.filter((_, i) => i !== index)
-    }))
-  }
-
-  const updateAmenityCategory = (index: number, category: string) => {
-    setFormData(prev => ({
-      ...prev,
-      amenities: prev.amenities.map((amenity, i) => 
-        i === index ? { ...amenity, category } : amenity
-      )
-    }))
-  }
-
-  const addAmenityItem = (categoryIndex: number) => {
-    setFormData(prev => ({
-      ...prev,
-      amenities: prev.amenities.map((amenity, i) => 
-        i === categoryIndex ? { ...amenity, items: [...amenity.items, ""] } : amenity
-      )
-    }))
-  }
-
-  const removeAmenityItem = (categoryIndex: number, itemIndex: number) => {
-    setFormData(prev => ({
-      ...prev,
-      amenities: prev.amenities.map((amenity, i) => 
-        i === categoryIndex 
-          ? { ...amenity, items: amenity.items.filter((_, j) => j !== itemIndex) }
-          : amenity
-      )
-    }))
-  }
-
-  const updateAmenityItem = (categoryIndex: number, itemIndex: number, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      amenities: prev.amenities.map((amenity, i) => 
-        i === categoryIndex 
-          ? { 
-              ...amenity, 
-              items: amenity.items.map((item, j) => j === itemIndex ? value : item)
-            }
-          : amenity
-      )
-    }))
+    
+    // Clear specific error
+    const errorKey = `${field}_${index}`
+    if (errors[errorKey]) {
+      setErrors(prev => ({ ...prev, [errorKey]: undefined }))
+    }
   }
 
   // Unit Types functions
@@ -493,12 +928,27 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
   }
 
   const updateUnitType = (index: number, field: keyof UnitType, value: string) => {
+    let trimmedValue = value
+    if (field === 'type') {
+      trimmedValue = trimToLimit(value, VALIDATION_RULES.unitType.maxLength)
+    } else if (field === 'size') {
+      trimmedValue = trimToLimit(value, VALIDATION_RULES.unitSize.maxLength)
+    } else if (field === 'price') {
+      trimmedValue = trimToLimit(value, VALIDATION_RULES.unitPrice.maxLength)
+    }
+
     setFormData(prev => ({
       ...prev,
       unitTypes: prev.unitTypes.map((unit, i) => 
-        i === index ? { ...unit, [field]: value } : unit
+        i === index ? { ...unit, [field]: trimmedValue } : unit
       )
     }))
+    
+    // Clear specific error
+    const errorKey = `unit_${field}_${index}`
+    if (errors[errorKey]) {
+      setErrors(prev => ({ ...prev, [errorKey]: undefined }))
+    }
   }
 
   // Categories functions
@@ -520,13 +970,12 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
   }
 
   const fillFakeData = () => {
-    // Find a developer to use for fake data
     const fakeDeveloper = developers.length > 0 ? developers[0] : null
 
     setFormData({
       name: "Marina Luxury Residences",
       location: "Dubai Marina",
-      type: "Luxury Apartments",
+      type: "Residential",
       status: "Under Construction",
       developer: fakeDeveloper?.name || "Elite Developers LLC",
       developerSlug: fakeDeveloper?.slug || "elite-developers-llc",
@@ -534,14 +983,14 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
       priceNumeric: 1200000,
       coverImage: null,
       gallery: [],
-      description: "A premium residential development offering unparalleled luxury living with stunning marina views and world-class amenities.",
+      description: "A premium residential development offering unparalleled luxury living with stunning marina views and world-class amenities. This exclusive project features state-of-the-art architecture, premium finishes, and an unbeatable location in the heart of Dubai Marina.",
       completionDate: "2027-12-31",
       totalUnits: 350,
       registrationOpen: true,
       launchDate: "2025-08-01",
       featured: true,
       locationDetails: {
-        description: "Strategically located in the heart of Dubai Marina with direct access to the beach, marina, and premium dining and entertainment options.",
+        description: "Strategically located in the heart of Dubai Marina with direct access to the beach, marina, and premium dining and entertainment options. This prime location offers residents the perfect blend of urban sophistication and waterfront tranquility.",
         nearby: [
           { name: "Dubai Marina Mall", distance: "300m" },
           { name: "JBR Beach", distance: "500m" },
@@ -553,15 +1002,15 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         }
       },
       paymentPlan: {
-        booking: "20% down payment upon booking",
+        booking: "20% down payment upon booking confirmation with developer",
         construction: [
           { milestone: "Foundation completion", percentage: "20%" },
           { milestone: "Structure completion", percentage: "30%" },
           { milestone: "Finishing phase", percentage: "30%" }
         ],
-        handover: "20% upon handover and completion"
+        handover: "20% upon handover and completion of all documentation"
       },
-      overview: "Marina Luxury Residences represents the pinnacle of modern living, featuring state-of-the-art amenities including infinity pools, fitness centers, spa facilities, and 24/7 concierge services.",
+      overview: "Marina Luxury Residences represents the pinnacle of modern living, featuring state-of-the-art amenities including infinity pools, fitness centers, spa facilities, and 24/7 concierge services. The development offers a perfect blend of luxury, comfort, and convenience in one of Dubai's most prestigious neighborhoods. With panoramic views of the marina and Arabian Gulf, residents will experience the ultimate waterfront lifestyle with world-class dining, shopping, and entertainment options right at their doorstep.",
       amenities: [
         {
           category: "Recreation",
@@ -570,17 +1019,12 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         {
           category: "Convenience",
           items: ["24/7 Security", "Concierge Service", "Parking", "Elevators"]
-        },
-        {
-          category: "Lifestyle",
-          items: ["Spa & Wellness Center", "Business Center", "Restaurant", "Retail Shops"]
         }
       ],
       unitTypes: [
         { type: "Studio", size: "500-600 sq ft", price: "Starting from AED 800K" },
         { type: "1 Bedroom", size: "700-900 sq ft", price: "Starting from AED 1.2M" },
-        { type: "2 Bedroom", size: "1200-1500 sq ft", price: "Starting from AED 1.8M" },
-        { type: "3 Bedroom", size: "1800-2200 sq ft", price: "Starting from AED 2.5M" }
+        { type: "2 Bedroom", size: "1200-1500 sq ft", price: "Starting from AED 1.8M" }
       ],
       categories: ["Luxury", "Waterfront", "High-Rise", "Modern"],
       flags: {
@@ -590,571 +1034,108 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         highValue: true,
       },
     })
+    setErrors({})
   }
 
-  // const validateForm = (): string[] => {
-  //   const errors: string[] = []
-
-  //   if (!formData.name.trim()) errors.push("Project name is required")
-  //   if (!formData.location.trim()) errors.push("Location is required")
-  //   if (!formData.type.trim()) errors.push("Project type is required")
-  //   if (!formData.status.trim()) errors.push("Status is required")
-  //   if (!formData.developer.trim()) errors.push("Developer is required")
-  //   if (!formData.description.trim()) errors.push("Description is required")
-  //   if (!formData.overview.trim()) errors.push("Overview is required")
-    
-  //   // For add mode, cover image and gallery are required
-  //   // For edit mode, they're optional (can keep existing images)
-  //   if (mode === 'add') {
-  //     if (!formData.coverImage) errors.push("Cover image is required")
-  //     if (formData.gallery.length === 0) errors.push("At least one gallery image is required")
-  //   }
-
-  //   if (!formData.locationDetails.description.trim()) {
-  //     errors.push("Location details description is required")
-  //   }
-  //   if (!formData.paymentPlan.booking.trim()) {
-  //     errors.push("Payment plan booking info is required")
-  //   }
-  //   if (formData.paymentPlan.construction.length === 0 ||
-  //     formData.paymentPlan.construction.some(m => !m.milestone.trim() || !m.percentage.trim())) {
-  //     errors.push("Payment plan construction milestones are required")
-  //   }
-  //   if (!formData.paymentPlan.handover.trim()) {
-  //     errors.push("Payment plan handover info is required")
-  //   }
-  //   if (formData.priceNumeric <= 0) errors.push("Price must be greater than 0")
-  //   if (formData.totalUnits <= 0) errors.push("Total units must be greater than 0")
-  //   if (!formData.completionDate) errors.push("Completion date is required")
-  //   if (!formData.launchDate) errors.push("Launch date is required")
-
-  //   // Validate amenities
-  //   if (formData.amenities.length === 0 || 
-  //       formData.amenities.some(amenity => !amenity.category.trim() || amenity.items.length === 0 || amenity.items.some(item => !item.trim()))) {
-  //     errors.push("At least one amenity category with items is required")
-  //   }
-
-  //   // Validate unit types
-  //   if (formData.unitTypes.length === 0 || 
-  //       formData.unitTypes.some(unit => !unit.type.trim() || !unit.size.trim() || !unit.price.trim())) {
-  //     errors.push("At least one complete unit type is required")
-  //   }
-
-  //   return errors
-  // }
-
-  useEffect(() => {
-    const fetchDevelopers = async () => {
-      try {
-        const res = await fetch("/api/developers/fetch")
-        const json = await res.json()
-        if (json.success) {
-          setDevelopers(json.data)
-        } else {
-          console.error("Failed to fetch developers:", json.message)
-        }
-      } catch (err) {
-        console.error("Error fetching developers:", err)
-      } finally {
-        setLoading(false)
-      }
+  const handleSubmit = async () => {
+    // Validate form
+    const formErrors = validateForm()
+    if (Object.keys(formErrors).length > 0) {
+      setErrors(formErrors)
+      toast.error('Please fix all validation errors before submitting')
+      return
     }
 
-    fetchDevelopers()
-  }, [])
-
-// Enhanced handleSubmit function with detailed debugging and validation
-const handleSubmit = async () => {
-  console.log("🚀 Starting form submission...");
-  
-  // Debug form data first
-  debugFormData();
-  
-  // Client-side validation with detailed logging
-  const errors = validateForm()
-  if (errors.length > 0) {
-    console.error("❌ Client-side validation failed:", errors);
-    toast.error(`Please fix the following errors:\n${errors.join('\n')}`)
-    return
-  }
-
-  console.log("✅ Client-side validation passed");
-
-  setIsSubmitting(true)
-  try {
-    // Log the form data before submission
-    console.log("📋 Form data being submitted:", {
-      name: formData.name,
-      location: formData.location,
-      type: formData.type,
-      status: formData.status,
-      developer: formData.developer,
-      developerSlug: formData.developerSlug,
-      price: formData.price,
-      priceNumeric: formData.priceNumeric,
-      description: formData.description?.length,
-      overview: formData.overview?.length,
-      completionDate: formData.completionDate,
-      launchDate: formData.launchDate,
-      totalUnits: formData.totalUnits,
-      registrationOpen: formData.registrationOpen,
-      featured: formData.featured,
-      locationDetails: {
-        description: formData.locationDetails.description?.length,
-        nearby: formData.locationDetails.nearby?.length,
-        coordinates: formData.locationDetails.coordinates
-      },
-      paymentPlan: {
-        booking: formData.paymentPlan.booking?.length,
-        construction: formData.paymentPlan.construction?.length,
-        handover: formData.paymentPlan.handover?.length
-      },
-      amenities: formData.amenities?.length,
-      unitTypes: formData.unitTypes?.length,
-      categories: formData.categories?.length,
-      flags: formData.flags,
-      coverImage: formData.coverImage ? `${formData.coverImage.name} (${formData.coverImage.size} bytes)` : 'null',
-      gallery: `${formData.gallery?.length} images`
-    });
-
-    // Create FormData for file upload
-    const submitData = new FormData()
-
-    // Add cover image only if a new file was selected
-    if (formData.coverImage) {
-      console.log("📸 Adding cover image:", formData.coverImage.name);
-      submitData.append('coverImage', formData.coverImage)
-    } else if (mode === 'add') {
-      console.error("❌ No cover image provided for new project");
-      toast.error("Cover image is required for new projects");
-      return;
-    }
-
-    // Add gallery images only if new files were selected
-    if (formData.gallery && formData.gallery.length > 0) {
-      console.log("🖼️ Adding gallery images:", formData.gallery.length);
-      formData.gallery.forEach((file, index) => {
-        submitData.append(`gallery_${index}`, file)
-      })
-    } else if (mode === 'add') {
-      console.error("❌ No gallery images provided for new project");
-      toast.error("At least one gallery image is required for new projects");
-      return;
-    }
-
-    // Prepare project data (remove files from the object)
-    const formDataWithoutFiles = { ...formData }
-    delete (formDataWithoutFiles as any).coverImage
-    delete (formDataWithoutFiles as any).gallery
-
-    // Enhanced data validation before sending
-    const projectDataToSend = {
-      ...formDataWithoutFiles,
-      completionDate: new Date(formData.completionDate).toISOString(),
-      launchDate: new Date(formData.launchDate).toISOString(),
-      // Ensure all required fields are properly formatted
-      name: formData.name?.trim(),
-      location: formData.location?.trim(),
-      type: formData.type?.trim(),
-      status: formData.status?.trim(),
-      developer: formData.developer?.trim(),
-      developerSlug: formData.developerSlug?.trim(),
-      price: formData.price?.trim(),
-      description: formData.description?.trim(),
-      overview: formData.overview?.trim(),
-      // Clean up arrays
-      categories: formData.categories?.filter(cat => cat?.trim()) || [],
-      amenities: formData.amenities?.filter(amenity => 
-        amenity.category?.trim() && 
-        amenity.items?.length > 0 && 
-        amenity.items.some(item => item?.trim())
-      ).map(amenity => ({
-        category: amenity.category.trim(),
-        items: amenity.items.filter(item => item?.trim()).map(item => item.trim())
-      })) || [],
-      unitTypes: formData.unitTypes?.filter(unit => 
-        unit.type?.trim() && 
-        unit.size?.trim() && 
-        unit.price?.trim()
-      ).map(unit => ({
-        type: unit.type.trim(),
-        size: unit.size.trim(),
-        price: unit.price.trim()
-      })) || [],
-      // Clean up nested objects
-      locationDetails: {
-        ...formData.locationDetails,
-        description: formData.locationDetails.description?.trim(),
-        nearby: formData.locationDetails.nearby?.filter(place => 
-          place.name?.trim() && place.distance?.trim()
-        ).map(place => ({
-          name: place.name.trim(),
-          distance: place.distance.trim()
-        })) || []
-      },
-      paymentPlan: {
-        ...formData.paymentPlan,
-        booking: formData.paymentPlan.booking?.trim(),
-        handover: formData.paymentPlan.handover?.trim(),
-        construction: formData.paymentPlan.construction?.filter(milestone => 
-          milestone.milestone?.trim() && milestone.percentage?.trim()
-        ).map(milestone => ({
-          milestone: milestone.milestone.trim(),
-          percentage: milestone.percentage.trim()
-        })) || []
-      }
-    };
-
-    console.log("📤 Cleaned project data to send:", projectDataToSend);
-
-    // Additional validation checks
-    const validationIssues = [];
-    
-    if (!projectDataToSend.name) validationIssues.push("Name is empty");
-    if (!projectDataToSend.location) validationIssues.push("Location is empty");
-    if (!projectDataToSend.developer) validationIssues.push("Developer is empty");
-    if (!projectDataToSend.description) validationIssues.push("Description is empty");
-    if (!projectDataToSend.overview) validationIssues.push("Overview is empty");
-    if (projectDataToSend.priceNumeric <= 0) validationIssues.push("Price numeric must be > 0");
-    if (projectDataToSend.totalUnits <= 0) validationIssues.push("Total units must be > 0");
-    if (!projectDataToSend.locationDetails.description) validationIssues.push("Location description is empty");
-    if (projectDataToSend.locationDetails.nearby.length === 0) validationIssues.push("No nearby places");
-    if (projectDataToSend.paymentPlan.construction.length === 0) validationIssues.push("No construction milestones");
-    if (projectDataToSend.amenities.length === 0) validationIssues.push("No amenities");
-    if (projectDataToSend.unitTypes.length === 0) validationIssues.push("No unit types");
-
-    if (validationIssues.length > 0) {
-      console.error("❌ Pre-submission validation issues:", validationIssues);
-      toast.error(`Validation issues: ${validationIssues.join(', ')}`);
-      return;
-    }
-
-    submitData.append('projectData', JSON.stringify(projectDataToSend));
-
-    // Log FormData contents (for debugging)
-    console.log("📦 FormData contents:");
-    for (let [key, value] of submitData.entries()) {
-      if (value instanceof File) {
-        console.log(`${key}: File - ${value.name} (${value.size} bytes, ${value.type})`);
-      } else {
-        console.log(`${key}: ${typeof value === 'string' && value.length > 100 ? 
-          value.substring(0, 100) + '...' : value}`);
-      }
-    }
-
-    // Use different endpoints based on mode
-    const url = mode === 'edit' && project 
-      ? `/api/projects/update/${project.slug}` 
-      : "/api/projects/add"
-    
-    const method = mode === 'edit' ? 'PUT' : 'POST'
-
-    console.log(`🌐 Making ${method} request to ${url}`);
-
-    const res = await fetch(url, {
-      method: method,
-      body: submitData,
-    })
-
-    console.log(`📡 Response status: ${res.status} ${res.statusText}`);
-
-    let data;
+    setIsSubmitting(true)
     try {
-      data = await res.json();
-      console.log("📥 Response data:", data);
-    } catch (parseError) {
-      console.error("❌ Failed to parse response JSON:", parseError);
-      const textResponse = await res.text();
-      console.error("Raw response:", textResponse);
-      throw new Error("Invalid response format from server");
-    }
+      const submitData = new FormData()
 
-    if (!res.ok) {
-      // Enhanced error handling
-      console.error("❌ Server responded with error:", {
-        status: res.status,
-        statusText: res.statusText,
-        data: data
-      });
-
-      let errorMessage = data?.message || "Something went wrong";
-      
-      if (data?.errors && Array.isArray(data.errors)) {
-        errorMessage += "\n\nValidation errors:\n" + data.errors.join('\n');
-      }
-      
-      if (data?.warnings && Array.isArray(data.warnings)) {
-        console.warn("⚠️ Warnings:", data.warnings);
+      if (formData.coverImage) {
+        submitData.append('coverImage', formData.coverImage)
+      } else if (mode === 'add') {
+        toast.error("Cover image is required for new projects")
+        return
       }
 
-      throw new Error(errorMessage);
-    }
-
-    console.log("✅ Project saved successfully!");
-    toast.success(`Project ${mode === 'edit' ? 'updated' : 'created'} successfully!`)
-    
-    // Call the onSave callback to refresh the parent component
-    if (onSave) {
-      onSave(data)
-    }
-    
-    handleClose()
-
-  } catch (err: any) {
-    console.error("❌ Save failed with error:", err);
-    console.error("Error stack:", err.stack);
-    
-    let userMessage = `Failed to ${mode === 'edit' ? 'update' : 'create'} project: `;
-    
-    if (err.message.includes('fetch')) {
-      userMessage += "Network error. Please check your connection.";
-    } else if (err.message.includes('Validation')) {
-      userMessage += err.message;
-    } else {
-      userMessage += err.message || "Unknown error occurred";
-    }
-    
-    toast.error(userMessage);
-  } finally {
-    setIsSubmitting(false)
-  }
-}
-
-// Debug helper function to log all form data
-const debugFormData = () => {
-  console.group("🐛 Form Data Debug Info");
-  
-  console.log("Basic Info:", {
-    name: `"${formData.name}" (length: ${formData.name?.length})`,
-    location: `"${formData.location}" (length: ${formData.location?.length})`,
-    type: `"${formData.type}"`,
-    status: `"${formData.status}"`,
-    developer: `"${formData.developer}" (length: ${formData.developer?.length})`,
-    developerSlug: `"${formData.developerSlug}"`,
-    price: `"${formData.price}"`,
-    priceNumeric: formData.priceNumeric,
-    totalUnits: formData.totalUnits
-  });
-
-  console.log("Dates:", {
-    completionDate: formData.completionDate,
-    launchDate: formData.launchDate,
-    completionDateValid: !isNaN(new Date(formData.completionDate).getTime()),
-    launchDateValid: !isNaN(new Date(formData.launchDate).getTime())
-  });
-
-  console.log("Content:", {
-    descriptionLength: formData.description?.length,
-    overviewLength: formData.overview?.length,
-    categories: formData.categories,
-    categoriesLength: formData.categories?.length
-  });
-
-  console.log("Location Details:", {
-    description: formData.locationDetails.description?.length,
-    nearbyCount: formData.locationDetails.nearby?.length,
-    coordinates: formData.locationDetails.coordinates,
-    nearbyPlaces: formData.locationDetails.nearby?.map(p => ({
-      name: `"${p.name}"`,
-      distance: `"${p.distance}"`
-    }))
-  });
-
-  console.log("Payment Plan:", {
-    booking: formData.paymentPlan.booking?.length,
-    handover: formData.paymentPlan.handover?.length,
-    constructionCount: formData.paymentPlan.construction?.length,
-    constructionMilestones: formData.paymentPlan.construction?.map((m, i) => ({
-      index: i,
-      milestone: `"${m.milestone}"`,
-      percentage: `"${m.percentage}"`
-    }))
-  });
-
-  console.log("Amenities:", {
-    count: formData.amenities?.length,
-    amenities: formData.amenities?.map((a, i) => ({
-      index: i,
-      category: `"${a.category}"`,
-      itemCount: a.items?.length,
-      items: a.items?.map(item => `"${item}"`)
-    }))
-  });
-
-  console.log("Unit Types:", {
-    count: formData.unitTypes?.length,
-    unitTypes: formData.unitTypes?.map((u, i) => ({
-      index: i,
-      type: `"${u.type}"`,
-      size: `"${u.size}"`,
-      price: `"${u.price}"`
-    }))
-  });
-
-  console.log("Files:", {
-    coverImage: formData.coverImage ? {
-      name: formData.coverImage.name,
-      size: formData.coverImage.size,
-      type: formData.coverImage.type
-    } : null,
-    galleryCount: formData.gallery?.length,
-    galleryImages: formData.gallery?.map(f => ({
-      name: f.name,
-      size: f.size,
-      type: f.type
-    }))
-  });
-
-  console.log("Flags:", formData.flags);
-
-  console.groupEnd();
-};
-
-// Enhanced validateForm function with more detailed checks
-const validateForm = (): string[] => {
-  const errors: string[] = []
-
-  // Basic required fields
-  if (!formData.name?.trim()) errors.push("Project name is required")
-  if (!formData.location?.trim()) errors.push("Location is required")
-  if (!formData.type?.trim()) errors.push("Project type is required")
-  if (!formData.status?.trim()) errors.push("Status is required")
-  if (!formData.developer?.trim()) errors.push("Developer is required")
-  if (!formData.developerSlug?.trim()) errors.push("Developer slug is required")
-  if (!formData.price?.trim()) errors.push("Price is required")
-  if (!formData.description?.trim()) errors.push("Description is required")
-  if (!formData.overview?.trim()) errors.push("Overview is required")
-  
-  // Numeric validations
-  if (typeof formData.priceNumeric !== 'number' || formData.priceNumeric <= 0) {
-    errors.push("Price numeric must be a positive number")
-  }
-  if (typeof formData.totalUnits !== 'number' || formData.totalUnits <= 0) {
-    errors.push("Total units must be a positive number")
-  }
-
-  // Date validations
-  if (!formData.completionDate) {
-    errors.push("Completion date is required")
-  } else {
-    const completionDate = new Date(formData.completionDate)
-    if (isNaN(completionDate.getTime())) {
-      errors.push("Completion date must be a valid date")
-    }
-  }
-
-  if (!formData.launchDate) {
-    errors.push("Launch date is required")
-  } else {
-    const launchDate = new Date(formData.launchDate)
-    if (isNaN(launchDate.getTime())) {
-      errors.push("Launch date must be a valid date")
-    }
-    
-    // Check if launch date is before completion date
-    if (formData.completionDate) {
-      const completionDate = new Date(formData.completionDate)
-      if (!isNaN(completionDate.getTime()) && !isNaN(launchDate.getTime()) && launchDate > completionDate) {
-        errors.push("Launch date cannot be after completion date")
+      if (formData.gallery && formData.gallery.length > 0) {
+        formData.gallery.forEach((file, index) => {
+          submitData.append(`gallery_${index}`, file)
+        })
+      } else if (mode === 'add') {
+        toast.error("At least one gallery image is required for new projects")
+        return
       }
-    }
-  }
 
-  // File validations for add mode
-  if (mode === 'add') {
-    if (!formData.coverImage) errors.push("Cover image is required for new projects")
-    if (!formData.gallery || formData.gallery.length === 0) {
-      errors.push("At least one gallery image is required for new projects")
-    }
-  }
+      const formDataWithoutFiles = { ...formData }
+      delete (formDataWithoutFiles as any).coverImage
+      delete (formDataWithoutFiles as any).gallery
 
-  // Location details validation
-  if (!formData.locationDetails?.description?.trim()) {
-    errors.push("Location description is required")
-  }
-  
-  if (!formData.locationDetails?.nearby || formData.locationDetails.nearby.length === 0) {
-    errors.push("At least one nearby place is required")
-  } else {
-    formData.locationDetails.nearby.forEach((place, index) => {
-      if (!place.name?.trim()) errors.push(`Nearby place ${index + 1} name is required`)
-      if (!place.distance?.trim()) errors.push(`Nearby place ${index + 1} distance is required`)
-    })
-  }
-
-  // Coordinates validation
-  if (typeof formData.locationDetails?.coordinates?.latitude !== 'number' || 
-      formData.locationDetails.coordinates.latitude < -90 || 
-      formData.locationDetails.coordinates.latitude > 90) {
-    errors.push("Valid latitude (-90 to 90) is required")
-  }
-  
-  if (typeof formData.locationDetails?.coordinates?.longitude !== 'number' || 
-      formData.locationDetails.coordinates.longitude < -180 || 
-      formData.locationDetails.coordinates.longitude > 180) {
-    errors.push("Valid longitude (-180 to 180) is required")
-  }
-
-  // Payment plan validation
-  if (!formData.paymentPlan?.booking?.trim()) {
-    errors.push("Payment plan booking information is required")
-  }
-  
-  if (!formData.paymentPlan?.handover?.trim()) {
-    errors.push("Payment plan handover information is required")
-  }
-  
-  if (!formData.paymentPlan?.construction || formData.paymentPlan.construction.length === 0) {
-    errors.push("At least one construction milestone is required")
-  } else {
-    formData.paymentPlan.construction.forEach((milestone, index) => {
-      if (!milestone.milestone?.trim()) {
-        errors.push(`Construction milestone ${index + 1} description is required`)
-      }
-      if (!milestone.percentage?.trim()) {
-        errors.push(`Construction milestone ${index + 1} percentage is required`)
-      }
-    })
-  }
-
-  // Amenities validation
-  if (!formData.amenities || formData.amenities.length === 0) {
-    errors.push("At least one amenity category is required")
-  } else {
-    formData.amenities.forEach((amenity, index) => {
-      if (!amenity.category?.trim()) {
-        errors.push(`Amenity category ${index + 1} name is required`)
-      }
-      if (!amenity.items || amenity.items.length === 0) {
-        errors.push(`Amenity category ${index + 1} must have at least one item`)
-      } else {
-        const validItems = amenity.items.filter(item => item?.trim())
-        if (validItems.length === 0) {
-          errors.push(`Amenity category ${index + 1} must have at least one valid item`)
+      const projectDataToSend = {
+        ...formDataWithoutFiles,
+        completionDate: new Date(formData.completionDate).toISOString(),
+        launchDate: new Date(formData.launchDate).toISOString(),
+        // Clean up arrays and objects
+        categories: formData.categories.filter(cat => cat.trim()),
+        amenities: formData.amenities.filter(amenity => 
+          amenity.category.trim() && amenity.items.length > 0
+        ).map(amenity => ({
+          category: amenity.category.trim(),
+          items: amenity.items.filter(item => item.trim())
+        })),
+        unitTypes: formData.unitTypes.filter(unit => 
+          unit.type.trim() && unit.size.trim() && unit.price.trim()
+        ),
+        locationDetails: {
+          ...formData.locationDetails,
+          nearby: formData.locationDetails.nearby.filter(place => 
+            place.name.trim() && place.distance.trim()
+          )
+        },
+        paymentPlan: {
+          ...formData.paymentPlan,
+          construction: formData.paymentPlan.construction.filter(milestone => 
+            milestone.milestone.trim() && milestone.percentage.trim()
+          )
         }
       }
-    })
-  }
 
-  // Unit types validation
-  if (!formData.unitTypes || formData.unitTypes.length === 0) {
-    errors.push("At least one unit type is required")
-  } else {
-    formData.unitTypes.forEach((unit, index) => {
-      if (!unit.type?.trim()) errors.push(`Unit type ${index + 1} name is required`)
-      if (!unit.size?.trim()) errors.push(`Unit type ${index + 1} size is required`)
-      if (!unit.price?.trim()) errors.push(`Unit type ${index + 1} price is required`)
-    })
-  }
+      submitData.append('projectData', JSON.stringify(projectDataToSend))
 
-  return errors
-}
+      const url = mode === 'edit' && project 
+        ? `/api/projects/update/${project.slug}` 
+        : "/api/projects/add"
+      
+      const method = mode === 'edit' ? 'PUT' : 'POST'
+
+      const res = await fetch(url, {
+        method: method,
+        body: submitData,
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Something went wrong")
+      }
+
+      toast.success(`Project ${mode === 'edit' ? 'updated' : 'created'} successfully!`)
+      if (onSave) {
+        onSave(data)
+      }
+      handleClose()
+
+    } catch (err: any) {
+      toast.error(`Failed to ${mode === 'edit' ? 'update' : 'create'} project: ${err.message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   const handleClose = () => {
     setFormData(initialFormData)
     setCoverImagePreview(null)
     setGalleryPreviews([])
-    setActiveTab("basic")
+    setErrors({})
     onClose()
   }
 
@@ -1177,114 +1158,139 @@ const validateForm = (): string[] => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="name">Project Name *</Label>
-                    <Input
-                      id="name"
-                      placeholder="Enter project name"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="location">Location *</Label>
-                    <Input
-                      id="location"
-                      placeholder="Enter location"
-                      name="location"
-                      value={formData.location}
-                      onChange={handleChange}
-                      className="mt-1"
-                    />
-                  </div>
+                  <ValidatedInput
+                    label="Project Name"
+                    value={formData.name}
+                    onChange={(value: string) => handleFieldChange('name', value)}
+                    rules={VALIDATION_RULES.name}
+                    fieldName="name"
+                    error={errors.name}
+                    placeholder="Enter project name"
+                  />
+                  <ValidatedInput
+                    label="Location"
+                    value={formData.location}
+                    onChange={(value: string) => handleFieldChange('location', value)}
+                    rules={VALIDATION_RULES.location}
+                    fieldName="location"
+                    error={errors.location}
+                    placeholder="Enter location"
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="type">Project Type *</Label>
-                    <Input
-                      id="type"
-                      placeholder="e.g., Luxury Apartments"
-                      name="type"
-                      value={formData.type}
-                      onChange={handleChange}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="status">Status *</Label>
-                    <Input
-                      id="status"
-                      placeholder="e.g., Under Construction"
-                      name="status"
-                      value={formData.status}
-                      onChange={handleChange}
-                      className="mt-1"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="developer">Developer *</Label>
-                    <Select
-                      value={developers.find(dev => dev?.name === formData.developer)?.id || ""}
-                      onValueChange={handleDeveloperChange}
-                      disabled={loading}
+                    <Label htmlFor="type">
+                      Project Type <span className="text-red-500">*</span>
+                    </Label>
+                    <Select 
+                      value={formData.type} 
+                      onValueChange={(value) => handleFieldChange('type', value)}
                     >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder={loading ? "Loading developers..." : "Select a developer"} />
+                      <SelectTrigger className={`mt-1 ${errors.type ? 'border-red-500' : ''}`}>
+                        <SelectValue placeholder="Select project type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {developers.map((dev) => (
-                          <SelectItem key={dev?.id} value={dev?.id}>
-                            {dev?.name}
+                        {PROJECT_TYPES.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {formData.developerSlug && (
-                      <p className="text-xs text-gray-500 mt-1">Slug: {formData.developerSlug}</p>
+                    {errors.type && (
+                      <span className="text-red-500 text-xs flex items-center gap-1 mt-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.type}
+                      </span>
                     )}
                   </div>
+
                   <div>
-                    <Label htmlFor="totalUnits">Total Units *</Label>
-                    <Input
-                      id="totalUnits"
-                      type="number"
-                      placeholder="250"
-                      name="totalUnits"
-                      value={formData.totalUnits || ''}
-                      onChange={handleChange}
-                      className="mt-1"
-                    />
+                    <Label htmlFor="status">
+                      Status <span className="text-red-500">*</span>
+                    </Label>
+                    <Select 
+                      value={formData.status} 
+                      onValueChange={(value) => handleFieldChange('status', value)}
+                    >
+                      <SelectTrigger className={`mt-1 ${errors.status ? 'border-red-500' : ''}`}>
+                        <SelectValue placeholder="Select project status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROJECT_STATUSES.map((status) => (
+                          <SelectItem key={status} value={status}>
+                            {status}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.status && (
+                      <span className="text-red-500 text-xs flex items-center gap-1 mt-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.status}
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
+                  <DeveloperSearch
+                    developers={developers}
+                    value={formData.developer}
+                    onChange={handleDeveloperChange}
+                    error={errors.developer}
+                  />
+                  
+                  <ValidatedInput
+                    label="Total Units"
+                    value={formData.totalUnits || ''}
+                    onChange={(value: string) => handleFieldChange('totalUnits', Number(value))}
+                    rules={VALIDATION_RULES.totalUnits}
+                    fieldName="totalUnits"
+                    error={errors.totalUnits}
+                    type="number"
+                    placeholder="250"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="completionDate">Completion Date *</Label>
+                    <Label htmlFor="completionDate">
+                      Completion Date <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       id="completionDate"
                       type="date"
-                      name="completionDate"
                       value={formData.completionDate}
-                      onChange={handleChange}
-                      className="mt-1"
+                      onChange={(e) => handleFieldChange('completionDate', e.target.value)}
+                      className={`mt-1 ${errors.completionDate ? 'border-red-500' : ''}`}
                     />
+                    {errors.completionDate && (
+                      <span className="text-red-500 text-xs flex items-center gap-1 mt-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.completionDate}
+                      </span>
+                    )}
                   </div>
+                  
                   <div>
-                    <Label htmlFor="launchDate">Launch Date *</Label>
+                    <Label htmlFor="launchDate">
+                      Launch Date <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       id="launchDate"
                       type="date"
-                      name="launchDate"
                       value={formData.launchDate}
-                      onChange={handleChange}
-                      className="mt-1"
+                      onChange={(e) => handleFieldChange('launchDate', e.target.value)}
+                      className={`mt-1 ${errors.launchDate ? 'border-red-500' : ''}`}
                     />
+                    {errors.launchDate && (
+                      <span className="text-red-500 text-xs flex items-center gap-1 mt-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.launchDate}
+                      </span>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -1297,29 +1303,26 @@ const validateForm = (): string[] => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="price">Price Display Text *</Label>
-                    <Input
-                      id="price"
-                      placeholder="e.g., Starting from AED 999K"
-                      name="price"
-                      value={formData.price}
-                      onChange={handleChange}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="priceNumeric">Numeric Price (AED) *</Label>
-                    <Input
-                      id="priceNumeric"
-                      type="number"
-                      placeholder="999000"
-                      name="priceNumeric"
-                      value={formData.priceNumeric || ''}
-                      onChange={handleChange}
-                      className="mt-1"
-                    />
-                  </div>
+                  <ValidatedInput
+                    label="Price Display Text"
+                    value={formData.price}
+                    onChange={(value: string) => handleFieldChange('price', value)}
+                    rules={VALIDATION_RULES.price}
+                    fieldName="price"
+                    error={errors.price}
+                    placeholder="e.g., Starting from AED 999K"
+                  />
+                  
+                  <ValidatedInput
+                    label="Numeric Price (AED)"
+                    value={formData.priceNumeric || ''}
+                    onChange={(value: string) => handleFieldChange('priceNumeric', Number(value))}
+                    rules={VALIDATION_RULES.priceNumeric}
+                    fieldName="priceNumeric"
+                    error={errors.priceNumeric}
+                    type="number"
+                    placeholder="999000"
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -1330,31 +1333,27 @@ const validateForm = (): string[] => {
                 <CardTitle>Descriptions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="overview">Overview *</Label>
-                  <Textarea
-                    id="overview"
-                    placeholder="Enter project overview"
-                    name="overview"
-                    value={formData.overview}
-                    onChange={handleChange}
-                    rows={3}
-                    className="mt-1"
-                  />
-                </div>
+                <ValidatedTextarea
+                  label="Overview"
+                  value={formData.overview}
+                  onChange={(value: string) => handleFieldChange('overview', value)}
+                  rules={VALIDATION_RULES.overview}
+                  fieldName="overview"
+                  error={errors.overview}
+                  placeholder="Enter project overview"
+                  rows={3}
+                />
 
-                <div>
-                  <Label htmlFor="description">Detailed Description *</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Enter detailed project description"
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    rows={4}
-                    className="mt-1"
-                  />
-                </div>
+                <ValidatedTextarea
+                  label="Detailed Description"
+                  value={formData.description}
+                  onChange={(value: string) => handleFieldChange('description', value)}
+                  rules={VALIDATION_RULES.description}
+                  fieldName="description"
+                  error={errors.description}
+                  placeholder="Enter detailed project description"
+                  rows={4}
+                />
               </CardContent>
             </Card>
 
@@ -1387,10 +1386,117 @@ const validateForm = (): string[] => {
                     </Badge>
                   ))}
                 </div>
-                
-                {formData.categories.length === 0 && (
-                  <p className="text-sm text-gray-500">No categories added yet</p>
+              </CardContent>
+            </Card>
+
+            {/* Enhanced Amenities Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Amenities <span className="text-red-500">*</span>
+                  <Button 
+                    type="button" 
+                    onClick={addAmenityCategory} 
+                    size="sm"
+                    disabled={getAvailableCategories().length === 0}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Category
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {errors.amenities && (
+                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.amenities}
+                  </div>
                 )}
+                
+                <div className="space-y-4">
+                  {formData.amenities.map((amenity, categoryIndex) => (
+                    <div key={categoryIndex} className="p-4 border rounded-lg">
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex-1 mr-3">
+                          <Label>
+                            Category Name <span className="text-red-500">*</span>
+                          </Label>
+                          <Select
+                            value={amenity.category}
+                            onValueChange={(value) => updateAmenityCategory(categoryIndex, value)}
+                          >
+                            <SelectTrigger className={`mt-1 ${errors[`amenity_category_${categoryIndex}`] ? 'border-red-500' : ''}`}>
+                              <SelectValue placeholder="Select amenity category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(amenity.category ? [amenity.category, ...getAvailableCategories()] : getAvailableCategories()).map((category) => (
+                                <SelectItem key={category} value={category}>
+                                  {category}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {errors[`amenity_category_${categoryIndex}`] && (
+                            <span className="text-red-500 text-xs flex items-center gap-1 mt-1">
+                              <AlertCircle className="h-3 w-3" />
+                              {errors[`amenity_category_${categoryIndex}`]}
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeAmenityCategory(categoryIndex)}
+                          disabled={formData.amenities.length === 1}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                      {amenity.category && AMENITY_CATEGORIES[amenity.category] && (
+                        <div>
+                          <Label className="text-sm">
+                            Available Items <span className="text-red-500">*</span>
+                          </Label>
+                          {errors[`amenity_items_${categoryIndex}`] && (
+                            <div className="text-red-500 text-xs flex items-center gap-1 mt-1 mb-2">
+                              <AlertCircle className="h-3 w-3" />
+                              {errors[`amenity_items_${categoryIndex}`]}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto p-2 border rounded">
+                            {AMENITY_CATEGORIES[amenity.category].map((item) => (
+                              <div key={item} className="flex items-center space-x-2">
+                                <Checkbox
+                                  id={`${categoryIndex}-${item}`}
+                                  checked={amenity.items.includes(item)}
+                                  onCheckedChange={() => toggleAmenityItem(categoryIndex, item)}
+                                />
+                                <Label htmlFor={`${categoryIndex}-${item}`} className="text-sm">
+                                  {item}
+                                </Label>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          {amenity.items.length > 0 && (
+                            <div className="mt-2">
+                              <Label className="text-sm text-gray-600">Selected ({amenity.items.length}):</Label>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {amenity.items.map((item, itemIndex) => (
+                                  <Badge key={itemIndex} variant="outline" className="text-xs">
+                                    {item}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
 
@@ -1398,7 +1504,7 @@ const validateForm = (): string[] => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  Unit Types *
+                  Unit Types <span className="text-red-500">*</span>
                   <Button type="button" onClick={addUnitType} size="sm">
                     <Plus className="h-4 w-4 mr-1" />
                     Add Unit Type
@@ -1406,6 +1512,13 @@ const validateForm = (): string[] => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {errors.unitTypes && (
+                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.unitTypes}
+                  </div>
+                )}
+                
                 <div className="space-y-4">
                   {formData.unitTypes.map((unit, index) => (
                     <div key={index} className="p-4 border rounded-lg">
@@ -1423,101 +1536,32 @@ const validateForm = (): string[] => {
                       </div>
                       
                       <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <Label>Unit Type</Label>
-                          <Input
-                            placeholder="e.g., Studio, 1BR, 2BR"
-                            value={unit.type}
-                            onChange={(e) => updateUnitType(index, 'type', e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label>Size</Label>
-                          <Input
-                            placeholder="e.g., 500-600 sq ft"
-                            value={unit.size}
-                            onChange={(e) => updateUnitType(index, 'size', e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label>Price Range</Label>
-                          <Input
-                            placeholder="e.g., Starting from AED 800K"
-                            value={unit.price}
-                            onChange={(e) => updateUnitType(index, 'price', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Amenities */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Amenities *
-                  <Button type="button" onClick={addAmenityCategory} size="sm">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Category
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {formData.amenities.map((amenity, categoryIndex) => (
-                    <div key={categoryIndex} className="p-4 border rounded-lg">
-                      <div className="flex justify-between items-center mb-3">
-                        <div className="flex-1 mr-3">
-                          <Label>Category Name</Label>
-                          <Input
-                            placeholder="e.g., Recreation, Convenience, Lifestyle"
-                            value={amenity.category}
-                            onChange={(e) => updateAmenityCategory(categoryIndex, e.target.value)}
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => removeAmenityCategory(categoryIndex)}
-                          disabled={formData.amenities.length === 1}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      
-                      <Label className="text-sm">Amenity Items</Label>
-                      <div className="space-y-2 mt-2">
-                        {amenity.items.map((item, itemIndex) => (
-                          <div key={itemIndex} className="flex gap-2 items-center">
-                            <Input
-                              placeholder="e.g., Swimming Pool, Gymnasium"
-                              value={item}
-                              onChange={(e) => updateAmenityItem(categoryIndex, itemIndex, e.target.value)}
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => removeAmenityItem(categoryIndex, itemIndex)}
-                              disabled={amenity.items.length === 1}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => addAmenityItem(categoryIndex)}
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Add Item
-                        </Button>
+                        <ValidatedInput
+                          label="Unit Type"
+                          value={unit.type}
+                          onChange={(value: string) => updateUnitType(index, 'type', value)}
+                          rules={VALIDATION_RULES.unitType}
+                          error={errors[`unit_type_${index}`]}
+                          placeholder="e.g., Studio, 1BR, 2BR"
+                        />
+                        
+                        <ValidatedInput
+                          label="Size"
+                          value={unit.size}
+                          onChange={(value: string) => updateUnitType(index, 'size', value)}
+                          rules={VALIDATION_RULES.unitSize}
+                          error={errors[`unit_size_${index}`]}
+                          placeholder="e.g., 500-600 sq ft"
+                        />
+                        
+                        <ValidatedInput
+                          label="Price Range"
+                          value={unit.price}
+                          onChange={(value: string) => updateUnitType(index, 'price', value)}
+                          rules={VALIDATION_RULES.unitPrice}
+                          error={errors[`unit_price_${index}`]}
+                          placeholder="e.g., Starting from AED 800K"
+                        />
                       </div>
                     </div>
                   ))}
@@ -1540,7 +1584,7 @@ const validateForm = (): string[] => {
                           id="registrationOpen"
                           checked={formData.registrationOpen}
                           onCheckedChange={(checked) =>
-                            setFormData(prev => ({ ...prev, registrationOpen: !!checked }))
+                            handleFieldChange('registrationOpen', !!checked)
                           }
                         />
                         <Label htmlFor="registrationOpen">Registration Open</Label>
@@ -1550,7 +1594,7 @@ const validateForm = (): string[] => {
                           id="featured"
                           checked={formData.featured}
                           onCheckedChange={(checked) =>
-                            setFormData(prev => ({ ...prev, featured: !!checked }))
+                            handleFieldChange('featured', !!checked)
                           }
                         />
                         <Label htmlFor="featured">Featured Project</Label>
@@ -1566,9 +1610,12 @@ const validateForm = (): string[] => {
                           <Checkbox
                             id={flag}
                             checked={value}
-                            onCheckedChange={(checked) =>
-                              handleCheckboxChange(flag as keyof ProjectFormData['flags'], !!checked)
-                            }
+                            onCheckedChange={(checked) => {
+                              setFormData(prev => ({
+                                ...prev,
+                                flags: { ...prev.flags, [flag]: !!checked }
+                              }))
+                            }}
                           />
                           <Label htmlFor={flag} className="capitalize text-sm">
                             {flag}
@@ -1585,10 +1632,17 @@ const validateForm = (): string[] => {
             <Card>
               <CardHeader>
                 <CardTitle>
-                  Cover Image {mode === 'add' ? '*' : '(Optional - leave blank to keep existing)'}
+                  Cover Image {mode === 'add' ? <span className="text-red-500">*</span> : '(Optional - leave blank to keep existing)'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {errors.coverImage && (
+                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.coverImage}
+                  </div>
+                )}
+                
                 <div className="space-y-4">
                   {!coverImagePreview ? (
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
@@ -1634,10 +1688,17 @@ const validateForm = (): string[] => {
             <Card>
               <CardHeader>
                 <CardTitle>
-                  Gallery Images {mode === 'add' ? '*' : '(Optional - leave blank to keep existing)'}
+                  Gallery Images {mode === 'add' ? <span className="text-red-500">*</span> : '(Optional - leave blank to keep existing)'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {errors.gallery && (
+                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.gallery}
+                  </div>
+                )}
+                
                 <div className="space-y-4">
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                     <Upload className="mx-auto h-10 w-10 text-gray-400 mb-3" />
@@ -1690,53 +1751,60 @@ const validateForm = (): string[] => {
                 <CardTitle>Location Details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="locationDescription">Location Description *</Label>
-                  <Textarea
-                    id="locationDescription"
-                    placeholder="Describe the location and its advantages"
-                    value={formData.locationDetails.description}
-                    onChange={(e) => updateLocationDetailsField("description", e.target.value)}
-                    rows={3}
-                    className="mt-1"
-                  />
-                </div>
+                <ValidatedTextarea
+                  label="Location Description"
+                  value={formData.locationDetails.description}
+                  onChange={(value: string) => {
+                    updateLocationDetailsField("description", value)
+                    if (errors.locationDescription) {
+                      setErrors(prev => ({ ...prev, locationDescription: undefined }))
+                    }
+                  }}
+                  rules={VALIDATION_RULES.locationDescription}
+                  fieldName="locationDescription"
+                  error={errors.locationDescription}
+                  placeholder="Describe the location and its advantages"
+                  rows={3}
+                />
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="latitude">Latitude *</Label>
-                    <Input
-                      id="latitude"
-                      type="number"
-                      step="any"
-                      placeholder="25.0800"
-                      value={formData.locationDetails.coordinates.latitude || ''}
-                      onChange={(e) =>
-                        updateLocationDetailsField("coordinates", {
-                          ...formData.locationDetails.coordinates,
-                          latitude: Number(e.target.value),
-                        })
+                  <ValidatedInput
+                    label="Latitude"
+                    value={formData.locationDetails.coordinates.latitude || ''}
+                    onChange={(value: string) => {
+                      updateLocationDetailsField("coordinates", {
+                        ...formData.locationDetails.coordinates,
+                        latitude: Number(value),
+                      })
+                      if (errors.latitude) {
+                        setErrors(prev => ({ ...prev, latitude: undefined }))
                       }
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="longitude">Longitude *</Label>
-                    <Input
-                      id="longitude"
-                      type="number"
-                      step="any"
-                      placeholder="55.1400"
-                      value={formData.locationDetails.coordinates.longitude || ''}
-                      onChange={(e) =>
-                        updateLocationDetailsField("coordinates", {
-                          ...formData.locationDetails.coordinates,
-                          longitude: Number(e.target.value),
-                        })
+                    }}
+                    rules={VALIDATION_RULES.latitude}
+                    fieldName="latitude"
+                    error={errors.latitude}
+                    type="number"
+                    placeholder="25.0800"
+                  />
+                  
+                  <ValidatedInput
+                    label="Longitude"
+                    value={formData.locationDetails.coordinates.longitude || ''}
+                    onChange={(value: string) => {
+                      updateLocationDetailsField("coordinates", {
+                        ...formData.locationDetails.coordinates,
+                        longitude: Number(value),
+                      })
+                      if (errors.longitude) {
+                        setErrors(prev => ({ ...prev, longitude: undefined }))
                       }
-                      className="mt-1"
-                    />
-                  </div>
+                    }}
+                    rules={VALIDATION_RULES.longitude}
+                    fieldName="longitude"
+                    error={errors.longitude}
+                    type="number"
+                    placeholder="55.1400"
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -1745,7 +1813,7 @@ const validateForm = (): string[] => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  Nearby Places
+                  Nearby Places <span className="text-red-500">*</span>
                   <Button type="button" onClick={addNearbyPlace} size="sm">
                     <Plus className="h-4 w-4 mr-1" />
                     Add Place
@@ -1753,24 +1821,42 @@ const validateForm = (): string[] => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {errors.nearby && (
+                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.nearby}
+                  </div>
+                )}
+                
                 <div className="space-y-3">
                   {formData.locationDetails.nearby.map((place, index) => (
-                    <div key={index} className="flex gap-2 items-center">
-                      <Input
-                        placeholder="Place name"
-                        value={place.name}
-                        onChange={(e) => updateNearbyPlace(index, 'name', e.target.value)}
-                      />
-                      <Input
-                        placeholder="Distance"
-                        value={place.distance}
-                        onChange={(e) => updateNearbyPlace(index, 'distance', e.target.value)}
-                      />
+                    <div key={index} className="flex gap-2 items-start">
+                      <div className="flex-1">
+                        <ValidatedInput
+                          label=""
+                          value={place.name}
+                          onChange={(value: string) => updateNearbyPlace(index, 'name', value)}
+                          rules={VALIDATION_RULES.nearbyName}
+                          error={errors[`nearby_${index}_name`]}
+                          placeholder="Place name"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <ValidatedInput
+                          label=""
+                          value={place.distance}
+                          onChange={(value: string) => updateNearbyPlace(index, 'distance', value)}
+                          rules={VALIDATION_RULES.nearbyDistance}
+                          error={errors[`nearby_${index}_distance`]}
+                          placeholder="Distance"
+                        />
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => removeNearbyPlace(index)}
+                        className="mt-1"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -1786,29 +1872,37 @@ const validateForm = (): string[] => {
                 <CardTitle>Payment Plan</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="booking">Booking Payment *</Label>
-                  <Textarea
-                    id="booking"
-                    placeholder="Describe booking payment requirements"
-                    value={formData.paymentPlan.booking}
-                    onChange={(e) => updatePaymentPlanField("booking", e.target.value)}
-                    rows={2}
-                    className="mt-1"
-                  />
-                </div>
+                <ValidatedTextarea
+                  label="Booking Payment"
+                  value={formData.paymentPlan.booking}
+                  onChange={(value: string) => {
+                    updatePaymentPlanField("booking", value)
+                    if (errors.paymentBooking) {
+                      setErrors(prev => ({ ...prev, paymentBooking: undefined }))
+                    }
+                  }}
+                  rules={VALIDATION_RULES.paymentBooking}
+                  fieldName="paymentBooking"
+                  error={errors.paymentBooking}
+                  placeholder="Describe booking payment requirements"
+                  rows={2}
+                />
 
-                <div>
-                  <Label htmlFor="handover">Handover Payment *</Label>
-                  <Textarea
-                    id="handover"
-                    placeholder="Describe handover payment requirements"
-                    value={formData.paymentPlan.handover}
-                    onChange={(e) => updatePaymentPlanField("handover", e.target.value)}
-                    rows={2}
-                    className="mt-1"
-                  />
-                </div>
+                <ValidatedTextarea
+                  label="Handover Payment"
+                  value={formData.paymentPlan.handover}
+                  onChange={(value: string) => {
+                    updatePaymentPlanField("handover", value)
+                    if (errors.paymentHandover) {
+                      setErrors(prev => ({ ...prev, paymentHandover: undefined }))
+                    }
+                  }}
+                  rules={VALIDATION_RULES.paymentHandover}
+                  fieldName="paymentHandover"
+                  error={errors.paymentHandover}
+                  placeholder="Describe handover payment requirements"
+                  rows={2}
+                />
               </CardContent>
             </Card>
 
@@ -1816,7 +1910,7 @@ const validateForm = (): string[] => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  Construction Milestones *
+                  Construction Milestones <span className="text-red-500">*</span>
                   <Button type="button" onClick={addConstructionMilestone} size="sm">
                     <Plus className="h-4 w-4 mr-1" />
                     Add Milestone
@@ -1824,25 +1918,43 @@ const validateForm = (): string[] => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {errors.constructionMilestones && (
+                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.constructionMilestones}
+                  </div>
+                )}
+                
                 <div className="space-y-3">
                   {formData.paymentPlan.construction.map((milestone, index) => (
-                    <div key={index} className="flex gap-2 items-center">
-                      <Input
-                        placeholder="Milestone description"
-                        value={milestone.milestone}
-                        onChange={(e) => updateConstructionMilestone(index, 'milestone', e.target.value)}
-                      />
-                      <Input
-                        placeholder="Percentage (e.g., 20%)"
-                        value={milestone.percentage}
-                        onChange={(e) => updateConstructionMilestone(index, 'percentage', e.target.value)}
-                      />
+                    <div key={index} className="flex gap-2 items-start">
+                      <div className="flex-1">
+                        <ValidatedInput
+                          label=""
+                          value={milestone.milestone}
+                          onChange={(value: string) => updateConstructionMilestone(index, 'milestone', value)}
+                          rules={VALIDATION_RULES.milestone}
+                          error={errors[`milestone_${index}`]}
+                          placeholder="Milestone description"
+                        />
+                      </div>
+                      <div className="w-32">
+                        <ValidatedInput
+                          label=""
+                          value={milestone.percentage}
+                          onChange={(value: string) => updateConstructionMilestone(index, 'percentage', value)}
+                          rules={VALIDATION_RULES.percentage}
+                          error={errors[`percentage_${index}`]}
+                          placeholder="Percentage"
+                        />
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => removeConstructionMilestone(index)}
                         disabled={formData.paymentPlan.construction.length === 1}
+                        className="mt-1"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -1925,16 +2037,16 @@ const validateForm = (): string[] => {
                   </div>
                 )}
 
-                {/* Amenities */}
-                {formData.amenities.length > 0 && formData.amenities.some(amenity => amenity.category) && (
+                {/* Amenities Preview */}
+                {formData.amenities.length > 0 && formData.amenities.some(amenity => amenity.category && amenity.items.length > 0) && (
                   <div>
                     <h4 className="font-semibold mb-3">Amenities</h4>
                     <div className="space-y-3">
-                      {formData.amenities.filter(amenity => amenity.category).map((amenity, index) => (
+                      {formData.amenities.filter(amenity => amenity.category && amenity.items.length > 0).map((amenity, index) => (
                         <div key={index}>
                           <h5 className="font-medium mb-2">{amenity.category}</h5>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            {amenity.items.filter(item => item.trim()).map((item, itemIndex) => (
+                            {amenity.items.map((item, itemIndex) => (
                               <div key={itemIndex} className="text-sm text-gray-700">
                                 • {item}
                               </div>
@@ -1983,98 +2095,6 @@ const validateForm = (): string[] => {
                     <p className="text-sm text-gray-600">Numeric value: AED {formData.priceNumeric.toLocaleString()}</p>
                   )}
                 </div>
-
-                {/* Descriptions */}
-                <div>
-                  <h4 className="font-semibold mb-2">Overview</h4>
-                  <p className="text-gray-700">{formData.overview || "No overview provided"}</p>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold mb-2">Description</h4>
-                  <p className="text-gray-700">{formData.description || "No description provided"}</p>
-                </div>
-
-                {/* Location Details */}
-                <div>
-                  <h4 className="font-semibold mb-2">Location Details</h4>
-                  <p className="text-gray-700 mb-3">{formData.locationDetails.description || "No location description"}</p>
-
-                  {formData.locationDetails.nearby.length > 0 && (
-                    <div>
-                      <p className="font-medium mb-2">Nearby Places:</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {formData.locationDetails.nearby.map((place, index) => (
-                          place.name && (
-                            <div key={index} className="flex justify-between text-sm">
-                              <span>{place.name}</span>
-                              <span className="text-gray-600">{place.distance}</span>
-                            </div>
-                          )
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {(formData.locationDetails.coordinates.latitude || formData.locationDetails.coordinates.longitude) && (
-                    <div className="mt-3">
-                      <p className="font-medium mb-1">Coordinates:</p>
-                      <p className="text-sm text-gray-600">
-                        {formData.locationDetails.coordinates.latitude}, {formData.locationDetails.coordinates.longitude}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Payment Plan */}
-                <div>
-                  <h4 className="font-semibold mb-2">Payment Plan</h4>
-
-                  {formData.paymentPlan.booking && (
-                    <div className="mb-3">
-                      <p className="font-medium">Booking:</p>
-                      <p className="text-sm text-gray-700">{formData.paymentPlan.booking}</p>
-                    </div>
-                  )}
-
-                  {formData.paymentPlan.construction.length > 0 && formData.paymentPlan.construction.some(m => m.milestone) && (
-                    <div className="mb-3">
-                      <p className="font-medium">Construction Milestones:</p>
-                      <div className="space-y-1">
-                        {formData.paymentPlan.construction.map((milestone, index) => (
-                          milestone.milestone && (
-                            <div key={index} className="flex justify-between text-sm">
-                              <span>{milestone.milestone}</span>
-                              <span className="font-medium">{milestone.percentage}</span>
-                            </div>
-                          )
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {formData.paymentPlan.handover && (
-                    <div>
-                      <p className="font-medium">Handover:</p>
-                      <p className="text-sm text-gray-700">{formData.paymentPlan.handover}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Timeline */}
-                <div>
-                  <h4 className="font-semibold mb-2">Timeline</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium">Launch Date:</span>
-                      <p>{formData.launchDate ? new Date(formData.launchDate).toLocaleDateString() : "Not set"}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium">Completion Date:</span>
-                      <p>{formData.completionDate ? new Date(formData.completionDate).toLocaleDateString() : "Not set"}</p>
-                    </div>
-                  </div>
-                </div>
               </CardContent>
             </Card>
 
@@ -2091,7 +2111,11 @@ const validateForm = (): string[] => {
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} disabled={isSubmitting}>
+              <Button 
+                onClick={handleSubmit} 
+                disabled={isSubmitting || !isFormValid}
+                className={!isFormValid ? 'opacity-50 cursor-not-allowed' : ''}
+              >
                 {isSubmitting ? 
                   (mode === 'edit' ? "Updating..." : "Saving...") : 
                   (mode === 'edit' ? "Update Project" : "Save Project")
@@ -2099,6 +2123,15 @@ const validateForm = (): string[] => {
               </Button>
             </div>
           </div>
+          
+          {!isFormValid && Object.keys(validateForm()).length > 0 && (
+            <div className="mt-3 text-sm text-red-600">
+              <p className="flex items-center gap-1">
+                <AlertCircle className="h-4 w-4" />
+                Please fix {Object.keys(validateForm()).length} validation error(s) before submitting
+              </p>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
