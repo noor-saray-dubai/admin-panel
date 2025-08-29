@@ -11,12 +11,84 @@ import { BlogFormModal } from "./blog-form-modal"
 import { BlogViewModal } from "./blog-view-modal"
 import { DeleteConfirmationModal } from "./delete-confirmation-modal"
 
+// Types matching your schema
+interface ITextFormatting {
+  bold: boolean
+  italic: boolean
+  color: string
+}
+
+interface ITextSegment extends ITextFormatting {
+  type: "text"
+  content: string
+}
+
+interface ILinkSegment extends ITextFormatting {
+  type: "link"
+  content: string
+  url: string
+}
+
+type IContentSegment = ITextSegment | ILinkSegment
+
+interface IListItem {
+  text: string
+  subItems?: string[]
+}
+
+interface IParagraphBlock {
+  type: "paragraph"
+  order: number
+  content: IContentSegment[]
+}
+
+interface IHeadingBlock extends ITextFormatting {
+  type: "heading"
+  order: number
+  level: 1 | 2 | 3 | 4 | 5 | 6
+  content: string
+}
+
+interface IImageBlock {
+  type: "image"
+  order: number
+  url: string
+  alt: string
+  caption?: string
+  file?: File // For new uploads
+}
+
+interface ILinkBlock extends ITextFormatting {
+  type: "link"
+  order: number
+  url: string
+  coverText: string
+}
+
+interface IQuoteBlock {
+  type: "quote"
+  order: number
+  content: IContentSegment[]
+  author?: string
+  source?: string
+}
+
+interface IListBlock extends ITextFormatting {
+  type: "list"
+  order: number
+  listType: "ordered" | "unordered"
+  title: string
+  items: IListItem[]
+}
+
+type IContentBlock = IParagraphBlock | IHeadingBlock | IImageBlock | ILinkBlock | IQuoteBlock | IListBlock
+
 interface Blog {
   _id?: string
   title: string
   slug?: string
   excerpt: string
-  content: string
+  contentBlocks: IContentBlock[]
   featuredImage: string
   author: string
   category: string

@@ -2,12 +2,84 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Calendar, User, Clock, Eye } from "lucide-react"
 
+// Types matching your schema
+interface ITextFormatting {
+  bold: boolean
+  italic: boolean
+  color: string
+}
+
+interface ITextSegment extends ITextFormatting {
+  type: "text"
+  content: string
+}
+
+interface ILinkSegment extends ITextFormatting {
+  type: "link"
+  content: string
+  url: string
+}
+
+type IContentSegment = ITextSegment | ILinkSegment
+
+interface IListItem {
+  text: string
+  subItems?: string[]
+}
+
+interface IParagraphBlock {
+  type: "paragraph"
+  order: number
+  content: IContentSegment[]
+}
+
+interface IHeadingBlock extends ITextFormatting {
+  type: "heading"
+  order: number
+  level: 1 | 2 | 3 | 4 | 5 | 6
+  content: string
+}
+
+interface IImageBlock {
+  type: "image"
+  order: number
+  url: string
+  alt: string
+  caption?: string
+  file?: File // For new uploads
+}
+
+interface ILinkBlock extends ITextFormatting {
+  type: "link"
+  order: number
+  url: string
+  coverText: string
+}
+
+interface IQuoteBlock {
+  type: "quote"
+  order: number
+  content: IContentSegment[]
+  author?: string
+  source?: string
+}
+
+interface IListBlock extends ITextFormatting {
+  type: "list"
+  order: number
+  listType: "ordered" | "unordered"
+  title: string
+  items: IListItem[]
+}
+
+type IContentBlock = IParagraphBlock | IHeadingBlock | IImageBlock | ILinkBlock | IQuoteBlock | IListBlock
+
 interface Blog {
   _id?: string
   title: string
   slug?: string
   excerpt: string
-  content: string
+  contentBlocks: IContentBlock[]
   featuredImage: string
   author: string
   category: string
@@ -116,7 +188,7 @@ export function BlogViewModal({ isOpen, onClose, blog }: BlogViewModalProps) {
           <div className="space-y-2">
             <h3 className="font-semibold">Content</h3>
             <div className="prose max-w-none">
-              <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{blog.content}</p>
+              {/* <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{blog.content}</p> */}
             </div>
           </div>
 

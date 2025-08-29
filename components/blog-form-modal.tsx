@@ -459,34 +459,50 @@ const ContentSegmentEditor = ({
     onChange([...segments, newSegment])
   }
 
-  const updateSegment = (index: number, updates: Partial<IContentSegment>) => {
-    const newSegments = [...segments]
-    newSegments[index] = { ...newSegments[index], ...updates }
-    onChange(newSegments)
-    
-    // Validate segment
-    if (setErrors) {
-      const segment = newSegments[index]
-      const segmentErrors: FieldErrors = {}
-      
-      if (!segment.content.trim()) {
-        segmentErrors[`segment-${index}-content`] = 'Content is required'
-      } else if (segment.content.length > LIMITS.textSegmentContent) {
-        segmentErrors[`segment-${index}-content`] = `Content cannot exceed ${LIMITS.textSegmentContent} characters`
-      }
-      
-      if (segment.type === 'link') {
-        const linkSegment = segment as ILinkSegment
-        if (!linkSegment.url.trim()) {
-          segmentErrors[`segment-${index}-url`] = 'URL is required'
-        } else if (!/^(\/[a-zA-Z0-9\-\/]+|https?:\/\/.+)$/.test(linkSegment.url)) {
-          segmentErrors[`segment-${index}-url`] = 'Invalid URL format'
-        }
-      }
-      
-      setErrors(segmentErrors)
-    }
+ const updateSegment = (index: number, updates: Partial<IContentSegment>) => {
+  const newSegments = [...segments]
+  const currentSegment = newSegments[index]
+  
+  // Type-safe update based on segment type
+  if (currentSegment.type === 'text') {
+    newSegments[index] = {
+      ...currentSegment,
+      ...updates,
+      type: 'text' // Ensure type remains 'text'
+    } as ITextSegment
+  } else if (currentSegment.type === 'link') {
+    newSegments[index] = {
+      ...currentSegment,
+      ...updates,
+      type: 'link' // Ensure type remains 'link'
+    } as ILinkSegment
   }
+  
+  onChange(newSegments)
+  
+  // Validate segment
+  if (setErrors) {
+    const segment = newSegments[index]
+    const segmentErrors: FieldErrors = {}
+    
+    if (!segment.content.trim()) {
+      segmentErrors[`segment-${index}-content`] = 'Content is required'
+    } else if (segment.content.length > LIMITS.textSegmentContent) {
+      segmentErrors[`segment-${index}-content`] = `Content cannot exceed ${LIMITS.textSegmentContent} characters`
+    }
+    
+    if (segment.type === 'link') {
+      const linkSegment = segment as ILinkSegment
+      if (!linkSegment.url.trim()) {
+        segmentErrors[`segment-${index}-url`] = 'URL is required'
+      } else if (!/^(\/[a-zA-Z0-9\-\/]+|https?:\/\/.+)$/.test(linkSegment.url)) {
+        segmentErrors[`segment-${index}-url`] = 'Invalid URL format'
+      }
+    }
+    
+    setErrors(segmentErrors)
+  }
+}
 
   const removeSegment = (index: number) => {
     onChange(segments.filter((_, i) => i !== index))
@@ -903,7 +919,7 @@ const ContentBlockEditor = ({
   canMoveUp: boolean
   canMoveDown: boolean
   errors?: FieldErrors
-  setErrors?: (errors: FieldErrors) => void
+  setErrors?: React.Dispatch<React.SetStateAction<FieldErrors>> 
   hasH1Already?: boolean
 }) => {
   const blockId = `block-${block.order}`
@@ -1634,11 +1650,68 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
     handleFieldChange("contentBlocks", [...formData.contentBlocks, newBlock])
   }
 
-  const updateContentBlock = (index: number, updates: Partial<IContentBlock>) => {
-    const newBlocks = [...formData.contentBlocks]
-    newBlocks[index] = { ...newBlocks[index], ...updates }
-    handleFieldChange("contentBlocks", newBlocks)
+ const updateContentBlock = (index: number, updates: Partial<IContentBlock>) => {
+  const newBlocks = [...formData.contentBlocks]
+  const currentBlock = newBlocks[index]
+  
+  // Type-safe update based on block type
+  switch (currentBlock.type) {
+    case 'paragraph':
+      newBlocks[index] = {
+        ...currentBlock,
+        ...updates,
+        type: 'paragraph' // Ensure type remains 'paragraph'
+      } as IParagraphBlock
+      break
+      
+    case 'heading':
+      newBlocks[index] = {
+        ...currentBlock,
+        ...updates,
+        type: 'heading' // Ensure type remains 'heading'
+      } as IHeadingBlock
+      break
+      
+    case 'image':
+      newBlocks[index] = {
+        ...currentBlock,
+        ...updates,
+        type: 'image' // Ensure type remains 'image'
+      } as IImageBlock
+      break
+      
+    case 'link':
+      newBlocks[index] = {
+        ...currentBlock,
+        ...updates,
+        type: 'link' // Ensure type remains 'link'
+      } as ILinkBlock
+      break
+      
+    case 'quote':
+      newBlocks[index] = {
+        ...currentBlock,
+        ...updates,
+        type: 'quote' // Ensure type remains 'quote'
+      } as IQuoteBlock
+      break
+      
+    case 'list':
+      newBlocks[index] = {
+        ...currentBlock,
+        ...updates,
+        type: 'list' // Ensure type remains 'list'
+      } as IListBlock
+      break
+      
+    default:
+      // Handle unknown types gracefully
+      console.warn('Unknown block type:', (currentBlock as any).type)
+      return
   }
+  
+  handleFieldChange("contentBlocks", newBlocks)
+}
 
   const removeContentBlock = (index: number) => {
     const newBlocks = formData.contentBlocks.filter((_, i) => i !== index)

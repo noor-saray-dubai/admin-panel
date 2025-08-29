@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // Enums from schema
 const PROJECT_TYPES = ['Residential', 'Commercial', 'Mixed Use', 'Industrial', 'Hospitality', 'Retail']
 const PROJECT_STATUSES = ['Pre-Launch', 'Launched', 'Under Construction', 'Ready to Move', 'Completed', 'Sold Out']
-
+type AmenityCategoryType = 'Recreation' | 'Convenience' | 'Lifestyle' | 'Utilities' | 'Outdoor'
 // Predefined amenity categories with their items
 const AMENITY_CATEGORIES = {
   'Recreation': ['Swimming Pool', 'Gymnasium', 'Tennis Court', 'Basketball Court', 'Kids Play Area', 'Jogging Track', 'Cycling Track', 'Sports Club', 'Game Room', 'Billiards Room'],
@@ -1130,6 +1130,10 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
       setIsSubmitting(false)
     }
   }
+  const isValidAmenityCategory = (category: string): category is AmenityCategoryType => {
+  return category in AMENITY_CATEGORIES
+}
+
 
   const handleClose = () => {
     setFormData(initialFormData)
@@ -1454,7 +1458,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                         </Button>
                       </div>
                       
-                      {amenity.category && AMENITY_CATEGORIES[amenity.category] && (
+                      {amenity.category && isValidAmenityCategory(amenity.category) && (
                         <div>
                           <Label className="text-sm">
                             Available Items <span className="text-red-500">*</span>
@@ -1582,6 +1586,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="registrationOpen"
+
                           checked={formData.registrationOpen}
                           onCheckedChange={(checked) =>
                             handleFieldChange('registrationOpen', !!checked)
