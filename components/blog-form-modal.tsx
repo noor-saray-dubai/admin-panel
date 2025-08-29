@@ -1460,7 +1460,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
     author: "",
     category: "",
     tags: [],
-    status: "Draft",
+    status: "Published",
     publishDate: new Date().toISOString().slice(0, 16),
     readTime: 5,
     featured: false,
@@ -1484,7 +1484,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
           author: blog.author || "",
           category: blog.category || "",
           tags: blog.tags || [],
-          status: blog.status || "Draft",
+          status: blog.status || "Published",
           publishDate: blog.publishDate ? blog.publishDate.slice(0, 16) : new Date().toISOString().slice(0, 16),
           readTime: blog.readTime || 5,
           featured: blog.featured || false,
@@ -1503,7 +1503,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
           author: "",
           category: "",
           tags: [],
-          status: "Draft",
+          status: "Published",
           publishDate: new Date().toISOString().slice(0, 16),
           readTime: 5,
           featured: false,
@@ -1836,7 +1836,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
       author: "Sarah Johnson",
       category: "Investment",
       tags: ["Dubai Real Estate", "Investment", "Property Market", "Luxury Properties", "Market Trends"],
-      status: "Draft",
+      status: "Published",
       publishDate: new Date().toISOString().slice(0, 16),
       readTime: 8,
       featured: true,
@@ -1968,7 +1968,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
       author: "",
       category: "",
       tags: [],
-      status: "Draft",
+      status: "Published",
       publishDate: new Date().toISOString().slice(0, 16),
       readTime: 5,
       featured: false,
@@ -2077,7 +2077,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
                           <SelectValue placeholder="Select status" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Draft">Draft</SelectItem>
+                         
                           <SelectItem value="Published">Published</SelectItem>
                           <SelectItem value="Scheduled">Scheduled</SelectItem>
                         </SelectContent>
