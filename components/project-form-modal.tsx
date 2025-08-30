@@ -10,14 +10,14 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { Upload, X, Eye, Plus, Trash2, Search, AlertCircle } from "lucide-react"
+import { Upload, X, Eye, Plus, Trash2, Search, AlertCircle, ChevronLeft, ChevronRight, CheckCircle } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-// Enums from schema
+// Enums and constants
 const PROJECT_TYPES = ['Residential', 'Commercial', 'Mixed Use', 'Industrial', 'Hospitality', 'Retail']
 const PROJECT_STATUSES = ['Pre-Launch', 'Launched', 'Under Construction', 'Ready to Move', 'Completed', 'Sold Out']
 type AmenityCategoryType = 'Recreation' | 'Convenience' | 'Lifestyle' | 'Utilities' | 'Outdoor'
-// Predefined amenity categories with their items
+
 const AMENITY_CATEGORIES = {
   'Recreation': ['Swimming Pool', 'Gymnasium', 'Tennis Court', 'Basketball Court', 'Kids Play Area', 'Jogging Track', 'Cycling Track', 'Sports Club', 'Game Room', 'Billiards Room'],
   'Convenience': ['24/7 Security', 'Concierge Service', 'Parking', 'Elevators', 'Reception', 'Maintenance Service', 'Housekeeping', 'Laundry Service', 'Dry Cleaning'],
@@ -26,7 +26,6 @@ const AMENITY_CATEGORIES = {
   'Outdoor': ['Garden', 'Landscaping', 'Water Features', 'Outdoor Seating', 'Children\'s Playground', 'Pet Area', 'Parking Shade', 'Walking Paths']
 }
 
-// Field validation rules based on schema
 const VALIDATION_RULES = {
   name: { required: true, maxLength: 200, minLength: 3 },
   location: { required: true, maxLength: 100, minLength: 2 },
@@ -50,7 +49,7 @@ const VALIDATION_RULES = {
   longitude: { required: true, min: -180, max: 180 }
 }
 
-// Enhanced interfaces
+// Interfaces
 interface PaymentMilestone {
   milestone: string;
   percentage: string;
@@ -215,27 +214,27 @@ const initialFormData: ProjectFormData = {
   },
 }
 
-// Validation helper functions
+// Improved validation helper
 const validateField = (value: any, rules: any, fieldName?: string): string | undefined => {
-  if (rules.required && (!value || (typeof value === 'string' && !value.trim()))) {
+  if (rules.required && (!value || (typeof value === 'string' && !value.trim()) || (typeof value === 'number' && value === 0 && rules.min > 0))) {
     return `${fieldName || 'This field'} is required`
   }
   
   if (typeof value === 'string' && value.trim()) {
     if (rules.minLength && value.trim().length < rules.minLength) {
-      return `${fieldName || 'This field'} must be at least ${rules.minLength} characters`
+      return `Must be at least ${rules.minLength} characters`
     }
     if (rules.maxLength && value.trim().length > rules.maxLength) {
-      return `${fieldName || 'This field'} cannot exceed ${rules.maxLength} characters`
+      return `Cannot exceed ${rules.maxLength} characters`
     }
   }
   
   if (typeof value === 'number') {
     if (rules.min !== undefined && value < rules.min) {
-      return `${fieldName || 'This field'} must be at least ${rules.min}`
+      return `Must be at least ${rules.min}`
     }
     if (rules.max !== undefined && value > rules.max) {
-      return `${fieldName || 'This field'} cannot exceed ${rules.max}`
+      return `Cannot exceed ${rules.max}`
     }
   }
   
@@ -246,7 +245,7 @@ const trimToLimit = (value: string, limit: number): string => {
   return value.length > limit ? value.substring(0, limit) : value
 }
 
-// Enhanced Input Component with validation
+// Enhanced Input with better error handling
 const ValidatedInput = ({ 
   label, 
   value, 
@@ -254,6 +253,7 @@ const ValidatedInput = ({
   rules, 
   fieldName,
   error,
+  onBlur,
   type = "text",
   placeholder = "",
   disabled = false,
@@ -261,6 +261,7 @@ const ValidatedInput = ({
 }: any) => {
   const charCount = typeof value === 'string' ? value.length : 0
   const maxLength = rules?.maxLength
+  const hasValue = value && (typeof value === 'string' ? value.trim() : value)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let newValue = e.target.value
@@ -272,7 +273,8 @@ const ValidatedInput = ({
 
   return (
     <div>
-      <Label htmlFor={fieldName}>
+      <Label htmlFor={fieldName} className={`flex items-center gap-1 ${hasValue ? 'text-green-600' : ''}`}>
+        {hasValue && <CheckCircle className="h-3 w-3" />}
         {label} {rules?.required && <span className="text-red-500">*</span>}
       </Label>
       <Input
@@ -280,9 +282,10 @@ const ValidatedInput = ({
         type={type}
         value={value}
         onChange={handleChange}
+        onBlur={onBlur}
         placeholder={placeholder}
         disabled={disabled}
-        className={`mt-1 ${error ? 'border-red-500 focus:border-red-500' : ''}`}
+        className={`mt-1 ${error ? 'border-red-500 focus:border-red-500' : hasValue ? 'border-green-500' : ''} ${!hasValue && rules?.required ? 'bg-red-50 border-red-200' : ''}`}
         {...props}
       />
       <div className="flex justify-between mt-1">
@@ -302,7 +305,7 @@ const ValidatedInput = ({
   )
 }
 
-// Enhanced Textarea Component with validation
+// Enhanced Textarea with better error handling
 const ValidatedTextarea = ({ 
   label, 
   value, 
@@ -310,12 +313,14 @@ const ValidatedTextarea = ({
   rules, 
   fieldName,
   error,
+  onBlur,
   placeholder = "",
   rows = 3,
   ...props 
 }: any) => {
   const charCount = value.length
   const maxLength = rules?.maxLength
+  const hasValue = value && value.trim()
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     let newValue = e.target.value
@@ -327,16 +332,18 @@ const ValidatedTextarea = ({
 
   return (
     <div>
-      <Label htmlFor={fieldName}>
+      <Label htmlFor={fieldName} className={`flex items-center gap-1 ${hasValue ? 'text-green-600' : ''}`}>
+        {hasValue && <CheckCircle className="h-3 w-3" />}
         {label} {rules?.required && <span className="text-red-500">*</span>}
       </Label>
       <Textarea
         id={fieldName}
         value={value}
         onChange={handleChange}
+        onBlur={onBlur}
         placeholder={placeholder}
         rows={rows}
-        className={`mt-1 ${error ? 'border-red-500 focus:border-red-500' : ''}`}
+        className={`mt-1 ${error ? 'border-red-500 focus:border-red-500' : hasValue ? 'border-green-500' : ''} ${!hasValue && rules?.required ? 'bg-red-50 border-red-200' : ''}`}
         {...props}
       />
       <div className="flex justify-between mt-1">
@@ -361,12 +368,14 @@ const DeveloperSearch = ({
   developers, 
   value, 
   onChange, 
-  error 
+  error,
+  onBlur 
 }: {
   developers: Developer[];
   value: string;
   onChange: (developer: Developer) => void;
   error?: string;
+  onBlur?: () => void;
 }) => {
   const [searchTerm, setSearchTerm] = useState("")
   const [isOpen, setIsOpen] = useState(false)
@@ -379,10 +388,12 @@ const DeveloperSearch = ({
   }, [developers, searchTerm])
 
   const selectedDeveloper = developers.find(dev => dev.name === value)
+  const hasValue = selectedDeveloper && selectedDeveloper.name
 
   return (
     <div className="relative">
-      <Label>
+      <Label className={`flex items-center gap-1 ${hasValue ? 'text-green-600' : ''}`}>
+        {hasValue && <CheckCircle className="h-3 w-3" />}
         Developer <span className="text-red-500">*</span>
       </Label>
       <div className="relative mt-1">
@@ -391,9 +402,12 @@ const DeveloperSearch = ({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             onFocus={() => setIsOpen(true)}
-            onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+            onBlur={() => {
+              setTimeout(() => setIsOpen(false), 200)
+              if (onBlur) onBlur()
+            }}
             placeholder="Search developers..."
-            className={`pr-10 ${error ? 'border-red-500' : ''}`}
+            className={`pr-10 ${error ? 'border-red-500' : hasValue ? 'border-green-500' : ''} ${!hasValue ? 'bg-red-50 border-red-200' : ''}`}
           />
           <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
         </div>
@@ -419,7 +433,7 @@ const DeveloperSearch = ({
       </div>
       
       {selectedDeveloper && (
-        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded flex justify-between items-center">
+        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded flex justify-between items-center">
           <span className="text-sm">Selected: {selectedDeveloper.name}</span>
           <button
             type="button"
@@ -441,7 +455,200 @@ const DeveloperSearch = ({
   )
 }
 
+// Preview Component (separate)
+const ProjectPreview = ({ formData, coverImagePreview, galleryPreviews }: {
+  formData: ProjectFormData;
+  coverImagePreview: string | null;
+  galleryPreviews: string[];
+}) => {
+  // Check completion status for different sections
+  const isBasicInfoComplete = formData.name && formData.location && formData.type && formData.status && formData.developer
+  const isPricingComplete = formData.price && formData.priceNumeric > 0
+  const isDescriptionComplete = formData.overview && formData.description
+  const areUnitTypesComplete = formData.unitTypes.some(unit => unit.type && unit.size && unit.price)
+  const areAmenitiesComplete = formData.amenities.some(amenity => amenity.category && amenity.items.length > 0)
+  const areImagesComplete = coverImagePreview || galleryPreviews.length > 0
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Eye className="h-5 w-5" />
+          Project Preview
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Completion Status */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div className={`flex items-center gap-2 ${isBasicInfoComplete ? 'text-green-600' : 'text-red-600'}`}>
+            {isBasicInfoComplete ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+            <span className="text-sm">Basic Info</span>
+          </div>
+          <div className={`flex items-center gap-2 ${isPricingComplete ? 'text-green-600' : 'text-red-600'}`}>
+            {isPricingComplete ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+            <span className="text-sm">Pricing</span>
+          </div>
+          <div className={`flex items-center gap-2 ${isDescriptionComplete ? 'text-green-600' : 'text-red-600'}`}>
+            {isDescriptionComplete ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+            <span className="text-sm">Description</span>
+          </div>
+          <div className={`flex items-center gap-2 ${areUnitTypesComplete ? 'text-green-600' : 'text-red-600'}`}>
+            {areUnitTypesComplete ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+            <span className="text-sm">Unit Types</span>
+          </div>
+          <div className={`flex items-center gap-2 ${areAmenitiesComplete ? 'text-green-600' : 'text-red-600'}`}>
+            {areAmenitiesComplete ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+            <span className="text-sm">Amenities</span>
+          </div>
+          <div className={`flex items-center gap-2 ${areImagesComplete ? 'text-green-600' : 'text-red-600'}`}>
+            {areImagesComplete ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+            <span className="text-sm">Images</span>
+          </div>
+        </div>
+
+        {/* Project Header */}
+        <div className={`border-b pb-4 ${!isBasicInfoComplete ? 'bg-red-50 p-4 rounded border border-red-200' : ''}`}>
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <h3 className={`text-2xl font-bold ${!formData.name ? 'text-red-500' : ''}`}>
+                {formData.name || "Project Name Required"}
+              </h3>
+              <p className={`text-gray-600 ${!formData.location ? 'text-red-500' : ''}`}>
+                {formData.location || "Location Required"}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {formData.featured && <Badge variant="secondary">Featured</Badge>}
+              {formData.registrationOpen && <Badge className="bg-green-500">Registration Open</Badge>}
+              {Object.entries(formData.flags).map(([flag, value]) =>
+                value && <Badge key={flag} variant="outline" className="capitalize">{flag}</Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <span className="font-medium">Type:</span>
+              <p className={!formData.type ? 'text-red-500' : ''}>{formData.type || "Required"}</p>
+            </div>
+            <div>
+              <span className="font-medium">Status:</span>
+              <p className={!formData.status ? 'text-red-500' : ''}>{formData.status || "Required"}</p>
+            </div>
+            <div>
+              <span className="font-medium">Developer:</span>
+              <p className={!formData.developer ? 'text-red-500' : ''}>{formData.developer || "Required"}</p>
+            </div>
+            <div>
+              <span className="font-medium">Total Units:</span>
+              <p className={!formData.totalUnits ? 'text-red-500' : ''}>{formData.totalUnits || "Required"}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Pricing */}
+        <div className={`${!isPricingComplete ? 'bg-red-50 p-4 rounded border border-red-200' : ''}`}>
+          <h4 className="font-semibold mb-2">Pricing</h4>
+          <p className={`text-lg font-medium ${formData.price ? 'text-blue-600' : 'text-red-500'}`}>
+            {formData.price || "Price Display Required"}
+          </p>
+          <p className={`text-sm ${formData.priceNumeric > 0 ? 'text-gray-600' : 'text-red-500'}`}>
+            {formData.priceNumeric > 0 ? `Numeric value: AED ${formData.priceNumeric.toLocaleString()}` : "Numeric price required"}
+          </p>
+        </div>
+
+        {/* Categories */}
+        {formData.categories.length > 0 && (
+          <div>
+            <h4 className="font-semibold mb-2">Categories</h4>
+            <div className="flex flex-wrap gap-2">
+              {formData.categories.map((category, index) => (
+                <Badge key={index} variant="outline">{category}</Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Unit Types */}
+        <div className={`${!areUnitTypesComplete ? 'bg-red-50 p-4 rounded border border-red-200' : ''}`}>
+          <h4 className="font-semibold mb-3">Available Unit Types</h4>
+          {areUnitTypesComplete ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {formData.unitTypes.filter(unit => unit.type).map((unit, index) => (
+                <div key={index} className="p-3 border rounded-lg">
+                  <h5 className="font-medium">{unit.type}</h5>
+                  <p className="text-sm text-gray-600">Size: {unit.size}</p>
+                  <p className="text-sm font-medium text-blue-600">{unit.price}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-red-500 text-sm">At least one complete unit type is required</p>
+          )}
+        </div>
+
+        {/* Amenities Preview */}
+        <div className={`${!areAmenitiesComplete ? 'bg-red-50 p-4 rounded border border-red-200' : ''}`}>
+          <h4 className="font-semibold mb-3">Amenities</h4>
+          {areAmenitiesComplete ? (
+            <div className="space-y-3">
+              {formData.amenities.filter(amenity => amenity.category && amenity.items.length > 0).map((amenity, index) => (
+                <div key={index}>
+                  <h5 className="font-medium mb-2">{amenity.category}</h5>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {amenity.items.map((item, itemIndex) => (
+                      <div key={itemIndex} className="text-sm text-gray-700">
+                        • {item}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-red-500 text-sm">At least one amenity category with items is required</p>
+          )}
+        </div>
+
+        {/* Images Preview */}
+        <div className={`${!areImagesComplete ? 'bg-red-50 p-4 rounded border border-red-200' : ''}`}>
+          <h4 className="font-semibold mb-3">Images</h4>
+          {areImagesComplete ? (
+            <div className="space-y-4">
+              {coverImagePreview && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Cover Image:</p>
+                  <img src={coverImagePreview} alt="Cover" className="w-full h-48 object-cover rounded-lg" />
+                </div>
+              )}
+
+              {galleryPreviews.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Gallery ({galleryPreviews.length} images):</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {galleryPreviews.slice(0, 8).map((preview, index) => (
+                      <img key={index} src={preview} alt={`Gallery ${index + 1}`} className="w-full h-20 object-cover rounded" />
+                    ))}
+                    {galleryPreviews.length > 8 && (
+                      <div className="flex items-center justify-center bg-gray-100 rounded h-20 text-sm text-gray-600">
+                        +{galleryPreviews.length - 8} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-red-500 text-sm">Cover image and gallery images are required for new projects</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: ProjectFormModalProps) {
+  const [currentPage, setCurrentPage] = useState(0)
   const [formData, setFormData] = useState<ProjectFormData>(initialFormData)
   const [errors, setErrors] = useState<FormErrors>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -451,8 +658,186 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
   const [developers, setDevelopers] = useState<Developer[]>([])
   const [newCategory, setNewCategory] = useState("")
 
-  // Comprehensive validation
-  const validateForm = (): FormErrors => {
+  // Pages configuration
+  const pages = [
+    { title: "Basic Details", icon: "📝" },
+    { title: "Descriptions", icon: "📄" },
+    { title: "Amenities & Units", icon: "🏢" },
+    { title: "Location & Payment", icon: "📍" },
+    { title: "Images & Settings", icon: "🖼️" },
+    { title: "Preview", icon: "👁️" }
+  ]
+
+      // Real-time validation function
+  const validateFormRealTime = (): FormErrors => {
+    const newErrors: FormErrors = {}
+
+    // Only validate fields that have been touched or have values
+    if (formData.name || errors.name) {
+      const nameError = validateField(formData.name, VALIDATION_RULES.name, 'Project name')
+      if (nameError) newErrors.name = nameError
+    }
+
+    if (formData.location || errors.location) {
+      const locationError = validateField(formData.location, VALIDATION_RULES.location, 'Location')
+      if (locationError) newErrors.location = locationError
+    }
+
+    if (formData.type === "" && errors.type) {
+      newErrors.type = 'Project type is required'
+    }
+
+    if (formData.status === "" && errors.status) {
+      newErrors.status = 'Status is required'
+    }
+
+    if (formData.developer || errors.developer) {
+      const developerError = validateField(formData.developer, VALIDATION_RULES.developer, 'Developer')
+      if (developerError) newErrors.developer = developerError
+    }
+
+    if (formData.price || errors.price) {
+      const priceError = validateField(formData.price, VALIDATION_RULES.price, 'Price')
+      if (priceError) newErrors.price = priceError
+    }
+
+    if (formData.priceNumeric || errors.priceNumeric) {
+      const priceNumericError = validateField(formData.priceNumeric, VALIDATION_RULES.priceNumeric, 'Numeric price')
+      if (priceNumericError) newErrors.priceNumeric = priceNumericError
+    }
+
+    if (formData.totalUnits || errors.totalUnits) {
+      const totalUnitsError = validateField(formData.totalUnits, VALIDATION_RULES.totalUnits, 'Total units')
+      if (totalUnitsError) newErrors.totalUnits = totalUnitsError
+    }
+
+    if (formData.description || errors.description) {
+      const descriptionError = validateField(formData.description, VALIDATION_RULES.description, 'Description')
+      if (descriptionError) newErrors.description = descriptionError
+    }
+
+    if (formData.overview || errors.overview) {
+      const overviewError = validateField(formData.overview, VALIDATION_RULES.overview, 'Overview')
+      if (overviewError) newErrors.overview = overviewError
+    }
+
+    // Date validations
+    if (formData.completionDate || errors.completionDate) {
+      if (!formData.completionDate) {
+        newErrors.completionDate = 'Completion date is required'
+      } else {
+        const completionDate = new Date(formData.completionDate)
+        if (isNaN(completionDate.getTime())) {
+          newErrors.completionDate = 'Invalid completion date'
+        } else if (completionDate < new Date('2020-01-01')) {
+          newErrors.completionDate = 'Completion date must be after 2020'
+        }
+      }
+    }
+
+    if (formData.launchDate || errors.launchDate) {
+      if (!formData.launchDate) {
+        newErrors.launchDate = 'Launch date is required'
+      } else {
+        const launchDate = new Date(formData.launchDate)
+        if (isNaN(launchDate.getTime())) {
+          newErrors.launchDate = 'Invalid launch date'
+        }
+        
+        if (formData.completionDate && !newErrors.completionDate) {
+          const completionDate = new Date(formData.completionDate)
+          if (launchDate > completionDate) {
+            newErrors.launchDate = 'Launch date cannot be after completion date'
+          }
+        }
+      }
+    }
+
+    // Location details validation
+    if (formData.locationDetails.description || errors.locationDescription) {
+      const locationDescError = validateField(formData.locationDetails.description, VALIDATION_RULES.locationDescription, 'Location description')
+      if (locationDescError) newErrors.locationDescription = locationDescError
+    }
+
+    if (formData.locationDetails.coordinates.latitude !== 0 || errors.latitude) {
+      const latError = validateField(formData.locationDetails.coordinates.latitude, VALIDATION_RULES.latitude, 'Latitude')
+      if (latError) newErrors.latitude = latError
+    }
+
+    if (formData.locationDetails.coordinates.longitude !== 0 || errors.longitude) {
+      const lngError = validateField(formData.locationDetails.coordinates.longitude, VALIDATION_RULES.longitude, 'Longitude')
+      if (lngError) newErrors.longitude = lngError
+    }
+
+    // Nearby places validation
+    formData.locationDetails.nearby.forEach((place, index) => {
+      if (place.name || errors[`nearby_${index}_name`]) {
+        const nameError = validateField(place.name, VALIDATION_RULES.nearbyName)
+        if (nameError) newErrors[`nearby_${index}_name`] = nameError
+      }
+
+      if (place.distance || errors[`nearby_${index}_distance`]) {
+        const distanceError = validateField(place.distance, VALIDATION_RULES.nearbyDistance)
+        if (distanceError) newErrors[`nearby_${index}_distance`] = distanceError
+      }
+    })
+
+    // Payment plan validation
+    if (formData.paymentPlan.booking || errors.paymentBooking) {
+      const bookingError = validateField(formData.paymentPlan.booking, VALIDATION_RULES.paymentBooking, 'Booking payment')
+      if (bookingError) newErrors.paymentBooking = bookingError
+    }
+
+    if (formData.paymentPlan.handover || errors.paymentHandover) {
+      const handoverError = validateField(formData.paymentPlan.handover, VALIDATION_RULES.paymentHandover, 'Handover payment')
+      if (handoverError) newErrors.paymentHandover = handoverError
+    }
+
+    formData.paymentPlan.construction.forEach((milestone, index) => {
+      if (milestone.milestone || errors[`milestone_${index}`]) {
+        const milestoneError = validateField(milestone.milestone, VALIDATION_RULES.milestone)
+        if (milestoneError) newErrors[`milestone_${index}`] = milestoneError
+      }
+
+      if (milestone.percentage || errors[`percentage_${index}`]) {
+        const percentageError = validateField(milestone.percentage, VALIDATION_RULES.percentage)
+        if (percentageError) newErrors[`percentage_${index}`] = percentageError
+      }
+    })
+
+    // Amenities validation
+    formData.amenities.forEach((amenity, index) => {
+      if (amenity.category === "" && errors[`amenity_category_${index}`]) {
+        newErrors[`amenity_category_${index}`] = 'Category is required'
+      }
+      if (amenity.items.length === 0 && errors[`amenity_items_${index}`]) {
+        newErrors[`amenity_items_${index}`] = 'At least one item is required'
+      }
+    })
+
+    // Unit types validation
+    formData.unitTypes.forEach((unit, index) => {
+      if (unit.type || errors[`unit_type_${index}`]) {
+        const typeError = validateField(unit.type, VALIDATION_RULES.unitType)
+        if (typeError) newErrors[`unit_type_${index}`] = typeError
+      }
+
+      if (unit.size || errors[`unit_size_${index}`]) {
+        const sizeError = validateField(unit.size, VALIDATION_RULES.unitSize)
+        if (sizeError) newErrors[`unit_size_${index}`] = sizeError
+      }
+
+      if (unit.price || errors[`unit_price_${index}`]) {
+        const unitPriceError = validateField(unit.price, VALIDATION_RULES.unitPrice)
+        if (unitPriceError) newErrors[`unit_price_${index}`] = unitPriceError
+      }
+    })
+
+    return newErrors
+  }
+
+  // Complete validation for submission
+  const validateFormComplete = (): FormErrors => {
     const newErrors: FormErrors = {}
 
     // Basic fields validation
@@ -592,19 +977,45 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
     return newErrors
   }
 
-  // Check if form is valid
+  // Check if form is valid for submission
   const isFormValid = useMemo(() => {
-    const formErrors = validateForm()
+    const formErrors = validateFormComplete()
     return Object.keys(formErrors).length === 0
   }, [formData, mode])
 
-  // Update errors whenever form data changes
+  // Update errors in real-time
   useEffect(() => {
-    if (Object.keys(errors).length > 0) {
-      const newErrors = validateForm()
-      setErrors(newErrors)
-    }
+    const newErrors = validateFormRealTime()
+    setErrors(newErrors)
   }, [formData])
+
+  // Field change handler with immediate error clearing
+  const handleFieldChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  // Field blur handler for validation
+  const handleFieldBlur = (field: string) => {
+    const newErrors = { ...errors }
+    
+    // Validate the specific field on blur
+    if (field === 'name') {
+      const error = validateField(formData.name, VALIDATION_RULES.name, 'Project name')
+      if (error) newErrors.name = error
+      else delete newErrors.name
+    }
+    // Add similar patterns for other fields as needed
+    
+    setErrors(newErrors)
+  }
+
+  const handleDeveloperChange = (developer: Developer) => {
+    setFormData(prev => ({
+      ...prev,
+      developer: developer.name,
+      developerSlug: developer.slug || developer.name.toLowerCase().replace(/\s+/g, '-')
+    }))
+  }
 
   // Convert project data to form data format
   const convertProjectToFormData = (project: IProject): ProjectFormData => {
@@ -670,6 +1081,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         setGalleryPreviews([])
       }
       setErrors({})
+      setCurrentPage(0)
     }
   }, [isOpen, mode, project])
 
@@ -691,28 +1103,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
     fetchDevelopers()
   }, [])
 
-  const handleFieldChange = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    
-    // Clear error for this field
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: undefined }))
-    }
-  }
-
-  const handleDeveloperChange = (developer: Developer) => {
-    setFormData(prev => ({
-      ...prev,
-      developer: developer.name,
-      developerSlug: developer.slug || developer.name.toLowerCase().replace(/\s+/g, '-')
-    }))
-    
-    if (errors.developer) {
-      setErrors(prev => ({ ...prev, developer: undefined }))
-    }
-  }
-
-  // Enhanced amenity handling with predefined categories
+  // Enhanced amenity handling
   const addAmenityCategory = () => {
     setFormData(prev => ({
       ...prev,
@@ -750,10 +1141,13 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
     }))
   }
 
-  // Get available amenity categories (not already selected)
   const getAvailableCategories = () => {
     const selectedCategories = formData.amenities.map(a => a.category).filter(c => c)
     return Object.keys(AMENITY_CATEGORIES).filter(cat => !selectedCategories.includes(cat))
+  }
+
+  const isValidAmenityCategory = (category: string): category is AmenityCategoryType => {
+    return category in AMENITY_CATEGORIES
   }
 
   // Handle cover image upload
@@ -770,10 +1164,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
       }
 
       setFormData(prev => ({ ...prev, coverImage: file }))
-      
-      if (errors.coverImage) {
-        setErrors(prev => ({ ...prev, coverImage: undefined }))
-      }
 
       const reader = new FileReader()
       reader.onload = (e) => {
@@ -804,10 +1194,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         ...prev,
         gallery: [...prev.gallery, ...validFiles]
       }))
-
-      if (errors.gallery) {
-        setErrors(prev => ({ ...prev, gallery: undefined }))
-      }
 
       validFiles.forEach(file => {
         const reader = new FileReader()
@@ -872,15 +1258,13 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
   }
 
   const updateNearbyPlace = (index: number, field: keyof NearbyPlace, value: string) => {
+    const trimmedValue = field === 'name' 
+      ? trimToLimit(value, VALIDATION_RULES.nearbyName.maxLength)
+      : trimToLimit(value, VALIDATION_RULES.nearbyDistance.maxLength)
+
     const newNearby = [...formData.locationDetails.nearby]
-    newNearby[index] = { ...newNearby[index], [field]: value }
+    newNearby[index] = { ...newNearby[index], [field]: trimmedValue }
     updateLocationDetailsField("nearby", newNearby)
-    
-    // Clear specific error
-    const errorKey = `nearby_${index}_${field}`
-    if (errors[errorKey]) {
-      setErrors(prev => ({ ...prev, [errorKey]: undefined }))
-    }
   }
 
   const addConstructionMilestone = () => {
@@ -904,12 +1288,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
     const newConstruction = [...formData.paymentPlan.construction]
     newConstruction[index] = { ...newConstruction[index], [field]: trimmedValue }
     updatePaymentPlanField("construction", newConstruction)
-    
-    // Clear specific error
-    const errorKey = `${field}_${index}`
-    if (errors[errorKey]) {
-      setErrors(prev => ({ ...prev, [errorKey]: undefined }))
-    }
   }
 
   // Unit Types functions
@@ -943,12 +1321,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         i === index ? { ...unit, [field]: trimmedValue } : unit
       )
     }))
-    
-    // Clear specific error
-    const errorKey = `unit_${field}_${index}`
-    if (errors[errorKey]) {
-      setErrors(prev => ({ ...prev, [errorKey]: undefined }))
-    }
   }
 
   // Categories functions
@@ -969,6 +1341,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
     }))
   }
 
+  // Fill fake data for testing
   const fillFakeData = () => {
     const fakeDeveloper = developers.length > 0 ? developers[0] : null
 
@@ -1010,7 +1383,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         ],
         handover: "20% upon handover and completion of all documentation"
       },
-      overview: "Marina Luxury Residences represents the pinnacle of modern living, featuring state-of-the-art amenities including infinity pools, fitness centers, spa facilities, and 24/7 concierge services. The development offers a perfect blend of luxury, comfort, and convenience in one of Dubai's most prestigious neighborhoods. With panoramic views of the marina and Arabian Gulf, residents will experience the ultimate waterfront lifestyle with world-class dining, shopping, and entertainment options right at their doorstep.",
+      overview: "Marina Luxury Residences represents the pinnacle of modern living, featuring state-of-the-art amenities including infinity pools, fitness centers, spa facilities, and 24/7 concierge services. The development offers a perfect blend of luxury, comfort, and convenience in one of Dubai's most prestigious neighborhoods.",
       amenities: [
         {
           category: "Recreation",
@@ -1038,8 +1411,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
   }
 
   const handleSubmit = async () => {
-    // Validate form
-    const formErrors = validateForm()
+    // Validate form completely
+    const formErrors = validateFormComplete()
     if (Object.keys(formErrors).length > 0) {
       setErrors(formErrors)
       toast.error('Please fix all validation errors before submitting')
@@ -1074,7 +1447,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
         ...formDataWithoutFiles,
         completionDate: new Date(formData.completionDate).toISOString(),
         launchDate: new Date(formData.launchDate).toISOString(),
-        // Clean up arrays and objects
         categories: formData.categories.filter(cat => cat.trim()),
         amenities: formData.amenities.filter(amenity => 
           amenity.category.trim() && amenity.items.length > 0
@@ -1130,32 +1502,72 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
       setIsSubmitting(false)
     }
   }
-  const isValidAmenityCategory = (category: string): category is AmenityCategoryType => {
-  return category in AMENITY_CATEGORIES
-}
-
 
   const handleClose = () => {
     setFormData(initialFormData)
     setCoverImagePreview(null)
     setGalleryPreviews([])
     setErrors({})
+    setCurrentPage(0)
     onClose()
   }
 
-  return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-6xl max-h-[95vh] p-0 flex flex-col">
-        <DialogHeader className="p-6 pb-0 flex-shrink-0">
-          <DialogTitle className="text-2xl font-bold">
-            {mode === 'edit' ? 'Edit Project' : 'Add New Project'}
-          </DialogTitle>
-        </DialogHeader>
+  const nextPage = () => {
+    if (currentPage < pages.length - 1) {
+      setCurrentPage(currentPage + 1)
+    }
+  }
 
-        <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0">
-          <div className="space-y-8 py-4">
+  const prevPage = () => {
+    if (currentPage > 0) {
+      setCurrentPage(currentPage - 1)
+    }
+  }
 
-            {/* Basic Info Section */}
+  // Get errors for current section
+  const getCurrentPageErrors = () => {
+    const errorKeys = Object.keys(errors)
+    
+    switch (currentPage) {
+      case 0: // Basic Details
+        return errorKeys.filter(key => 
+          ['name', 'location', 'type', 'status', 'developer', 'totalUnits', 'completionDate', 'launchDate', 'price', 'priceNumeric'].includes(key)
+        ).map(key => ({ field: key, message: errors[key] }))
+      
+      case 1: // Descriptions
+        return errorKeys.filter(key => 
+          ['overview', 'description'].includes(key)
+        ).map(key => ({ field: key, message: errors[key] }))
+      
+      case 2: // Amenities & Units
+        return errorKeys.filter(key => 
+          key.startsWith('amenity_') || key.startsWith('unit_') || key === 'amenities' || key === 'unitTypes'
+        ).map(key => ({ field: key, message: errors[key] }))
+      
+      case 3: // Location & Payment
+        return errorKeys.filter(key => 
+          key.includes('nearby') || key.includes('milestone') || key.includes('percentage') || 
+          ['locationDescription', 'latitude', 'longitude', 'paymentBooking', 'paymentHandover', 'constructionMilestones'].includes(key)
+        ).map(key => ({ field: key, message: errors[key] }))
+      
+      case 4: // Images & Settings
+        return errorKeys.filter(key => 
+          ['coverImage', 'gallery'].includes(key)
+        ).map(key => ({ field: key, message: errors[key] }))
+      
+      default:
+        return []
+    }
+  }
+
+  const currentPageErrors = getCurrentPageErrors()
+
+  // Render different pages
+  const renderCurrentPage = () => {
+    switch (currentPage) {
+      case 0: // Basic Details
+        return (
+          <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Project Details</CardTitle>
@@ -1166,6 +1578,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                     label="Project Name"
                     value={formData.name}
                     onChange={(value: string) => handleFieldChange('name', value)}
+                    onBlur={() => handleFieldBlur('name')}
                     rules={VALIDATION_RULES.name}
                     fieldName="name"
                     error={errors.name}
@@ -1175,6 +1588,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                     label="Location"
                     value={formData.location}
                     onChange={(value: string) => handleFieldChange('location', value)}
+                    onBlur={() => handleFieldBlur('location')}
                     rules={VALIDATION_RULES.location}
                     fieldName="location"
                     error={errors.location}
@@ -1184,14 +1598,15 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="type">
+                    <Label htmlFor="type" className={`flex items-center gap-1 ${formData.type ? 'text-green-600' : ''}`}>
+                      {formData.type && <CheckCircle className="h-3 w-3" />}
                       Project Type <span className="text-red-500">*</span>
                     </Label>
                     <Select 
                       value={formData.type} 
                       onValueChange={(value) => handleFieldChange('type', value)}
                     >
-                      <SelectTrigger className={`mt-1 ${errors.type ? 'border-red-500' : ''}`}>
+                      <SelectTrigger className={`mt-1 ${errors.type ? 'border-red-500' : formData.type ? 'border-green-500' : ''} ${!formData.type ? 'bg-red-50 border-red-200' : ''}`}>
                         <SelectValue placeholder="Select project type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1211,14 +1626,15 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                   </div>
 
                   <div>
-                    <Label htmlFor="status">
+                    <Label htmlFor="status" className={`flex items-center gap-1 ${formData.status ? 'text-green-600' : ''}`}>
+                      {formData.status && <CheckCircle className="h-3 w-3" />}
                       Status <span className="text-red-500">*</span>
                     </Label>
                     <Select 
                       value={formData.status} 
                       onValueChange={(value) => handleFieldChange('status', value)}
                     >
-                      <SelectTrigger className={`mt-1 ${errors.status ? 'border-red-500' : ''}`}>
+                      <SelectTrigger className={`mt-1 ${errors.status ? 'border-red-500' : formData.status ? 'border-green-500' : ''} ${!formData.status ? 'bg-red-50 border-red-200' : ''}`}>
                         <SelectValue placeholder="Select project status" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1243,6 +1659,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                     developers={developers}
                     value={formData.developer}
                     onChange={handleDeveloperChange}
+                    onBlur={() => handleFieldBlur('developer')}
                     error={errors.developer}
                   />
                   
@@ -1250,6 +1667,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                     label="Total Units"
                     value={formData.totalUnits || ''}
                     onChange={(value: string) => handleFieldChange('totalUnits', Number(value))}
+                    onBlur={() => handleFieldBlur('totalUnits')}
                     rules={VALIDATION_RULES.totalUnits}
                     fieldName="totalUnits"
                     error={errors.totalUnits}
@@ -1260,7 +1678,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="completionDate">
+                    <Label htmlFor="completionDate" className={`flex items-center gap-1 ${formData.completionDate ? 'text-green-600' : ''}`}>
+                      {formData.completionDate && <CheckCircle className="h-3 w-3" />}
                       Completion Date <span className="text-red-500">*</span>
                     </Label>
                     <Input
@@ -1268,7 +1687,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                       type="date"
                       value={formData.completionDate}
                       onChange={(e) => handleFieldChange('completionDate', e.target.value)}
-                      className={`mt-1 ${errors.completionDate ? 'border-red-500' : ''}`}
+                      onBlur={() => handleFieldBlur('completionDate')}
+                      className={`mt-1 ${errors.completionDate ? 'border-red-500' : formData.completionDate ? 'border-green-500' : ''} ${!formData.completionDate ? 'bg-red-50 border-red-200' : ''}`}
                     />
                     {errors.completionDate && (
                       <span className="text-red-500 text-xs flex items-center gap-1 mt-1">
@@ -1279,7 +1699,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                   </div>
                   
                   <div>
-                    <Label htmlFor="launchDate">
+                    <Label htmlFor="launchDate" className={`flex items-center gap-1 ${formData.launchDate ? 'text-green-600' : ''}`}>
+                      {formData.launchDate && <CheckCircle className="h-3 w-3" />}
                       Launch Date <span className="text-red-500">*</span>
                     </Label>
                     <Input
@@ -1287,7 +1708,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                       type="date"
                       value={formData.launchDate}
                       onChange={(e) => handleFieldChange('launchDate', e.target.value)}
-                      className={`mt-1 ${errors.launchDate ? 'border-red-500' : ''}`}
+                      onBlur={() => handleFieldBlur('launchDate')}
+                      className={`mt-1 ${errors.launchDate ? 'border-red-500' : formData.launchDate ? 'border-green-500' : ''} ${!formData.launchDate ? 'bg-red-50 border-red-200' : ''}`}
                     />
                     {errors.launchDate && (
                       <span className="text-red-500 text-xs flex items-center gap-1 mt-1">
@@ -1300,7 +1722,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
               </CardContent>
             </Card>
 
-            {/* Pricing Information */}
             <Card>
               <CardHeader>
                 <CardTitle>Pricing Information</CardTitle>
@@ -1311,6 +1732,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                     label="Price Display Text"
                     value={formData.price}
                     onChange={(value: string) => handleFieldChange('price', value)}
+                    onBlur={() => handleFieldBlur('price')}
                     rules={VALIDATION_RULES.price}
                     fieldName="price"
                     error={errors.price}
@@ -1321,6 +1743,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                     label="Numeric Price (AED)"
                     value={formData.priceNumeric || ''}
                     onChange={(value: string) => handleFieldChange('priceNumeric', Number(value))}
+                    onBlur={() => handleFieldBlur('priceNumeric')}
                     rules={VALIDATION_RULES.priceNumeric}
                     fieldName="priceNumeric"
                     error={errors.priceNumeric}
@@ -1330,8 +1753,12 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                 </div>
               </CardContent>
             </Card>
+          </div>
+        )
 
-            {/* Descriptions */}
+      case 1: // Descriptions
+        return (
+          <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Descriptions</CardTitle>
@@ -1341,6 +1768,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                   label="Overview"
                   value={formData.overview}
                   onChange={(value: string) => handleFieldChange('overview', value)}
+                  onBlur={() => handleFieldBlur('overview')}
                   rules={VALIDATION_RULES.overview}
                   fieldName="overview"
                   error={errors.overview}
@@ -1352,6 +1780,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                   label="Detailed Description"
                   value={formData.description}
                   onChange={(value: string) => handleFieldChange('description', value)}
+                  onBlur={() => handleFieldBlur('description')}
                   rules={VALIDATION_RULES.description}
                   fieldName="description"
                   error={errors.description}
@@ -1361,7 +1790,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
               </CardContent>
             </Card>
 
-            {/* Categories */}
             <Card>
               <CardHeader>
                 <CardTitle>Project Categories</CardTitle>
@@ -1392,7 +1820,12 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                 </div>
               </CardContent>
             </Card>
+          </div>
+        )
 
+      case 2: // Amenities & Units
+        return (
+          <div className="space-y-6">
             {/* Enhanced Amenities Section */}
             <Card>
               <CardHeader>
@@ -1422,14 +1855,15 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                     <div key={categoryIndex} className="p-4 border rounded-lg">
                       <div className="flex justify-between items-center mb-3">
                         <div className="flex-1 mr-3">
-                          <Label>
+                          <Label className={`flex items-center gap-1 ${amenity.category ? 'text-green-600' : ''}`}>
+                            {amenity.category && <CheckCircle className="h-3 w-3" />}
                             Category Name <span className="text-red-500">*</span>
                           </Label>
                           <Select
                             value={amenity.category}
                             onValueChange={(value) => updateAmenityCategory(categoryIndex, value)}
                           >
-                            <SelectTrigger className={`mt-1 ${errors[`amenity_category_${categoryIndex}`] ? 'border-red-500' : ''}`}>
+                            <SelectTrigger className={`mt-1 ${errors[`amenity_category_${categoryIndex}`] ? 'border-red-500' : amenity.category ? 'border-green-500' : ''} ${!amenity.category ? 'bg-red-50 border-red-200' : ''}`}>
                               <SelectValue placeholder="Select amenity category" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1460,7 +1894,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                       
                       {amenity.category && isValidAmenityCategory(amenity.category) && (
                         <div>
-                          <Label className="text-sm">
+                          <Label className={`text-sm flex items-center gap-1 ${amenity.items.length > 0 ? 'text-green-600' : ''}`}>
+                            {amenity.items.length > 0 && <CheckCircle className="h-3 w-3" />}
                             Available Items <span className="text-red-500">*</span>
                           </Label>
                           {errors[`amenity_items_${categoryIndex}`] && (
@@ -1469,7 +1904,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                               {errors[`amenity_items_${categoryIndex}`]}
                             </div>
                           )}
-                          <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto p-2 border rounded">
+                          <div className={`grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto p-2 border rounded ${amenity.items.length === 0 ? 'bg-red-50 border-red-200' : ''}`}>
                             {AMENITY_CATEGORIES[amenity.category].map((item) => (
                               <div key={item} className="flex items-center space-x-2">
                                 <Checkbox
@@ -1524,55 +1959,281 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                 )}
                 
                 <div className="space-y-4">
-                  {formData.unitTypes.map((unit, index) => (
-                    <div key={index} className="p-4 border rounded-lg">
-                      <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-medium">Unit Type {index + 1}</h4>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => removeUnitType(index)}
-                          disabled={formData.unitTypes.length === 1}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      
-                      <div className="grid grid-cols-3 gap-3">
-                        <ValidatedInput
-                          label="Unit Type"
-                          value={unit.type}
-                          onChange={(value: string) => updateUnitType(index, 'type', value)}
-                          rules={VALIDATION_RULES.unitType}
-                          error={errors[`unit_type_${index}`]}
-                          placeholder="e.g., Studio, 1BR, 2BR"
-                        />
+                  {formData.unitTypes.map((unit, index) => {
+                    const isComplete = unit.type && unit.size && unit.price
+                    return (
+                      <div key={index} className={`p-4 border rounded-lg ${!isComplete ? 'bg-red-50 border-red-200' : ''}`}>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className={`font-medium flex items-center gap-1 ${isComplete ? 'text-green-600' : ''}`}>
+                            {isComplete && <CheckCircle className="h-3 w-3" />}
+                            Unit Type {index + 1}
+                          </h4>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => removeUnitType(index)}
+                            disabled={formData.unitTypes.length === 1}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                         
-                        <ValidatedInput
-                          label="Size"
-                          value={unit.size}
-                          onChange={(value: string) => updateUnitType(index, 'size', value)}
-                          rules={VALIDATION_RULES.unitSize}
-                          error={errors[`unit_size_${index}`]}
-                          placeholder="e.g., 500-600 sq ft"
-                        />
-                        
-                        <ValidatedInput
-                          label="Price Range"
-                          value={unit.price}
-                          onChange={(value: string) => updateUnitType(index, 'price', value)}
-                          rules={VALIDATION_RULES.unitPrice}
-                          error={errors[`unit_price_${index}`]}
-                          placeholder="e.g., Starting from AED 800K"
-                        />
+                        <div className="grid grid-cols-3 gap-3">
+                          <ValidatedInput
+                            label="Unit Type"
+                            value={unit.type}
+                            onChange={(value: string) => updateUnitType(index, 'type', value)}
+                            rules={VALIDATION_RULES.unitType}
+                            error={errors[`unit_type_${index}`]}
+                            placeholder="e.g., Studio, 1BR, 2BR"
+                          />
+                          
+                          <ValidatedInput
+                            label="Size"
+                            value={unit.size}
+                            onChange={(value: string) => updateUnitType(index, 'size', value)}
+                            rules={VALIDATION_RULES.unitSize}
+                            error={errors[`unit_size_${index}`]}
+                            placeholder="e.g., 500-600 sq ft"
+                          />
+                          
+                          <ValidatedInput
+                            label="Price Range"
+                            value={unit.price}
+                            onChange={(value: string) => updateUnitType(index, 'price', value)}
+                            rules={VALIDATION_RULES.unitPrice}
+                            error={errors[`unit_price_${index}`]}
+                            placeholder="e.g., Starting from AED 800K"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )
+
+      case 3: // Location & Payment
+        return (
+          <div className="space-y-6">
+            {/* Location Details */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Location Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ValidatedTextarea
+                  label="Location Description"
+                  value={formData.locationDetails.description}
+                  onChange={(value: string) => {
+                    updateLocationDetailsField("description", value)
+                  }}
+                  rules={VALIDATION_RULES.locationDescription}
+                  fieldName="locationDescription"
+                  error={errors.locationDescription}
+                  placeholder="Describe the location and its advantages"
+                  rows={3}
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <ValidatedInput
+                    label="Latitude"
+                    value={formData.locationDetails.coordinates.latitude || ''}
+                    onChange={(value: string) => {
+                      updateLocationDetailsField("coordinates", {
+                        ...formData.locationDetails.coordinates,
+                        latitude: Number(value),
+                      })
+                    }}
+                    rules={VALIDATION_RULES.latitude}
+                    fieldName="latitude"
+                    error={errors.latitude}
+                    type="number"
+                    placeholder="25.0800"
+                  />
+                  
+                  <ValidatedInput
+                    label="Longitude"
+                    value={formData.locationDetails.coordinates.longitude || ''}
+                    onChange={(value: string) => {
+                      updateLocationDetailsField("coordinates", {
+                        ...formData.locationDetails.coordinates,
+                        longitude: Number(value),
+                      })
+                    }}
+                    rules={VALIDATION_RULES.longitude}
+                    fieldName="longitude"
+                    error={errors.longitude}
+                    type="number"
+                    placeholder="55.1400"
+                  />
                 </div>
               </CardContent>
             </Card>
 
+            {/* Nearby Places */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Nearby Places <span className="text-red-500">*</span>
+                  <Button type="button" onClick={addNearbyPlace} size="sm">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Place
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {errors.nearby && (
+                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.nearby}
+                  </div>
+                )}
+                
+                <div className="space-y-3">
+                  {formData.locationDetails.nearby.map((place, index) => {
+                    const isComplete = place.name && place.distance
+                    return (
+                      <div key={index} className={`flex gap-2 items-start p-3 rounded ${!isComplete ? 'bg-red-50 border border-red-200' : ''}`}>
+                        <div className="flex-1">
+                          <ValidatedInput
+                            label=""
+                            value={place.name}
+                            onChange={(value: string) => updateNearbyPlace(index, 'name', value)}
+                            rules={VALIDATION_RULES.nearbyName}
+                            error={errors[`nearby_${index}_name`]}
+                            placeholder="Place name"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <ValidatedInput
+                            label=""
+                            value={place.distance}
+                            onChange={(value: string) => updateNearbyPlace(index, 'distance', value)}
+                            rules={VALIDATION_RULES.nearbyDistance}
+                            error={errors[`nearby_${index}_distance`]}
+                            placeholder="Distance"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeNearbyPlace(index)}
+                          className="mt-1"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Payment Plan */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Payment Plan</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ValidatedTextarea
+                  label="Booking Payment"
+                  value={formData.paymentPlan.booking}
+                  onChange={(value: string) => {
+                    updatePaymentPlanField("booking", value)
+                  }}
+                  rules={VALIDATION_RULES.paymentBooking}
+                  fieldName="paymentBooking"
+                  error={errors.paymentBooking}
+                  placeholder="Describe booking payment requirements"
+                  rows={2}
+                />
+
+                <ValidatedTextarea
+                  label="Handover Payment"
+                  value={formData.paymentPlan.handover}
+                  onChange={(value: string) => {
+                    updatePaymentPlanField("handover", value)
+                  }}
+                  rules={VALIDATION_RULES.paymentHandover}
+                  fieldName="paymentHandover"
+                  error={errors.paymentHandover}
+                  placeholder="Describe handover payment requirements"
+                  rows={2}
+                />
+              </CardContent>
+            </Card>
+
+            {/* Construction Milestones */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Construction Milestones <span className="text-red-500">*</span>
+                  <Button type="button" onClick={addConstructionMilestone} size="sm">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Milestone
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {errors.constructionMilestones && (
+                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.constructionMilestones}
+                  </div>
+                )}
+                
+                <div className="space-y-3">
+                  {formData.paymentPlan.construction.map((milestone, index) => {
+                    const isComplete = milestone.milestone && milestone.percentage
+                    return (
+                      <div key={index} className={`flex gap-2 items-start p-3 rounded ${!isComplete ? 'bg-red-50 border border-red-200' : ''}`}>
+                        <div className="flex-1">
+                          <ValidatedInput
+                            label=""
+                            value={milestone.milestone}
+                            onChange={(value: string) => updateConstructionMilestone(index, 'milestone', value)}
+                            rules={VALIDATION_RULES.milestone}
+                            error={errors[`milestone_${index}`]}
+                            placeholder="Milestone description"
+                          />
+                        </div>
+                        <div className="w-32">
+                          <ValidatedInput
+                            label=""
+                            value={milestone.percentage}
+                            onChange={(value: string) => updateConstructionMilestone(index, 'percentage', value)}
+                            rules={VALIDATION_RULES.percentage}
+                            error={errors[`percentage_${index}`]}
+                            placeholder="Percentage"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeConstructionMilestone(index)}
+                          disabled={formData.paymentPlan.construction.length === 1}
+                          className="mt-1"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )
+
+      case 4: // Images & Settings
+        return (
+          <div className="space-y-6">
             {/* Project Settings */}
             <Card>
               <CardHeader>
@@ -1586,7 +2247,6 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="registrationOpen"
-
                           checked={formData.registrationOpen}
                           onCheckedChange={(checked) =>
                             handleFieldChange('registrationOpen', !!checked)
@@ -1636,7 +2296,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
             {/* Cover Image */}
             <Card>
               <CardHeader>
-                <CardTitle>
+                <CardTitle className={`flex items-center gap-1 ${coverImagePreview ? 'text-green-600' : ''}`}>
+                  {coverImagePreview && <CheckCircle className="h-4 w-4" />}
                   Cover Image {mode === 'add' ? <span className="text-red-500">*</span> : '(Optional - leave blank to keep existing)'}
                 </CardTitle>
               </CardHeader>
@@ -1650,7 +2311,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                 
                 <div className="space-y-4">
                   {!coverImagePreview ? (
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                    <div className={`border-2 border-dashed rounded-lg p-8 text-center ${mode === 'add' && !coverImagePreview ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}>
                       <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                       <div>
                         <Label htmlFor="coverImage" className="cursor-pointer">
@@ -1692,7 +2353,8 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
             {/* Gallery Images */}
             <Card>
               <CardHeader>
-                <CardTitle>
+                <CardTitle className={`flex items-center gap-1 ${galleryPreviews.length > 0 ? 'text-green-600' : ''}`}>
+                  {galleryPreviews.length > 0 && <CheckCircle className="h-4 w-4" />}
                   Gallery Images {mode === 'add' ? <span className="text-red-500">*</span> : '(Optional - leave blank to keep existing)'}
                 </CardTitle>
               </CardHeader>
@@ -1705,7 +2367,7 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                 )}
                 
                 <div className="space-y-4">
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <div className={`border-2 border-dashed rounded-lg p-6 text-center ${mode === 'add' && galleryPreviews.length === 0 ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}>
                     <Upload className="mx-auto h-10 w-10 text-gray-400 mb-3" />
                     <div>
                       <Label htmlFor="galleryImages" className="cursor-pointer">
@@ -1749,360 +2411,75 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
                 </div>
               </CardContent>
             </Card>
+          </div>
+        )
 
-            {/* Location Details */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Location Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ValidatedTextarea
-                  label="Location Description"
-                  value={formData.locationDetails.description}
-                  onChange={(value: string) => {
-                    updateLocationDetailsField("description", value)
-                    if (errors.locationDescription) {
-                      setErrors(prev => ({ ...prev, locationDescription: undefined }))
-                    }
-                  }}
-                  rules={VALIDATION_RULES.locationDescription}
-                  fieldName="locationDescription"
-                  error={errors.locationDescription}
-                  placeholder="Describe the location and its advantages"
-                  rows={3}
-                />
+      case 5: // Preview
+        return (
+          <ProjectPreview 
+            formData={formData} 
+            coverImagePreview={coverImagePreview} 
+            galleryPreviews={galleryPreviews} 
+          />
+        )
 
-                <div className="grid grid-cols-2 gap-4">
-                  <ValidatedInput
-                    label="Latitude"
-                    value={formData.locationDetails.coordinates.latitude || ''}
-                    onChange={(value: string) => {
-                      updateLocationDetailsField("coordinates", {
-                        ...formData.locationDetails.coordinates,
-                        latitude: Number(value),
-                      })
-                      if (errors.latitude) {
-                        setErrors(prev => ({ ...prev, latitude: undefined }))
-                      }
-                    }}
-                    rules={VALIDATION_RULES.latitude}
-                    fieldName="latitude"
-                    error={errors.latitude}
-                    type="number"
-                    placeholder="25.0800"
-                  />
-                  
-                  <ValidatedInput
-                    label="Longitude"
-                    value={formData.locationDetails.coordinates.longitude || ''}
-                    onChange={(value: string) => {
-                      updateLocationDetailsField("coordinates", {
-                        ...formData.locationDetails.coordinates,
-                        longitude: Number(value),
-                      })
-                      if (errors.longitude) {
-                        setErrors(prev => ({ ...prev, longitude: undefined }))
-                      }
-                    }}
-                    rules={VALIDATION_RULES.longitude}
-                    fieldName="longitude"
-                    error={errors.longitude}
-                    type="number"
-                    placeholder="55.1400"
-                  />
-                </div>
-              </CardContent>
-            </Card>
+      default:
+        return null
+    }
+  }
 
-            {/* Nearby Places */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Nearby Places <span className="text-red-500">*</span>
-                  <Button type="button" onClick={addNearbyPlace} size="sm">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Place
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {errors.nearby && (
-                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
-                    <AlertCircle className="h-4 w-4" />
-                    {errors.nearby}
-                  </div>
-                )}
-                
-                <div className="space-y-3">
-                  {formData.locationDetails.nearby.map((place, index) => (
-                    <div key={index} className="flex gap-2 items-start">
-                      <div className="flex-1">
-                        <ValidatedInput
-                          label=""
-                          value={place.name}
-                          onChange={(value: string) => updateNearbyPlace(index, 'name', value)}
-                          rules={VALIDATION_RULES.nearbyName}
-                          error={errors[`nearby_${index}_name`]}
-                          placeholder="Place name"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <ValidatedInput
-                          label=""
-                          value={place.distance}
-                          onChange={(value: string) => updateNearbyPlace(index, 'distance', value)}
-                          rules={VALIDATION_RULES.nearbyDistance}
-                          error={errors[`nearby_${index}_distance`]}
-                          placeholder="Distance"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeNearbyPlace(index)}
-                        className="mt-1"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Payment Plan */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Payment Plan</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ValidatedTextarea
-                  label="Booking Payment"
-                  value={formData.paymentPlan.booking}
-                  onChange={(value: string) => {
-                    updatePaymentPlanField("booking", value)
-                    if (errors.paymentBooking) {
-                      setErrors(prev => ({ ...prev, paymentBooking: undefined }))
-                    }
-                  }}
-                  rules={VALIDATION_RULES.paymentBooking}
-                  fieldName="paymentBooking"
-                  error={errors.paymentBooking}
-                  placeholder="Describe booking payment requirements"
-                  rows={2}
-                />
-
-                <ValidatedTextarea
-                  label="Handover Payment"
-                  value={formData.paymentPlan.handover}
-                  onChange={(value: string) => {
-                    updatePaymentPlanField("handover", value)
-                    if (errors.paymentHandover) {
-                      setErrors(prev => ({ ...prev, paymentHandover: undefined }))
-                    }
-                  }}
-                  rules={VALIDATION_RULES.paymentHandover}
-                  fieldName="paymentHandover"
-                  error={errors.paymentHandover}
-                  placeholder="Describe handover payment requirements"
-                  rows={2}
-                />
-              </CardContent>
-            </Card>
-
-            {/* Construction Milestones */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Construction Milestones <span className="text-red-500">*</span>
-                  <Button type="button" onClick={addConstructionMilestone} size="sm">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Milestone
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {errors.constructionMilestones && (
-                  <div className="text-red-500 text-sm mb-4 flex items-center gap-1">
-                    <AlertCircle className="h-4 w-4" />
-                    {errors.constructionMilestones}
-                  </div>
-                )}
-                
-                <div className="space-y-3">
-                  {formData.paymentPlan.construction.map((milestone, index) => (
-                    <div key={index} className="flex gap-2 items-start">
-                      <div className="flex-1">
-                        <ValidatedInput
-                          label=""
-                          value={milestone.milestone}
-                          onChange={(value: string) => updateConstructionMilestone(index, 'milestone', value)}
-                          rules={VALIDATION_RULES.milestone}
-                          error={errors[`milestone_${index}`]}
-                          placeholder="Milestone description"
-                        />
-                      </div>
-                      <div className="w-32">
-                        <ValidatedInput
-                          label=""
-                          value={milestone.percentage}
-                          onChange={(value: string) => updateConstructionMilestone(index, 'percentage', value)}
-                          rules={VALIDATION_RULES.percentage}
-                          error={errors[`percentage_${index}`]}
-                          placeholder="Percentage"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeConstructionMilestone(index)}
-                        disabled={formData.paymentPlan.construction.length === 1}
-                        className="mt-1"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Preview Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Eye className="h-5 w-5" />
-                  Project Preview
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Project Header */}
-                <div className="border-b pb-4">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h3 className="text-2xl font-bold">{formData.name || "Project Name"}</h3>
-                      <p className="text-gray-600">{formData.location || "Location"}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {formData.featured && <Badge variant="secondary">Featured</Badge>}
-                      {formData.registrationOpen && <Badge className="bg-green-500">Registration Open</Badge>}
-                      {Object.entries(formData.flags).map(([flag, value]) =>
-                        value && <Badge key={flag} variant="outline" className="capitalize">{flag}</Badge>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium">Type:</span>
-                      <p>{formData.type || "N/A"}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium">Status:</span>
-                      <p>{formData.status || "N/A"}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium">Developer:</span>
-                      <p>{formData.developer || "N/A"}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium">Total Units:</span>
-                      <p>{formData.totalUnits || "N/A"}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Categories */}
-                {formData.categories.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-2">Categories</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {formData.categories.map((category, index) => (
-                        <Badge key={index} variant="outline">{category}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Unit Types */}
-                {formData.unitTypes.length > 0 && formData.unitTypes.some(unit => unit.type) && (
-                  <div>
-                    <h4 className="font-semibold mb-3">Available Unit Types</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {formData.unitTypes.filter(unit => unit.type).map((unit, index) => (
-                        <div key={index} className="p-3 border rounded-lg">
-                          <h5 className="font-medium">{unit.type}</h5>
-                          <p className="text-sm text-gray-600">Size: {unit.size}</p>
-                          <p className="text-sm font-medium text-blue-600">{unit.price}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Amenities Preview */}
-                {formData.amenities.length > 0 && formData.amenities.some(amenity => amenity.category && amenity.items.length > 0) && (
-                  <div>
-                    <h4 className="font-semibold mb-3">Amenities</h4>
-                    <div className="space-y-3">
-                      {formData.amenities.filter(amenity => amenity.category && amenity.items.length > 0).map((amenity, index) => (
-                        <div key={index}>
-                          <h5 className="font-medium mb-2">{amenity.category}</h5>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            {amenity.items.map((item, itemIndex) => (
-                              <div key={itemIndex} className="text-sm text-gray-700">
-                                • {item}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Images Preview */}
-                <div>
-                  <h4 className="font-semibold mb-3">Images</h4>
-                  <div className="space-y-4">
-                    {coverImagePreview && (
-                      <div>
-                        <p className="text-sm text-gray-600 mb-2">Cover Image:</p>
-                        <img src={coverImagePreview} alt="Cover" className="w-full h-48 object-cover rounded-lg" />
-                      </div>
-                    )}
-
-                    {galleryPreviews.length > 0 && (
-                      <div>
-                        <p className="text-sm text-gray-600 mb-2">Gallery ({galleryPreviews.length} images):</p>
-                        <div className="grid grid-cols-4 gap-2">
-                          {galleryPreviews.slice(0, 8).map((preview, index) => (
-                            <img key={index} src={preview} alt={`Gallery ${index + 1}`} className="w-full h-20 object-cover rounded" />
-                          ))}
-                          {galleryPreviews.length > 8 && (
-                            <div className="flex items-center justify-center bg-gray-100 rounded h-20 text-sm text-gray-600">
-                              +{galleryPreviews.length - 8} more
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Pricing */}
-                <div>
-                  <h4 className="font-semibold mb-2">Pricing</h4>
-                  <p className="text-lg font-medium text-blue-600">{formData.price || "Price not set"}</p>
-                  {formData.priceNumeric > 0 && (
-                    <p className="text-sm text-gray-600">Numeric value: AED {formData.priceNumeric.toLocaleString()}</p>
+  return (
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="max-w-6xl max-h-[95vh] p-0 flex flex-col">
+        <DialogHeader className="p-6 pb-0 flex-shrink-0">
+          <DialogTitle className="text-2xl font-bold flex items-center gap-4">
+            {mode === 'edit' ? 'Edit Project' : 'Add New Project'}
+            
+            {/* Page Navigation */}
+            <div className="flex items-center gap-2 ml-auto">
+              {pages.map((page, index) => (
+                <div
+                  key={index}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm cursor-pointer transition-colors ${
+                    index === currentPage 
+                      ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                      : index < currentPage 
+                        ? 'bg-green-100 text-green-700 border border-green-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  onClick={() => setCurrentPage(index)}
+                >
+                  <span>{page.icon}</span>
+                  <span className="hidden md:inline">{page.title}</span>
+                  {currentPageErrors.length > 0 && index === currentPage && (
+                    <AlertCircle className="h-3 w-3 text-red-500" />
                   )}
                 </div>
-              </CardContent>
-            </Card>
+              ))}
+            </div>
+          </DialogTitle>
+        </DialogHeader>
 
+        {/* Current page errors summary */}
+        {currentPageErrors.length > 0 && (
+          <div className="px-6 py-2 bg-red-50 border-l-4 border-red-400 flex-shrink-0">
+            <div className="text-red-800 text-sm">
+              <p className="font-medium mb-1">Please fix the following issues:</p>
+              <ul className="list-disc list-inside space-y-1">
+                {currentPageErrors.slice(0, 3).map((error, index) => (
+                  <li key={index}>{error.message}</li>
+                ))}
+                {currentPageErrors.length > 3 && (
+                  <li>...and {currentPageErrors.length - 3} more</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0">
+          <div className="py-4">
+            {renderCurrentPage()}
           </div>
         </div>
 
@@ -2112,28 +2489,45 @@ export function ProjectFormModal({ isOpen, onClose, onSave, project, mode }: Pro
             <Button variant="outline" onClick={fillFakeData}>
               Fill Test Data
             </Button>
+            
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handleClose}>
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleSubmit} 
-                disabled={isSubmitting || !isFormValid}
-                className={!isFormValid ? 'opacity-50 cursor-not-allowed' : ''}
-              >
-                {isSubmitting ? 
-                  (mode === 'edit' ? "Updating..." : "Saving...") : 
-                  (mode === 'edit' ? "Update Project" : "Save Project")
-                }
-              </Button>
+              {currentPage > 0 && (
+                <Button variant="outline" onClick={prevPage}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+              )}
+              
+              {currentPage < pages.length - 1 ? (
+                <Button onClick={nextPage}>
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleClose}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleSubmit} 
+                    disabled={isSubmitting || !isFormValid}
+                    className={!isFormValid ? 'opacity-50 cursor-not-allowed' : ''}
+                  >
+                    {isSubmitting ? 
+                      (mode === 'edit' ? "Updating..." : "Saving...") : 
+                      (mode === 'edit' ? "Update Project" : "Save Project")
+                    }
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
           
-          {!isFormValid && Object.keys(validateForm()).length > 0 && (
+          {!isFormValid && currentPage === pages.length - 1 && (
             <div className="mt-3 text-sm text-red-600">
               <p className="flex items-center gap-1">
                 <AlertCircle className="h-4 w-4" />
-                Please fix {Object.keys(validateForm()).length} validation error(s) before submitting
+                Please fix all validation errors before submitting. Check previous pages for missing required fields.
               </p>
             </div>
           )}
