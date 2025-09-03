@@ -12,10 +12,7 @@ export function ProjectsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Projects</h1>
-        <p className="text-gray-600">Manage and track all your projects</p>
-      </div>
+    
 
       {/* Project Stats */}
  

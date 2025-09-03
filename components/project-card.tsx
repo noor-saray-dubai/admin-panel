@@ -3,7 +3,20 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MoreHorizontal, MapPin, Building, Calendar, DollarSign, Eye, Edit, Trash2 } from "lucide-react"
+import { 
+  MoreHorizontal, 
+  MapPin, 
+  Building, 
+  Calendar, 
+  DollarSign, 
+  Eye, 
+  Edit, 
+  Trash2,
+  Users,
+  Star,
+  Crown,
+  Zap
+} from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 // Use the same interfaces as in the main component
@@ -45,12 +58,11 @@ interface UnitType {
   price: string;
 }
 
-
-
-interface Developer {
-  id: string;
-  name: string;
-  slug?: string;
+interface IAuditInfo {
+  email: string;
+  timestamp: string;
+  ipAddress?: string;
+  userAgent?: string;
 }
 
 interface IProject {
@@ -87,9 +99,15 @@ interface IProject {
     featured: boolean;
     highValue: boolean;
   };
+  createdBy: IAuditInfo;
+  updatedBy: IAuditInfo;
+  version: number;
+  isActive: boolean;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
 }
+
 interface ProjectCardProps {
   project: IProject
   onView: (project: IProject) => void
@@ -105,9 +123,14 @@ export function ProjectCard({ project, onView, onEdit, onDelete }: ProjectCardPr
       case "completed":
         return "default"
       case "launching soon":
+      case "launched":
         return "destructive"
       case "ready to move":
         return "outline"
+      case "pre-launch":
+        return "outline"
+      case "sold out":
+        return "secondary"
       default:
         return "secondary"
     }
@@ -115,6 +138,34 @@ export function ProjectCard({ project, onView, onEdit, onDelete }: ProjectCardPr
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).getFullYear()
+  }
+
+  const formatDateTime = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+  }
+
+  const formatPrice = (price: string, priceNumeric: number) => {
+    // If price string is already formatted nicely, use it
+    if (price.includes('AED') || price.includes('$') || price.includes('€')) {
+      return price
+    }
+    
+    // Otherwise format the numeric value
+    if (priceNumeric >= 1000000) {
+      return `${(priceNumeric / 1000000).toFixed(1)}M AED`
+    } else if (priceNumeric >= 1000) {
+      return `${(priceNumeric / 1000).toFixed(0)}K AED`
+    } else {
+      return ` AED ${priceNumeric} `
+    }
+  }
+
+  const getTotalAmenities = () => {
+    return project.amenities?.reduce((total, category) => total + category.items.length, 0) || 0
   }
 
   return (
@@ -125,17 +176,53 @@ export function ProjectCard({ project, onView, onEdit, onDelete }: ProjectCardPr
           alt={project.name}
           className="w-full h-48 object-cover rounded-t-lg"
         />
-        {project.flags.elite && <Badge className="absolute top-2 left-2 bg-yellow-500">Elite</Badge>}
-        {project.flags.featured && <Badge className="absolute top-2 right-2 bg-blue-500">Featured</Badge>}
+        
+        {/* Status Badge - Top Left */}
+        <Badge variant={getStatusColor(project.status)} className="absolute top-2 left-2">
+          {project.status}
+        </Badge>
+
+        {/* Flags Badges - Top Right */}
+        <div className="absolute top-2 right-2 flex flex-col gap-1">
+          {project.flags?.elite && (
+            <Badge className="bg-yellow-500 hover:bg-yellow-600 text-xs">
+              <Crown className="h-3 w-3 mr-1" />
+              Elite
+            </Badge>
+          )}
+          {project.flags?.featured && (
+            <Badge className="bg-blue-500 hover:bg-blue-600 text-xs">
+              <Star className="h-3 w-3 mr-1" />
+              Featured
+            </Badge>
+          )}
+          {project.flags?.exclusive && (
+            <Badge className="bg-purple-500 hover:bg-purple-600 text-xs">
+              <Zap className="h-3 w-3 mr-1" />
+              Exclusive
+            </Badge>
+          )}
+        </div>
+
+        {/* Registration Status */}
+        {project.registrationOpen && (
+          <Badge className="absolute bottom-2 left-2 bg-green-500 hover:bg-green-600">
+            Registration Open
+          </Badge>
+        )}
       </div>
 
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-lg">{project.name}</CardTitle>
+          <div className="space-y-2 flex-1">
+            <CardTitle className="text-lg line-clamp-2">{project.name}</CardTitle>
             <div className="flex items-center text-sm text-muted-foreground">
               <MapPin className="h-4 w-4 mr-1" />
               {project.location}
+            </div>
+            <div className="flex items-center text-sm text-muted-foreground">
+              <Building className="h-4 w-4 mr-1" />
+              {project.developer}
             </div>
           </div>
           <DropdownMenu>
@@ -166,14 +253,21 @@ export function ProjectCard({ project, onView, onEdit, onDelete }: ProjectCardPr
         <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
 
         <div className="space-y-2">
-          <Badge variant={getStatusColor(project.status)}>{project.status}</Badge>
-          <div className="text-sm text-muted-foreground">{project.type}</div>
+          <Badge variant="outline" className="mr-2">{project.type}</Badge>
+          {project.categories?.slice(0, 2).map((category, index) => (
+            <Badge key={index} variant="outline" className="text-xs mr-1">
+              {category}
+            </Badge>
+          ))}
+          {project.categories && project.categories.length > 2 && (
+            <span className="text-xs text-muted-foreground">+{project.categories.length - 2} more</span>
+          )}
         </div>
 
-        <div className="flex items-center justify-between text-sm">
+        <div className="grid grid-cols-2 gap-4 text-sm">
           <div className="flex items-center space-x-1">
-            <Building className="h-4 w-4" />
-            <span>{project.developer}</span>
+            <Users className="h-4 w-4" />
+            <span>{project.totalUnits} units</span>
           </div>
           <div className="flex items-center space-x-1">
             <Calendar className="h-4 w-4" />
@@ -183,11 +277,57 @@ export function ProjectCard({ project, onView, onEdit, onDelete }: ProjectCardPr
 
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-1 text-lg font-semibold text-green-600">
-            <DollarSign className="h-4 w-4" />
-            <span>{project.price}</span>
+            {/* <DollarSign className="h-4 w-4" /> */}
+            <span>{formatPrice(project.price, project.priceNumeric)}</span>
           </div>
-          <div className="text-sm text-muted-foreground">{project.totalUnits} units</div>
+          <div className="text-sm text-muted-foreground">
+            {getTotalAmenities()} amenities
+          </div>
         </div>
+
+        {/* Unit Types Preview */}
+        {project.unitTypes && project.unitTypes.length > 0 && (
+          <div className="border-t pt-3">
+            <div className="text-xs text-muted-foreground mb-1">Unit Types:</div>
+            <div className="flex flex-wrap gap-1">
+              {project.unitTypes.slice(0, 3).map((unit, index) => (
+                <Badge key={index} variant="outline" className="text-xs">
+                  {unit.type}
+                </Badge>
+              ))}
+              {project.unitTypes.length > 3 && (
+                <span className="text-xs text-muted-foreground">+{project.unitTypes.length - 3} more</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Audit Info */}
+        {project.createdBy && project.updatedBy && (
+          <div className="border-t pt-3 space-y-1">
+            <div className="text-xs text-muted-foreground">
+              <div>Created: {formatDateTime(project.createdAt)} by {project.createdBy.email.split('@')[0]}</div>
+              <div>Updated: {formatDateTime(project.updatedAt)} by {project.updatedBy.email.split('@')[0]}</div>
+              <div className="flex items-center justify-between">
+                <span>Version: {project.version}</span>
+                {!project.isActive && (
+                  <Badge variant="outline" className="text-xs text-red-500">
+                    Inactive
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Launch Date Info */}
+        {project.launchDate && new Date(project.launchDate) > new Date() && (
+          <div className="border-t pt-3">
+            <div className="text-xs text-muted-foreground">
+              Launch Date: {formatDateTime(project.launchDate)}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
