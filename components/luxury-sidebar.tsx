@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { Users, Settings, Home, FileText, MessageSquare, Shield, Briefcase } from "lucide-react"
+import { Users, Settings, Home, FileText, MessageSquare, Shield, Briefcase, Building, ShoppingCart } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -12,6 +12,8 @@ const navigation = [
   { name: "Communities", href: "/dashboard/communities", icon: Users, key: "communities" },
   { name: "Developers", href: "/dashboard/developers", icon: Shield, key: "developers" },
   { name: "Careers", href: "/dashboard/careers", icon: Briefcase, key: "careers" },
+  { name: "Plots", href: "/dashboard/plots", icon: Building, key: "plots" },
+  { name: "Malls", href: "/dashboard/malls", icon: ShoppingCart, key: "malls" },
   { name: "Settings", href: "/dashboard/settings", icon: Settings, key: "settings" },
 ]
 

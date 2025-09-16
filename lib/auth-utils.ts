@@ -218,3 +218,6 @@ export function hasPermission(user: AuthenticatedUser, permission: string): bool
   const allowedPermissions = ['read', 'create', 'update'];
   return allowedPermissions.includes(permission.toLowerCase());
 }
+
+// Note: Permission checking is now handled by the withAuth wrapper
+// Individual resource permissions can be added here if needed in the future

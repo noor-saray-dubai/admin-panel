@@ -1,6 +1,7 @@
 
 
 import Project from "@/models/project";
+import Plot from "@/models/plots";
 
 /**
  * Create URL-friendly slug from text with advanced sanitization
@@ -266,6 +267,71 @@ export async function updateProjectSlugs(
 /**
  * Batch update slugs for existing projects (useful for migrations)
  */
+/**
+ * Generate unique plot slug by checking database
+ */
+export async function generateUniquePlotSlug(
+  text: string, 
+  excludeId?: string,
+  options?: {
+    maxLength?: number;
+    maxAttempts?: number;
+    separator?: string;
+  }
+): Promise<string> {
+  const { maxLength = 100, maxAttempts = 100, separator = '-' } = options || {};
+  
+  // Create base slug
+  const baseSlug = createSlug(text, { maxLength: maxLength - 10, separator }); // Reserve space for numbers
+  
+  let slug = baseSlug;
+  let attempt = 1;
+  
+  while (attempt <= maxAttempts) {
+    // Check if slug exists in database
+    const query: any = { slug };
+    if (excludeId) {
+      query._id = { $ne: excludeId };
+    }
+    
+    const existingPlot = await Plot.findOne(query);
+    
+    if (!existingPlot) {
+      return slug;
+    }
+    
+    // Generate new slug with number
+    attempt++;
+    slug = `${baseSlug}${separator}${attempt}`;
+  }
+  
+  throw new Error(`Could not generate unique plot slug after ${maxAttempts} attempts`);
+}
+
+/**
+ * Update all related slugs when plot data changes
+ */
+export async function updatePlotSlugs(
+  plotData: any,
+  existingPlot?: any
+): Promise<{
+  slug: string;
+}> {
+  const updates: any = {};
+  
+  // Update main slug if title changed (plots use title instead of name)
+  if (!existingPlot || existingPlot.title !== plotData.title) {
+    updates.slug = await generateUniquePlotSlug(
+      plotData.title || plotData.plotNumber || plotData.plotId, 
+      existingPlot?._id?.toString()
+    );
+  } else {
+    updates.slug = existingPlot.slug;
+  }
+  
+  return updates;
+}
+
 export async function batchUpdateSlugs(limit: number = 50): Promise<{
   updated: number;
   errors: string[];
