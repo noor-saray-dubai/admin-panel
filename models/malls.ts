@@ -379,9 +379,9 @@ const LegalDetailsSchema = new Schema<ILegalDetails>({
   },
   leaseholdExpiry: { type: Date },
   mortgageDetails: {
-    lender: { type: String, required: true, trim: true },
-    outstandingAmount: { type: Number, required: true, min: 0 },
-    maturityDate: { type: Date, required: true }
+    lender: { type: String, trim: true },
+    outstandingAmount: { type: Number, min: 0 },
+    maturityDate: { type: Date }
   }
 }, { _id: false });
 

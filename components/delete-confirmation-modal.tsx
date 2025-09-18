@@ -2,14 +2,15 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, Loader2 } from "lucide-react"
 
 interface DeleteConfirmationModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: () => void
+  onConfirm: () => Promise<void> | void
   itemName: string
   itemType: string
+  isDeleting?: boolean
 }
 
 export function DeleteConfirmationModal({
@@ -18,9 +19,20 @@ export function DeleteConfirmationModal({
   onConfirm,
   itemName,
   itemType,
+  isDeleting = false,
 }: DeleteConfirmationModalProps) {
+  const handleConfirm = async () => {
+    if (isDeleting) return // Prevent multiple clicks during deletion
+    
+    try {
+      await onConfirm()
+    } catch (error) {
+      console.error('Delete operation failed:', error)
+    }
+  }
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={isDeleting ? undefined : onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <div className="flex items-center space-x-2">
@@ -33,11 +45,22 @@ export function DeleteConfirmationModal({
         </DialogHeader>
 
         <div className="flex justify-end space-x-2 pt-4">
-          <Button variant="outline" onClick={onClose}>
+          <Button 
+            variant="outline" 
+            onClick={onClose}
+            disabled={isDeleting}
+          >
             Cancel
           </Button>
-          <Button variant="destructive" onClick={onConfirm}>
-            Delete
+          <Button 
+            variant="destructive" 
+            onClick={handleConfirm}
+            disabled={isDeleting}
+          >
+            {isDeleting && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            {isDeleting ? 'Deleting...' : 'Delete'}
           </Button>
         </div>
       </DialogContent>

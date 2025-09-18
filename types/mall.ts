@@ -60,11 +60,11 @@ export interface ILegalDetails {
   titleDeedNumber?: string;
   reraNumber?: string;
   zoning: string; // commercial, mixed-use, etc.
-  leaseholdExpiry?: Date;
+  leaseholdExpiry?: Date | string;
   mortgageDetails?: {
     lender: string;
     outstandingAmount: number;
-    maturityDate: Date;
+    maturityDate: Date | string;
   };
 }
 
@@ -254,7 +254,7 @@ export interface MallFormData {
 export interface MallFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (mall: IMall) => void;
+  onSuccess: (data: MallFormData) => void;
   mall?: IMall | null;
   mode: 'add' | 'edit';
 }

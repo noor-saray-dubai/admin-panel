@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { adminAuth } from "@/lib/firebaseAdmin";
+import { createAuthService } from "@/lib/auth/AuthService";
+import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
 
 // All possible cookie names that could contain auth data
 const AUTH_COOKIES = [
@@ -31,6 +33,16 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
+    // Get request data for logout
+    const body = await request.json().catch(() => ({}));
+    const { firebaseUid, email } = body;
+
+    // Get client info for audit log
+    const ip = request.headers.get('x-forwarded-for') || 
+               request.headers.get('x-real-ip') || 
+               'unknown';
+    const userAgent = request.headers.get('user-agent') || undefined;
+
     // Get all cookies from request for comprehensive clearing
     const allCookies = request.cookies.getAll();
     console.log("Found cookies:", allCookies.map(c => c.name));
@@ -57,12 +69,61 @@ export async function POST(request: NextRequest) {
         await adminAuth.setCustomUserClaims(decodedToken.uid, {});
         
         console.log(` Firebase session revoked for user: ${decodedToken.uid}`);
+        
+        // Log successful logout
+        try {
+          await AuditLog.create({
+            action: AuditAction.USER_LOGOUT,
+            success: true,
+            ip,
+            userAgent,
+            userEmail: email || decodedToken.email,
+            timestamp: new Date(),
+          });
+        } catch (auditErr) {
+          console.error('Failed to log logout audit:', auditErr);
+        }
+        
       } catch (firebaseErr) {
         console.error(" Firebase revocation failed:", firebaseErr);
+        
+        // Log failed logout attempt
+        try {
+          await AuditLog.create({
+            action: AuditAction.USER_LOGOUT,
+            success: false,
+            level: AuditLevel.ERROR,
+            errorMessage: firebaseErr instanceof Error ? firebaseErr.message : 'Firebase error',
+            ip,
+            userAgent,
+            userEmail: email,
+            timestamp: new Date(),
+          });
+        } catch (auditErr) {
+          console.error('Failed to log failed logout audit:', auditErr);
+        }
+        
         // Continue - don't let Firebase errors block logout
       }
     } else {
       console.log("⚠️ No valid session cookie found for Firebase revocation");
+      
+      // Still log the logout attempt even without session
+      if (firebaseUid || email) {
+        try {
+          await AuditLog.create({
+            action: AuditAction.USER_LOGOUT,
+            success: true,
+            ip,
+            userAgent,
+            userEmail: email,
+            details: { note: 'No session cookie found' },
+            timestamp: new Date(),
+          });
+        } catch (auditErr) {
+          console.error('Failed to log logout audit:', auditErr);
+        }
+      }
     }
 
     // 2️⃣ Create response with anti-cache headers

@@ -1,3 +1,4 @@
+//components/ui/instant-image-upload.tsx
 "use client"
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
@@ -84,31 +85,47 @@ export function InstantImageUpload({
 
   // Initialize existing images with better edit mode handling
   useEffect(() => {
-    if (existingImages && editMode) {
-      // In edit mode, set up existing images for preview
+    // Handle existing images for both add and edit modes
+    if (existingImages) {
       if (mode === 'single' && typeof existingImages === 'string' && existingImages) {
         const img: UploadedImage = {
           url: existingImages,
           publicId: extractPublicIdFromUrl(existingImages) || '',
-          originalName: getFilenameFromUrl(existingImages) || 'existing-image',
+          originalName: getFilenameFromUrl(existingImages) || 'uploaded-image',
           size: 0,
-          format: extractFormatFromUrl(existingImages) || 'unknown'
+          format: extractFormatFromUrl(existingImages) || 'webp'
         }
         setUploadedImages([img])
-        setExistingImageUrls([existingImages])
-      } else if (mode === 'multiple' && Array.isArray(existingImages)) {
+        
+        // Only mark as existing if we're in edit mode
+        if (editMode) {
+          setExistingImageUrls([existingImages])
+        } else {
+          setExistingImageUrls([]) // Clear existing URLs in add mode
+        }
+      } else if (mode === 'multiple' && Array.isArray(existingImages) && existingImages.length > 0) {
         const imgs: UploadedImage[] = existingImages.map((url, index) => ({
           url,
           publicId: extractPublicIdFromUrl(url) || '',
-          originalName: getFilenameFromUrl(url) || `existing-image-${index + 1}`,
+          originalName: getFilenameFromUrl(url) || `uploaded-image-${index + 1}`,
           size: 0,
-          format: extractFormatFromUrl(url) || 'unknown'
+          format: extractFormatFromUrl(url) || 'webp'
         }))
         setUploadedImages(imgs)
-        setExistingImageUrls([...existingImages])
+        
+        // Only mark as existing if we're in edit mode
+        if (editMode) {
+          setExistingImageUrls([...existingImages])
+        } else {
+          setExistingImageUrls([]) // Clear existing URLs in add mode
+        }
+      } else {
+        // No valid images provided, clear everything
+        setUploadedImages([])
+        setExistingImageUrls([])
       }
-    } else if (!editMode) {
-      // In add mode, start fresh
+    } else {
+      // No images provided, clear everything
       setUploadedImages([])
       setExistingImageUrls([])
     }

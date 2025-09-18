@@ -2,6 +2,7 @@ import type React from "react"
 import "./globals.css"
 import { LuxurySidebar } from "@/components/luxury-sidebar";
 import { LuxuryHeader } from "@/components/luxury-header";
+import { ToastProvider } from "@/components/ui/toast-system";
 
 export default function RootLayout({
   children,
@@ -10,7 +11,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ToastProvider>
+          {children}
+        </ToastProvider>
+      </body>
     </html>
   )
 }

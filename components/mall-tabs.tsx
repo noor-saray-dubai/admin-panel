@@ -22,12 +22,16 @@ import {
   TrendingUp,
   BarChart3,
   CheckCircle,
-  Edit2,
-  Eye
+  Edit2
 } from "lucide-react"
 
-import type { IMall } from "@/types/mall"
-import { MallFormModal } from "@/components/mall-form-modal"
+import type { IMall, MallFormData } from "@/types/mall"
+import { MallFormModal } from "@/components/mall"
+import { DeleteConfirmationModal } from "@/components/delete-confirmation-modal"
+import { MallCard } from "@/components/mall-card"
+import { MallViewModal } from "@/components/mall-view-modal"
+import { DataPageLayout } from "@/components/ui/data-page-layout"
+import type { StatCard, FilterConfig } from "@/components/ui/data-page-layout"
 
 // Basic interfaces for now - we'll expand these later
 interface MallPaginationInfo {
@@ -52,12 +56,24 @@ export function MallTabs() {
   const pathname = usePathname()
   const action = searchParams.get("action")
 
-  const [activeTab, setActiveTab] = useState("all")
+  // URL-based state - read from URL parameters
+  const activeTab = searchParams.get("tab") || "all"
+  const currentPage = parseInt(searchParams.get("page") || "1")
+  const searchTerm = searchParams.get("search") || ""
+  const selectedLocation = searchParams.get("location") || "all"
+  const selectedStatus = searchParams.get("status") || "all"
+  const selectedSaleStatus = searchParams.get("saleStatus") || "all"
+  const selectedOwnership = searchParams.get("ownership") || "all"
+  
+  // Local state for search input (for immediate typing feedback)
+  const [searchInput, setSearchInput] = useState(searchTerm)
+  
+  // Component state (non-URL)
   const [malls, setMalls] = useState<IMall[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pagination, setPagination] = useState<MallPaginationInfo>({
-    currentPage: 1,
+    currentPage: currentPage,
     totalPages: 1,
     totalCount: 0,
     limit: 20,
@@ -70,21 +86,54 @@ export function MallTabs() {
     saleStatuses: [],
     ownershipTypes: [],
   })
-
-  // Filter states
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedLocation, setSelectedLocation] = useState("all")
-  const [selectedStatus, setSelectedStatus] = useState("all")
-  const [selectedSaleStatus, setSelectedSaleStatus] = useState("all")
-  const [selectedOwnership, setSelectedOwnership] = useState("all")
+  
+  // Static tab counts (independent of filters)
+  const [tabCounts, setTabCounts] = useState({
+    all: 0,
+    available: 0,
+    operational: 0,
+    sold: 0,
+    verified: 0,
+    draft: 0
+  })
+  const [countsLoading, setCountsLoading] = useState(true)
 
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [selectedMall, setSelectedMall] = useState<IMall | null>(null)
 
-  // Build query parameters
-  const buildQueryParams = (page: number = pagination.currentPage, tab: string = activeTab) => {
+  // Update URL with new parameters
+  const updateURL = (newParams: Record<string, string | number>) => {
+    const params = new URLSearchParams(searchParams)
+    
+    // Update or set new parameters
+    Object.entries(newParams).forEach(([key, value]) => {
+      if (value && value !== "all" && value !== "") {
+        params.set(key, value.toString())
+      } else {
+        params.delete(key)
+      }
+    })
+    
+    // Always ensure tab is set
+    if (!params.get("tab")) {
+      params.set("tab", "all")
+    }
+    
+    // Reset page to 1 when filters change (except when explicitly setting page)
+    if (!newParams.hasOwnProperty("page") && Object.keys(newParams).some(key => key !== "page")) {
+      params.set("page", "1")
+    }
+    
+    router.push(`${pathname}?${params.toString()}`)
+  }
+
+  // Build query parameters for API calls
+  const buildQueryParams = (page: number = currentPage, tab: string = activeTab) => {
     const params = new URLSearchParams()
     params.set("page", page.toString())
     params.set("limit", "20")
@@ -97,6 +146,59 @@ export function MallTabs() {
     if (selectedOwnership && selectedOwnership !== "all") params.set("ownership", selectedOwnership)
     
     return params.toString()
+  }
+
+  // Fetch tab counts (static, independent of filters)
+  const fetchTabCounts = async () => {
+    setCountsLoading(true)
+    try {
+      const response = await fetch('/api/malls/counts')
+      
+      if (!response.ok) {
+        // If API doesn't exist yet, use fallback
+        if (response.status === 404) {
+          setTabCounts({
+            all: pagination.totalCount || 0,
+            available: 0,
+            operational: 0,
+            sold: 0,
+            verified: 0,
+            draft: 0
+          })
+          setCountsLoading(false)
+          return
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.success) {
+        setTabCounts({
+          all: data.counts.total || 0,
+          available: data.counts.available || 0,
+          operational: data.counts.operational || 0,
+          sold: data.counts.sold || 0,
+          verified: data.counts.verified || 0,
+          draft: data.counts.draft || 0
+        })
+      } else {
+        console.warn('Failed to fetch tab counts:', data.message)
+      }
+    } catch (err: any) {
+      console.warn('Tab counts API not available:', err.message)
+      // Use current data as fallback
+      setTabCounts({
+        all: pagination.totalCount || 0,
+        available: 0, // We'd need to calculate these based on status
+        operational: 0,
+        sold: 0,
+        verified: 0,
+        draft: 0
+      })
+    } finally {
+      setCountsLoading(false)
+    }
   }
 
   // Fetch malls with filters and pagination
@@ -153,41 +255,79 @@ export function MallTabs() {
     }
   }
 
-  // Initial fetch
+  // Fetch tab counts once on mount (independent of filters)
   useEffect(() => {
-    fetchMalls()
+    fetchTabCounts()
   }, [])
+
+  // Sync search input with URL changes (for external navigation)
+  useEffect(() => {
+    setSearchInput(searchTerm)
+  }, [searchTerm])
+
+  // Fetch data when URL parameters change
+  useEffect(() => {
+    fetchMalls(currentPage, activeTab)
+  }, [activeTab, currentPage, searchTerm, selectedLocation, selectedStatus, selectedSaleStatus, selectedOwnership])
 
   // Handle URL action parameter
   useEffect(() => {
     if (action === "new") {
       setIsAddModalOpen(true)
+    } else if (action === "edit") {
+      // Check if there's a mall slug in the URL to edit
+      const mallSlug = searchParams.get("slug")
+      if (mallSlug && malls.length > 0) {
+        const mallToEdit = malls.find(m => m.slug === mallSlug)
+        if (mallToEdit) {
+          setSelectedMall(mallToEdit)
+          setIsEditModalOpen(true)
+        }
+      }
     }
-  }, [action])
+  }, [action, searchParams, malls])
 
   // Handle tab change
   const handleTabChange = (tab: string) => {
-    setActiveTab(tab)
-    fetchMalls(1, tab) // Reset to page 1 when changing tabs
+    updateURL({ tab })
   }
 
   // Handle filter changes
   const handleSearch = () => {
-    fetchMalls(1, activeTab) // Reset to page 1 when searching
+    updateURL({ search: searchInput })
   }
 
   const handleClearFilters = () => {
-    setSearchTerm("")
-    setSelectedLocation("all")
-    setSelectedStatus("all")
-    setSelectedSaleStatus("all")
-    setSelectedOwnership("all")
-    fetchMalls(1, activeTab)
+    updateURL({
+      search: "",
+      location: "all",
+      status: "all",
+      saleStatus: "all",
+      ownership: "all",
+      page: "1"
+    })
+  }
+
+  // Individual filter handlers
+  const handleLocationChange = (value: string) => {
+    updateURL({ location: value })
+  }
+
+  const handleStatusChange = (value: string) => {
+    updateURL({ status: value })
+  }
+
+  const handleSaleStatusChange = (value: string) => {
+    updateURL({ saleStatus: value })
+  }
+
+  const handleOwnershipChange = (value: string) => {
+    updateURL({ ownership: value })
   }
 
   // Pagination handlers
   const handlePageChange = (page: number) => {
-    fetchMalls(page, activeTab)
+    updateURL({ page })
   }
 
   const handleAddMall = () => {
@@ -208,165 +348,331 @@ export function MallTabs() {
     setSelectedMall(null)
   }
 
+  const closeViewModal = () => {
+    setIsViewModalOpen(false)
+    setSelectedMall(null)
+  }
+
+  const closeDeleteModal = () => {
+    if (isDeleting) return // Don't close if deletion is in progress
+    setIsDeleteModalOpen(false)
+    setIsDeleting(false)
+    setSelectedMall(null)
+  }
+
+  const handleViewMall = (mall: IMall) => {
+    setSelectedMall(mall)
+    setIsViewModalOpen(true)
+  }
+
   const handleEditMall = (mall: IMall) => {
     setSelectedMall(mall)
     setIsEditModalOpen(true)
   }
 
-  const handleMallSuccess = (mall: IMall) => {
-    // Refresh the malls list to show updated data
-    fetchMalls(pagination.currentPage, activeTab)
+  const handleDeleteMall = (mall: IMall) => {
+    setSelectedMall(mall)
+    setIsDeleteModalOpen(true)
   }
 
-  // Tab data configuration
+  // API functions for mall operations
+  const createMall = async (mallData: MallFormData): Promise<IMall> => {
+    const response = await fetch('/api/malls/add', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(mallData)
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      // Create detailed error message based on error type
+      let errorMessage = result.message || `Failed to create mall: ${response.status}`
+      
+      // Handle specific error types with detailed messages
+      if (result.error === 'VALIDATION_ERROR' && result.errors) {
+        if (typeof result.errors === 'object' && !Array.isArray(result.errors)) {
+          const fieldErrors = Object.entries(result.errors)
+            .map(([field, error]) => `${field}: ${error}`)
+            .join(', ')
+          errorMessage = `Validation Error: ${fieldErrors}`
+        } else {
+          errorMessage = `Validation Error: ${Array.isArray(result.errors) ? result.errors.join(', ') : result.errors}`
+        }
+      } else if (result.error === 'DB_VALIDATION_ERROR' && result.errors) {
+        const dbErrors = Array.isArray(result.errors) 
+          ? result.errors.join(', ') 
+          : result.errors
+        errorMessage = `Database Validation Error: ${dbErrors}`
+      } else if (result.error === 'DUPLICATE_ENTRY') {
+        errorMessage = result.message || 'A mall with this name already exists'
+      } else if (result.error === 'RATE_LIMITED') {
+        errorMessage = 'Too many requests. Please try again later.'
+      } else if (result.error === 'EMPTY_DATA') {
+        errorMessage = 'No mall data provided. Please fill out the form.'
+      }
+      
+      const error = new Error(errorMessage)
+      // Attach additional error details for form handling
+      if (result.errors) {
+        (error as any).fieldErrors = result.errors
+      }
+      (error as any).errorType = result.error
+      throw error
+    }
+    
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to create mall')
+    }
+    
+    return result.mall
+  }
+
+  const updateMall = async (slug: string, mallData: Partial<MallFormData>): Promise<IMall> => {
+    const response = await fetch(`/api/malls/update/${slug}`, {
+      method: 'PUT', 
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(mallData)
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      // Create detailed error message based on error type
+      let errorMessage = result.message || `Failed to update mall: ${response.status}`
+      
+      // Handle specific error types with detailed messages
+      if (result.error === 'VALIDATION_ERROR' && result.errors) {
+        if (typeof result.errors === 'object' && !Array.isArray(result.errors)) {
+          const fieldErrors = Object.entries(result.errors)
+            .map(([field, error]) => `${field}: ${error}`)
+            .join(', ')
+          errorMessage = `Validation Error: ${fieldErrors}`
+        } else {
+          errorMessage = `Validation Error: ${Array.isArray(result.errors) ? result.errors.join(', ') : result.errors}`
+        }
+      } else if (result.error === 'DB_VALIDATION_ERROR' && result.errors) {
+        const dbErrors = Array.isArray(result.errors) 
+          ? result.errors.join(', ') 
+          : result.errors
+        errorMessage = `Database Validation Error: ${dbErrors}`
+      } else if (result.error === 'DUPLICATE_ENTRY') {
+        errorMessage = result.message || 'A mall with this name already exists'
+      } else if (result.error === 'NOT_FOUND') {
+        errorMessage = 'Mall not found or has been deleted'
+      } else if (result.error === 'RATE_LIMITED') {
+        errorMessage = 'Too many requests. Please try again later.'
+      }
+      
+      const error = new Error(errorMessage)
+      // Attach additional error details for form handling
+      if (result.errors) {
+        (error as any).fieldErrors = result.errors
+      }
+      (error as any).errorType = result.error
+      throw error
+    }
+    
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to update mall')
+    }
+    
+    return result.mall
+  }
+
+  const deleteMall = async (slug: string): Promise<void> => {
+    const response = await fetch(`/api/malls/delete/${slug}`, {
+      method: 'DELETE',
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      let errorMessage = result.message || `Failed to delete mall: ${response.status}`
+      
+      if (result.error === 'NOT_FOUND') {
+        errorMessage = 'Mall not found or has already been deleted'
+      } else if (result.error === 'DATABASE_CONNECTION_ERROR') {
+        errorMessage = 'Database connection failed. Please try again.'
+      }
+      
+      const error = new Error(errorMessage)
+      ;(error as any).errorType = result.error
+      throw error
+    }
+    
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to delete mall')
+    }
+  }
+
+  // Handle add modal success
+  const handleAddMallSuccess = async (mallData: MallFormData): Promise<void> => {
+    try {
+      const newMall = await createMall(mallData)
+      // Refresh the malls list to show new data
+      await fetchMalls(pagination.currentPage, activeTab)
+      // Show success message
+      console.log('✅ Mall created successfully:', newMall.name)
+      // Close the modal
+      closeModal()
+    } catch (error: any) {
+      console.error('Error creating mall:', error)
+      throw error // Re-throw so the form can handle it
+    }
+  }
+
+  // Handle edit modal success  
+  const handleEditMallSuccess = async (mallData: MallFormData): Promise<void> => {
+    if (!selectedMall) {
+      throw new Error('No mall selected for editing')
+    }
+    
+    try {
+      const updatedMall = await updateMall(selectedMall.slug, mallData)
+      // Refresh the malls list to show updated data
+      await fetchMalls(pagination.currentPage, activeTab)
+      // Show success message
+      console.log('✅ Mall updated successfully:', updatedMall.name)
+      // Close the modal
+      closeEditModal()
+    } catch (error: any) {
+      console.error('Error updating mall:', error)
+      throw error // Re-throw so the form can handle it
+    }
+  }
+
+  // Handle confirm delete
+  const handleConfirmDelete = async (): Promise<void> => {
+    if (!selectedMall || isDeleting) {
+      return // Prevent multiple delete attempts
+    }
+    
+    setIsDeleting(true)
+    
+    try {
+      await deleteMall(selectedMall.slug)
+      // Refresh the malls list to show updated data
+      await fetchMalls(pagination.currentPage, activeTab)
+      // Show success message
+      console.log('✅ Mall deleted successfully:', selectedMall.name)
+      
+      // Close the modal after successful deletion
+      setIsDeleteModalOpen(false)
+      setSelectedMall(null)
+    } catch (error: any) {
+      console.error('Error deleting mall:', error)
+      // You can add toast notification here if you have a toast system
+      alert(`Failed to delete mall: ${error.message}`)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Tab data configuration with static counts
   const tabs = [
-    { id: "all", label: "All Malls", icon: Building, count: pagination.totalCount },
-    { id: "available", label: "Available", icon: Store, count: 0 },
-    { id: "operational", label: "Operational", icon: ShoppingCart, count: 0 },
-    { id: "sold", label: "Sold", icon: CheckCircle, count: 0 },
-    { id: "verified", label: "Verified", icon: CheckCircle, count: 0 },
-    { id: "draft", label: "Draft", icon: Filter, count: 0 }
+    { id: "all", label: "All Malls", icon: Building, count: countsLoading ? 0 : tabCounts.all },
+    { id: "available", label: "Available", icon: Store, count: countsLoading ? 0 : tabCounts.available },
+    { id: "operational", label: "Operational", icon: ShoppingCart, count: countsLoading ? 0 : tabCounts.operational },
+    { id: "sold", label: "Sold", icon: CheckCircle, count: countsLoading ? 0 : tabCounts.sold },
+    { id: "verified", label: "Verified", icon: CheckCircle, count: countsLoading ? 0 : tabCounts.verified },
+    { id: "draft", label: "Draft", icon: Filter, count: countsLoading ? 0 : tabCounts.draft }
+  ]
+
+  // Configure stats for DataPageLayout
+  const mallStats: StatCard[] = [
+    {
+      title: "Total Malls",
+      value: pagination.totalCount,
+      icon: Building,
+      description: "Across all locations",
+      isLoading: loading && malls.length === 0
+    },
+    {
+      title: "Available",
+      value: 0,
+      icon: Store,
+      description: "For sale or investment",
+      isLoading: loading && malls.length === 0
+    },
+    {
+      title: "Operational",
+      value: 0,
+      icon: ShoppingCart,
+      description: "Currently operating",
+      isLoading: loading && malls.length === 0
+    },
+    {
+      title: "Portfolio Value",
+      value: "AED 0",
+      icon: TrendingUp,
+      description: "Total estimated value",
+      isLoading: loading && malls.length === 0
+    }
+  ]
+
+  // Configure filters for DataPageLayout
+  const mallFilters: FilterConfig[] = [
+    {
+      label: "Location",
+      value: selectedLocation,
+      placeholder: "Location",
+      options: [
+        { value: "all", label: "All Locations" }
+        // We'll populate these from API data later
+      ],
+      onChange: handleLocationChange
+    },
+    {
+      label: "Status",
+      value: selectedStatus,
+      placeholder: "Status",
+      options: [
+        { value: "all", label: "All Statuses" },
+        { value: "Operational", label: "Operational" },
+        { value: "Under Construction", label: "Under Construction" },
+        { value: "Planned", label: "Planned" },
+        { value: "For Sale", label: "For Sale" }
+      ],
+      onChange: handleStatusChange
+    },
+    {
+      label: "Ownership",
+      value: selectedOwnership,
+      placeholder: "Ownership",
+      options: [
+        { value: "all", label: "All Types" },
+        { value: "freehold", label: "Freehold" },
+        { value: "leasehold", label: "Leasehold" }
+      ],
+      onChange: handleOwnershipChange
+    }
   ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Malls</h1>
-          <p className="text-muted-foreground mt-2">
-            Manage shopping malls and commercial properties
-          </p>
-        </div>
-        <Button onClick={handleAddMall} size="lg">
-          <Plus className="mr-2 h-4 w-4" />
-          Add Mall
-        </Button>
-      </div>
-
-      {/* Summary Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Malls</CardTitle>
-            <Building className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{pagination.totalCount}</div>
-            <p className="text-xs text-muted-foreground">
-              Across all locations
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Available</CardTitle>
-            <Store className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">
-              For sale or investment
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Operational</CardTitle>
-            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">
-              Currently operating
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Portfolio Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">AED 0</div>
-            <p className="text-xs text-muted-foreground">
-              Total estimated value
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Search & Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col lg:flex-row gap-4">
-            {/* Search Input */}
-            <div className="flex-1 min-w-0">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search malls by name, location, or mall ID..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            
-            {/* Filter Selects */}
-            <div className="flex gap-2">
-              <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Location" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Locations</SelectItem>
-                  {/* We'll populate these from API data later */}
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="Operational">Operational</SelectItem>
-                  <SelectItem value="Under Construction">Under Construction</SelectItem>
-                  <SelectItem value="Planned">Planned</SelectItem>
-                  <SelectItem value="For Sale">For Sale</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedOwnership} onValueChange={setSelectedOwnership}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Ownership" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="freehold">Freehold</SelectItem>
-                  <SelectItem value="leasehold">Leasehold</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-2">
-              <Button onClick={handleSearch}>
-                <Search className="h-4 w-4 mr-2" />
-                Search
-              </Button>
-              <Button variant="outline" onClick={handleClearFilters}>
-                Clear
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <>
+      <DataPageLayout
+        title="Malls"
+        subtitle="Manage shopping malls and commercial properties"
+        primaryAction={{
+          label: "Add Mall",
+          onClick: handleAddMall,
+          icon: Plus
+        }}
+        stats={mallStats}
+      searchConfig={{
+        placeholder: "Search malls by name, location, or mall ID...",
+        value: searchInput,
+        onChange: setSearchInput,
+        onSearch: handleSearch
+      }}
+        filters={mallFilters}
+        onClearFilters={handleClearFilters}
+      >
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
@@ -425,53 +731,17 @@ export function MallTabs() {
               </div>
             ) : (
               <>
-                {/* Mall Grid - We'll implement MallCard component later */}
+                {/* Mall Grid using MallCard component */}
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {malls.map((mall) => (
-                    <Card key={mall.mallId} className="hover:shadow-md transition-shadow">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <CardTitle className="text-lg">{mall.name}</CardTitle>
-                            <p className="text-sm text-muted-foreground">{mall.subtitle}</p>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditMall(mall)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          <div className="flex items-center text-sm text-muted-foreground">
-                            <MapPin className="h-4 w-4 mr-1" />
-                            {mall.location}, {mall.subLocation}
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-lg text-green-600">
-                              {mall.price.total}
-                            </span>
-                            <span className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                              {mall.status}
-                            </span>
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {mall.size.totalArea.toLocaleString()} sqft • {mall.size.floors} floors
-                          </div>
-                          {mall.rentalDetails?.totalStores > 0 && (
-                            <div className="text-xs text-muted-foreground">
-                              {mall.rentalDetails.totalStores} stores • {mall.rentalDetails.currentOccupancy}% occupied
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <MallCard
+                      key={mall.mallId}
+                      mall={mall}
+                      onView={handleViewMall}
+                      onEdit={handleEditMall}
+                      onDelete={handleDeleteMall}
+                      isDeleting={isDeleting && selectedMall?.mallId === mall.mallId}
+                    />
                   ))}
                 </div>
 
@@ -514,22 +784,50 @@ export function MallTabs() {
         ))}
       </Tabs>
 
-      {/* Add Mall Modal */}
-      <MallFormModal 
-        isOpen={isAddModalOpen} 
-        onClose={closeModal} 
-        mode="add"
-        onSuccess={handleMallSuccess}
-      />
+      </DataPageLayout>
 
-      {/* Edit Mall Modal */}
-      <MallFormModal 
-        isOpen={isEditModalOpen} 
-        onClose={closeEditModal} 
-        mode="edit"
-        mall={selectedMall}
-        onSuccess={handleMallSuccess}
-      />
-    </div>
+      {/* Modals */}
+      {/* Add Mall Modal - Only render when open */}
+      {isAddModalOpen && (
+        <MallFormModal 
+          isOpen={isAddModalOpen} 
+          onClose={closeModal} 
+          mode="add"
+          onSuccess={handleAddMallSuccess}
+        />
+      )}
+
+      {/* Edit Mall Modal - Only render when open */}
+      {isEditModalOpen && selectedMall && (
+        <MallFormModal 
+          isOpen={isEditModalOpen} 
+          onClose={closeEditModal} 
+          mode="edit"
+          mall={selectedMall}
+          onSuccess={handleEditMallSuccess}
+        />
+      )}
+
+      {/* View Mall Modal */}
+      {isViewModalOpen && selectedMall && (
+        <MallViewModal
+          isOpen={isViewModalOpen}
+          onClose={closeViewModal}
+          mall={selectedMall}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && selectedMall && (
+        <DeleteConfirmationModal
+          isOpen={isDeleteModalOpen}
+          onClose={closeDeleteModal}
+          onConfirm={handleConfirmDelete}
+          itemName={selectedMall.name}
+          itemType="Mall"
+          isDeleting={isDeleting}
+        />
+      )}
+    </>
   )
 }

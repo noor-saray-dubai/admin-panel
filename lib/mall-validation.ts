@@ -42,28 +42,34 @@ export function validateMallData(data: Partial<MallFormData>, isUpdate = false):
     fieldErrors[field] = message;
   };
 
-  // Required string fields with length limits
+  // Required string fields with length limits (all mandatory)
   if (!isUpdate || data.name !== undefined) {
-    const nameError = validateString(data.name, "Mall name", 2, 100, !isUpdate);
+    const nameError = validateString(data.name, "Mall name", 3, 100, true);
     if (nameError) addFieldError('name', nameError);
   }
 
   if (!isUpdate || data.subtitle !== undefined) {
-    const subtitleError = validateString(data.subtitle, "Subtitle", 2, 200, !isUpdate);
+    const subtitleError = validateString(data.subtitle, "Subtitle", 3, 200, true);
     if (subtitleError) addFieldError('subtitle', subtitleError);
   }
 
   if (!isUpdate || data.location !== undefined) {
-    const locationError = validateString(data.location, "Location", 2, 100, !isUpdate);
+    const locationError = validateString(data.location, "Location", 3, 100, true);
     if (locationError) addFieldError('location', locationError);
   }
 
   if (!isUpdate || data.subLocation !== undefined) {
-    const subLocationError = validateString(data.subLocation, "Sub-location", 2, 100, !isUpdate);
+    const subLocationError = validateString(data.subLocation, "Sub-location", 3, 100, true);
     if (subLocationError) addFieldError('subLocation', subLocationError);
   }
 
-  // Status validation
+  // Architecture is now required
+  if (!isUpdate || data.architecture !== undefined) {
+    const architectureError = validateString(data.architecture, "Architecture", 3, 200, true);
+    if (architectureError) addFieldError('architecture', architectureError);
+  }
+
+  // Status validation (always required)
   if (!isUpdate || data.status !== undefined) {
     const validStatuses = [
       'Operational',
@@ -79,41 +85,39 @@ export function validateMallData(data: Partial<MallFormData>, isUpdate = false):
       'Reserved'
     ];
     if (!data.status) {
-      if (!isUpdate) addFieldError('status', 'Status is required.');
+      addFieldError('status', 'Status is required.');
     } else if (!validStatuses.includes(data.status)) {
       addFieldError('status', `Status must be one of: ${validStatuses.join(', ')}`);
     }
   }
 
-  // Ownership validation
+  // Ownership validation (always required)
   if (!isUpdate || data.ownership !== undefined) {
     const validOwnership = ['freehold', 'leasehold'];
     if (!data.ownership) {
-      if (!isUpdate) addFieldError('ownership', 'Ownership is required.');
+      addFieldError('ownership', 'Ownership is required.');
     } else if (!validOwnership.includes(data.ownership)) {
       addFieldError('ownership', `Ownership must be one of: ${validOwnership.join(', ')}`);
     }
   }
 
-  // Price validations
+  // Price validations (all required)
   if (!isUpdate || data.price !== undefined) {
     if (!data.price || typeof data.price !== "object") {
-      if (!isUpdate) addFieldError('price', "Price object is required.");
+      addFieldError('price', "Price object is required.");
     } else {
-      if (data.price.perSqft !== undefined && (typeof data.price.perSqft !== "number" || data.price.perSqft <= 0)) {
-        addFieldError('price.perSqft', "Price per sqft must be a positive number.");
+      if (typeof data.price.perSqft !== "number" || data.price.perSqft <= 0) {
+        addFieldError('price.perSqft', "Price per sqft is required and must be a positive number.");
       }
-      if (data.price.totalNumeric !== undefined && (typeof data.price.totalNumeric !== "number" || data.price.totalNumeric <= 0)) {
-        addFieldError('price.totalNumeric', "Total price must be a positive number.");
+      if (typeof data.price.totalNumeric !== "number" || data.price.totalNumeric <= 0) {
+        addFieldError('price.totalNumeric', "Total price is required and must be a positive number.");
       }
-      if (data.price.total !== undefined) {
-        const totalError = validateString(data.price.total, "Total price display", 1, 50, !isUpdate);
-        if (totalError) addFieldError('price.total', totalError);
-      }
+      const totalError = validateString(data.price.total, "Total price display", 3, 50, true);
+      if (totalError) addFieldError('price.total', totalError);
       
       const validCurrencies = ['AED', 'USD', 'EUR'];
-      if (data.price.currency !== undefined && !validCurrencies.includes(data.price.currency)) {
-        addFieldError('price.currency', `Currency must be one of: ${validCurrencies.join(', ')}`);
+      if (!data.price.currency || !validCurrencies.includes(data.price.currency)) {
+        addFieldError('price.currency', `Currency is required and must be one of: ${validCurrencies.join(', ')}`);
       }
     }
   }
@@ -149,11 +153,12 @@ export function validateMallData(data: Partial<MallFormData>, isUpdate = false):
     if (!data.rentalDetails || typeof data.rentalDetails !== "object") {
       if (!isUpdate) addFieldError('rentalDetails', "Rental details object is required.");
     } else {
+      // Individual field validations
       if (data.rentalDetails.maxStores !== undefined && (typeof data.rentalDetails.maxStores !== "number" || data.rentalDetails.maxStores < 1)) {
-        addFieldError('rentalDetails.maxStores', "Maximum stores must be at least 1.");
+        addFieldError('rentalDetails.maxStores', "Maximum stores capacity must be at least 1.");
       }
       if (data.rentalDetails.currentOccupancy !== undefined && (typeof data.rentalDetails.currentOccupancy !== "number" || data.rentalDetails.currentOccupancy < 0 || data.rentalDetails.currentOccupancy > 100)) {
-        addFieldError('rentalDetails.currentOccupancy', "Occupancy must be between 0 and 100.");
+        addFieldError('rentalDetails.currentOccupancy', "Current occupancy must be a percentage between 0 and 100.");
       }
       if (data.rentalDetails.averageRent !== undefined && (typeof data.rentalDetails.averageRent !== "number" || data.rentalDetails.averageRent < 0)) {
         addFieldError('rentalDetails.averageRent', "Average rent cannot be negative.");
@@ -164,6 +169,28 @@ export function validateMallData(data: Partial<MallFormData>, isUpdate = false):
       if (data.rentalDetails.vacantStores !== undefined && (typeof data.rentalDetails.vacantStores !== "number" || data.rentalDetails.vacantStores < 0)) {
         addFieldError('rentalDetails.vacantStores', "Vacant stores cannot be negative.");
       }
+
+      // Cross-validation between rental fields
+      const maxStores = data.rentalDetails.maxStores;
+      const totalStores = data.rentalDetails.totalStores;
+      const vacantStores = data.rentalDetails.vacantStores;
+      const currentOccupancy = data.rentalDetails.currentOccupancy;
+
+      // Validate maxStores >= totalStores
+      if (maxStores !== undefined && totalStores !== undefined && 
+          typeof maxStores === "number" && typeof totalStores === "number" &&
+          maxStores < totalStores) {
+        addFieldError('rentalDetails.totalStores', `Total stores (${totalStores}) cannot exceed maximum capacity (${maxStores}).`);
+      }
+
+      // Only validate if vacantStores is explicitly provided and exceeds totalStores
+      if (totalStores !== undefined && vacantStores !== undefined && 
+          typeof totalStores === "number" && typeof vacantStores === "number" &&
+          vacantStores > totalStores && vacantStores > 0) {
+        addFieldError('rentalDetails.vacantStores', `Vacant stores (${vacantStores}) cannot exceed total stores (${totalStores}).`);
+      }
+
+      // Skip occupancy consistency checks - client-side validation handles this
     }
   }
 
@@ -233,6 +260,95 @@ export function validateMallData(data: Partial<MallFormData>, isUpdate = false):
     }
   }
 
+  // Mortgage Details validations (nested under legalDetails)
+  if (data.legalDetails?.mortgageDetails !== undefined && data.legalDetails?.mortgageDetails !== null) {
+    if (typeof data.legalDetails.mortgageDetails === "object") {
+      const mortgageDetails = data.legalDetails.mortgageDetails;
+      
+      // Check if any mortgage field has been meaningfully provided to determine if validation is needed
+      const hasLender = mortgageDetails.lender && typeof mortgageDetails.lender === "string" && mortgageDetails.lender.trim().length > 0;
+      const hasOutstandingAmount = mortgageDetails.outstandingAmount !== undefined && mortgageDetails.outstandingAmount !== null && mortgageDetails.outstandingAmount > 0;
+      const hasMaturityDate = mortgageDetails.maturityDate !== undefined && mortgageDetails.maturityDate !== null && 
+        (mortgageDetails.maturityDate instanceof Date || 
+         (typeof mortgageDetails.maturityDate === 'string' && mortgageDetails.maturityDate.trim().length > 0));
+      
+      const hasAnyMortgageField = hasLender || hasOutstandingAmount || hasMaturityDate;
+      
+      if (hasAnyMortgageField) {
+        // If any field is provided, all required fields must be filled
+        if (!mortgageDetails.lender || typeof mortgageDetails.lender !== "string" || mortgageDetails.lender.trim().length === 0) {
+          addFieldError('legalDetails.mortgageDetails.lender', "Lender name is required when mortgage details are provided.");
+        }
+        
+        if (!mortgageDetails.maturityDate) {
+          addFieldError('legalDetails.mortgageDetails.maturityDate', "Maturity date is required when mortgage details are provided.");
+        } else {
+          // Validate date format and value
+          let dateString: string;
+          let isValidFormat = true;
+          
+          if (mortgageDetails.maturityDate instanceof Date) {
+            // Handle Date object
+            try {
+              dateString = mortgageDetails.maturityDate.toISOString().split('T')[0];
+            } catch (error) {
+              isValidFormat = false;
+              dateString = '';
+            }
+          } else if (typeof mortgageDetails.maturityDate === 'string') {
+            // Handle string (should already be in YYYY-MM-DD format)
+            dateString = mortgageDetails.maturityDate;
+          } else {
+            isValidFormat = false;
+            dateString = '';
+          }
+          
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!isValidFormat || !dateRegex.test(dateString)) {
+            addFieldError('legalDetails.mortgageDetails.maturityDate', "Maturity date must be in YYYY-MM-DD format.");
+          } else {
+            // Validate that it's a valid date and in the future
+            const maturityDate = new Date(dateString);
+            if (isNaN(maturityDate.getTime())) {
+              addFieldError('legalDetails.mortgageDetails.maturityDate', "Maturity date must be a valid date.");
+            } else {
+              const today = new Date();
+              today.setHours(0, 0, 0, 0); // Reset time for comparison
+              maturityDate.setHours(0, 0, 0, 0);
+              
+              if (maturityDate <= today) {
+                addFieldError('legalDetails.mortgageDetails.maturityDate', "Maturity date must be in the future.");
+              }
+            }
+          }
+        }
+        
+        if (mortgageDetails.outstandingAmount === undefined || mortgageDetails.outstandingAmount === null || 
+            typeof mortgageDetails.outstandingAmount !== "number" || mortgageDetails.outstandingAmount < 0) {
+          addFieldError('legalDetails.mortgageDetails.outstandingAmount', "Outstanding amount is required and must be a non-negative number when mortgage details are provided.");
+        }
+      }
+
+      // Optional mortgage fields validation (if provided)
+      if (mortgageDetails.loanAmount !== undefined && 
+          (typeof mortgageDetails.loanAmount !== "number" || mortgageDetails.loanAmount < 0)) {
+        addFieldError('legalDetails.mortgageDetails.loanAmount', "Loan amount must be a non-negative number.");
+      }
+      if (mortgageDetails.interestRate !== undefined && 
+          (typeof mortgageDetails.interestRate !== "number" || mortgageDetails.interestRate < 0 || mortgageDetails.interestRate > 100)) {
+        addFieldError('legalDetails.mortgageDetails.interestRate', "Interest rate must be between 0 and 100.");
+      }
+      if (mortgageDetails.loanTerm !== undefined && 
+          (typeof mortgageDetails.loanTerm !== "number" || mortgageDetails.loanTerm < 1)) {
+        addFieldError('legalDetails.mortgageDetails.loanTerm', "Loan term must be at least 1 year.");
+      }
+      if (mortgageDetails.monthlyPayment !== undefined && 
+          (typeof mortgageDetails.monthlyPayment !== "number" || mortgageDetails.monthlyPayment < 0)) {
+        addFieldError('legalDetails.mortgageDetails.monthlyPayment', "Monthly payment must be a non-negative number.");
+      }
+    }
+  }
+
   // Features validation
   if (data.features !== undefined) {
     if (!Array.isArray(data.features)) {
@@ -281,13 +397,24 @@ export function validateMallData(data: Partial<MallFormData>, isUpdate = false):
     }
   }
 
-  // Year validations
-  const currentYear = new Date().getFullYear();
-  if (data.yearBuilt !== undefined && (data.yearBuilt < 1900 || data.yearBuilt > 2050)) {
-    addFieldError('yearBuilt', "Year built must be between 1900 and 2050.");
+  // Main image validation (required)
+  if (!isUpdate || data.image !== undefined) {
+    if (!data.image || typeof data.image !== "string" || data.image.trim().length === 0) {
+      addFieldError('image', 'Main mall image is required.');
+    }
   }
-  if (data.yearOpened !== undefined && (data.yearOpened < 1900 || data.yearOpened > 2050)) {
-    addFieldError('yearOpened', "Year opened must be between 1900 and 2050.");
+
+  // Year validations (required)
+  const currentYear = new Date().getFullYear();
+  if (!isUpdate || data.yearBuilt !== undefined) {
+    if (typeof data.yearBuilt !== "number" || data.yearBuilt < 1900 || data.yearBuilt > 2050) {
+      addFieldError('yearBuilt', "Year built is required and must be between 1900 and 2050.");
+    }
+  }
+  if (!isUpdate || data.yearOpened !== undefined) {
+    if (typeof data.yearOpened !== "number" || data.yearOpened < 1900 || data.yearOpened > 2050) {
+      addFieldError('yearOpened', "Year opened is required and must be between 1900 and 2050.");
+    }
   }
 
   // Rating validation
@@ -355,6 +482,28 @@ export function sanitizeMallData(data: Partial<MallFormData>): Partial<MallFormD
 
   if (sanitized.legalDetails?.zoning) {
     sanitized.legalDetails.zoning = sanitizeString(sanitized.legalDetails.zoning);
+  }
+
+  // Sanitize mortgage details - remove if empty
+  if (sanitized.legalDetails?.mortgageDetails) {
+    const mortgageDetails = sanitized.legalDetails.mortgageDetails;
+    
+    // Clean up string fields
+    if (mortgageDetails.lender) {
+      mortgageDetails.lender = sanitizeString(mortgageDetails.lender);
+    }
+    
+    // Check if any meaningful data exists after sanitization
+    const hasLender = mortgageDetails.lender && mortgageDetails.lender.trim().length > 0;
+    const hasOutstandingAmount = mortgageDetails.outstandingAmount !== undefined && mortgageDetails.outstandingAmount !== null && mortgageDetails.outstandingAmount > 0;
+    const hasMaturityDate = mortgageDetails.maturityDate !== undefined && mortgageDetails.maturityDate !== null &&
+      (mortgageDetails.maturityDate instanceof Date || 
+       (typeof mortgageDetails.maturityDate === 'string' && mortgageDetails.maturityDate.trim().length > 0));
+    
+    // If no meaningful data exists, remove the entire mortgageDetails object
+    if (!hasLender && !hasOutstandingAmount && !hasMaturityDate) {
+      delete sanitized.legalDetails.mortgageDetails;
+    }
   }
 
   return sanitized;

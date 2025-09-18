@@ -5,46 +5,24 @@ const STORAGE_KEY = 'mall_form_draft';
 const STORAGE_TIMESTAMP_KEY = 'mall_form_draft_timestamp';
 const DRAFT_EXPIRY_DAYS = 7; // Expire drafts after 7 days
 
-export interface MallFormDraftData extends Omit<MallFormData, 'image' | 'gallery' | 'floorPlan'> {
-  // Exclude image fields from persistence to avoid large localStorage usage
-}
-
 /**
- * Save mall form data to local storage (excluding images)
+ * Save mall form data to local storage (including image URLs)
  */
 export function saveMallFormDraft(formData: MallFormData): void {
   try {
-    const draftData: MallFormDraftData = {
-      name: formData.name,
-      subtitle: formData.subtitle,
-      status: formData.status,
-      location: formData.location,
-      subLocation: formData.subLocation,
-      ownership: formData.ownership,
-      price: formData.price,
-      size: formData.size,
-      rentalDetails: formData.rentalDetails,
-      financials: formData.financials,
-      saleInformation: formData.saleInformation,
-      legalDetails: formData.legalDetails,
-      operationalDetails: formData.operationalDetails,
-      leaseDetails: formData.leaseDetails,
-      marketingMaterials: formData.marketingMaterials,
-      investorRelations: formData.investorRelations,
-      amenities: formData.amenities,
-      features: formData.features,
-      developer: formData.developer,
-      yearBuilt: formData.yearBuilt,
-      yearOpened: formData.yearOpened,
-      rating: formData.rating,
-      visitorsAnnually: formData.visitorsAnnually,
-      architecture: formData.architecture,
-      locationDetails: formData.locationDetails,
-      verified: formData.verified,
-      isActive: formData.isActive,
-      isAvailable: formData.isAvailable,
-      isOperational: formData.isOperational,
+    const draftData: MallFormData = {
+      ...formData, // Include all form data including image URLs
     };
+
+    // Debug logging to confirm image URLs are being saved
+    const hasImages = !!(draftData.image || (draftData.gallery?.length) || draftData.floorPlan)
+    if (hasImages) {
+      console.log('🖼️ Draft saved with images:', {
+        mainImage: draftData.image ? 'yes' : 'no',
+        galleryCount: draftData.gallery?.length || 0,
+        floorPlan: draftData.floorPlan ? 'yes' : 'no'
+      })
+    }
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(draftData));
     localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString());
@@ -56,7 +34,7 @@ export function saveMallFormDraft(formData: MallFormData): void {
 /**
  * Load mall form data from local storage
  */
-export function loadMallFormDraft(): MallFormDraftData | null {
+export function loadMallFormDraft(): MallFormData | null {
   try {
     const draftString = localStorage.getItem(STORAGE_KEY);
     const timestampString = localStorage.getItem(STORAGE_TIMESTAMP_KEY);
@@ -76,7 +54,18 @@ export function loadMallFormDraft(): MallFormDraftData | null {
       return null;
     }
 
-    const draftData = JSON.parse(draftString) as MallFormDraftData;
+    const draftData = JSON.parse(draftString) as MallFormData;
+    
+    // Debug logging to confirm images were restored
+    const hasImages = !!(draftData.image || (draftData.gallery?.length) || draftData.floorPlan)
+    if (hasImages) {
+      console.log('🖼️ Draft loaded with images:', {
+        mainImage: draftData.image ? 'yes' : 'no',
+        galleryCount: draftData.gallery?.length || 0,
+        floorPlan: draftData.floorPlan ? 'yes' : 'no'
+      })
+    }
+    
     return draftData;
   } catch (error) {
     console.warn('Failed to load mall form draft from localStorage:', error);

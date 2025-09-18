@@ -171,15 +171,21 @@ export const PUT = withAuth(async (
       }
     }
 
-    // Auto-calculate occupancy if store data changed
-    const finalRentalDetails = { ...existingMall.rentalDetails?.toObject(), ...sanitizedData.rentalDetails };
-    if (finalRentalDetails.totalStores !== undefined && finalRentalDetails.maxStores) {
-      if (!sanitizedData.rentalDetails) sanitizedData.rentalDetails = {};
-      sanitizedData.rentalDetails.currentOccupancy = Math.round(
-        (finalRentalDetails.totalStores / finalRentalDetails.maxStores) * 100
-      );
-      sanitizedData.rentalDetails.vacantStores = finalRentalDetails.maxStores - finalRentalDetails.totalStores;
+    // Clean up mortgage details - remove if empty
+    if (sanitizedData.legalDetails?.mortgageDetails) {
+      const mortgageDetails = sanitizedData.legalDetails.mortgageDetails;
+      const hasLender = mortgageDetails.lender && mortgageDetails.lender.trim().length > 0;
+      const hasOutstandingAmount = mortgageDetails.outstandingAmount !== undefined && mortgageDetails.outstandingAmount !== null && mortgageDetails.outstandingAmount > 0;
+      const hasMaturityDate = mortgageDetails.maturityDate !== undefined && mortgageDetails.maturityDate !== null;
+      
+      // If no meaningful mortgage data is provided, remove the entire mortgageDetails object
+      if (!hasLender && !hasOutstandingAmount && !hasMaturityDate) {
+        console.log('Removing empty mortgage details object during update');
+        delete sanitizedData.legalDetails.mortgageDetails;
+      }
     }
+
+    // Client-side validation handles rental calculations
 
     // Prepare update object
     const updateObject: any = {

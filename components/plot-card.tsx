@@ -25,7 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 
 import type { IPlot, IPrice, ISize, PlotCardProps } from "@/types/plot"
 
-export function PlotCard({ plot, onView, onEdit, onDelete }: PlotCardProps) {
+export function PlotCard({ plot, onView, onEdit, onDelete, isDeleting = false }: PlotCardProps) {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case "industrial":
@@ -134,22 +134,26 @@ export function PlotCard({ plot, onView, onEdit, onDelete }: PlotCardProps) {
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
+              <Button variant="ghost" className="h-8 w-8 p-0" disabled={isDeleting}>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onView(plot)}>
+              <DropdownMenuItem onClick={() => onView(plot)} disabled={isDeleting}>
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onEdit(plot)}>
+              <DropdownMenuItem onClick={() => onEdit(plot)} disabled={isDeleting}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Plot
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDelete(plot)} className="text-red-600">
+              <DropdownMenuItem 
+                onClick={() => onDelete(plot)} 
+                className="text-red-600"
+                disabled={isDeleting}
+              >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete Plot
+                {isDeleting ? 'Deleting...' : 'Delete Plot'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

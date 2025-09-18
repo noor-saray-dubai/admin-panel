@@ -135,18 +135,21 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       sanitizedData.size.retailSqm = Math.round(sanitizedData.size.retailArea * 0.092903 * 100) / 100;
     }
 
-    // Auto-calculate occupancy if store data provided
-    if (sanitizedData.rentalDetails?.totalStores && sanitizedData.rentalDetails?.maxStores) {
-      sanitizedData.rentalDetails.currentOccupancy = Math.round(
-        (sanitizedData.rentalDetails.totalStores / sanitizedData.rentalDetails.maxStores) * 100
-      );
+    // Clean up mortgage details - remove if empty
+    if (sanitizedData.legalDetails?.mortgageDetails) {
+      const mortgageDetails = sanitizedData.legalDetails.mortgageDetails;
+      const hasLender = mortgageDetails.lender && mortgageDetails.lender.trim().length > 0;
+      const hasOutstandingAmount = mortgageDetails.outstandingAmount !== undefined && mortgageDetails.outstandingAmount !== null && mortgageDetails.outstandingAmount > 0;
+      const hasMaturityDate = mortgageDetails.maturityDate !== undefined && mortgageDetails.maturityDate !== null;
+      
+      // If no meaningful mortgage data is provided, remove the entire mortgageDetails object
+      if (!hasLender && !hasOutstandingAmount && !hasMaturityDate) {
+        console.log('Removing empty mortgage details object');
+        delete sanitizedData.legalDetails.mortgageDetails;
+      }
     }
 
-    // Auto-calculate vacant stores
-    if (sanitizedData.rentalDetails?.totalStores && sanitizedData.rentalDetails?.maxStores) {
-      sanitizedData.rentalDetails.vacantStores = 
-        sanitizedData.rentalDetails.maxStores - sanitizedData.rentalDetails.totalStores;
-    }
+    // Client-side validation handles rental calculations
 
     // Create new mall document
     const newMall = new Mall({

@@ -1,16 +1,114 @@
-import { signInWithEmailAndPassword } from "firebase/auth";
 import { adminAuth } from "@/lib/firebaseAdmin";
-import { auth } from "@/firebase"; // adjust path as needed
+import { connectToDatabase } from "@/lib/db";
+import { EnhancedUser, UserStatus } from "@/models/enhancedUser";
+import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
 
 export async function POST(req: Request) {
+  const startTime = Date.now();
+  console.log('🔐 Login attempt started');
+  
+  // Get client info for audit logging
+  const clientInfo = {
+    ip: req.headers.get('x-forwarded-for') || 
+         req.headers.get('x-real-ip') || 
+         'unknown',
+    userAgent: req.headers.get('user-agent') || 'unknown',
+    origin: req.headers.get('origin') || 'unknown'
+  };
+  
   try {
-    const { email, password, rememberMe } = await req.json();
+    const { firebaseUid, email, rememberMe } = await req.json();
+    
+    // Get the Authorization header with the ID token
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      await logFailedLogin(firebaseUid, email, 'Missing or invalid authorization header', clientInfo);
+      return new Response(JSON.stringify({ error: "Authentication token required" }), { 
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
+    const idToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+    
+    if (!firebaseUid || !email || !idToken) {
+      // Log failed attempt - missing credentials
+      await logFailedLogin(firebaseUid, email, 'Missing required authentication data', clientInfo);
+      return new Response(JSON.stringify({ error: "Authentication data required" }), { 
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
+    // Verify the ID token with Firebase Admin
+    let decodedToken;
+    try {
+      decodedToken = await adminAuth.verifyIdToken(idToken);
+      
+      // Verify the UID matches
+      if (decodedToken.uid !== firebaseUid) {
+        await logFailedLogin(firebaseUid, email, 'UID mismatch in token', clientInfo);
+        return new Response(JSON.stringify({ error: "Invalid authentication token" }), { 
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    } catch (tokenError: any) {
+      console.error('ID token verification failed:', tokenError);
+      await logFailedLogin(firebaseUid, email, `Token verification failed: ${tokenError.code}`, clientInfo);
+      return new Response(JSON.stringify({ error: "Invalid authentication token" }), { 
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
-    // Sign in using Firebase Client SDK (backend-side)
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const idToken = await userCredential.user.getIdToken();
+    // Connect to database for user checks
+    await connectToDatabase();
+    
+    // Check if user exists in MongoDB using Firebase UID
+    const user = await EnhancedUser.findOne({ firebaseUid });
+    
+    if (!user) {
+      // Log failed attempt - user not found
+      await logFailedLogin(null, email, 'User not found in database', clientInfo);
+      return new Response(JSON.stringify({ error: "Invalid credentials" }), { 
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
+    // Check if user account is active
+    if (user.status === UserStatus.SUSPENDED) {
+      await logFailedLogin(user.firebaseUid, email, 'Account suspended', clientInfo);
+      return new Response(JSON.stringify({ error: "Account is suspended. Contact administrator." }), { 
+        status: 403,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
+    if (user.status === UserStatus.DELETED) {
+      await logFailedLogin(user.firebaseUid, email, 'Account deleted', clientInfo);
+      return new Response(JSON.stringify({ error: "Account not found" }), { 
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
+    // Check if user is locked due to too many failed attempts
+    if (user.isLocked && user.isLocked()) {
+      await logFailedLogin(user.firebaseUid, email, 'Account temporarily locked', clientInfo);
+      return new Response(JSON.stringify({ 
+        error: "Account is temporarily locked due to multiple failed login attempts. Try again later." 
+      }), { 
+        status: 423,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
-    // Set session expiration (e.g. 5 days if rememberMe else 1 day)
+    // At this point, Firebase authentication already happened on client
+    // and token has been verified, so we can proceed with session creation
+
+    // Set session expiration
     const expiresIn = rememberMe
       ? 60 * 60 * 24 * 5 * 1000 // 5 days in ms
       : 60 * 60 * 24 * 1 * 1000; // 1 day in ms
@@ -18,22 +116,118 @@ export async function POST(req: Request) {
     // Create session cookie from ID token
     const sessionCookie = await adminAuth.createSessionCookie(idToken, { expiresIn });
 
-    // Create Set-Cookie header value (using 'cookie' package helps, or do manual)
-    // Here’s a manual example:
+    // Update user login information
+    const loginTime = new Date();
+    user.lastLogin = loginTime;
+    user.loginAttempts = 0; // Reset failed attempts on successful login
+    user.lockedUntil = undefined; // Clear any lock
+    await user.save();
+
+    // Create comprehensive audit log for successful login
+    await AuditLog.create({
+      action: AuditAction.USER_LOGIN,
+      success: true,
+      level: AuditLevel.INFO,
+      userId: user.firebaseUid,
+      userEmail: email,
+      ip: clientInfo.ip,
+      userAgent: clientInfo.userAgent,
+      resource: 'auth',
+      details: {
+        loginTime: loginTime.toISOString(),
+        sessionDuration: rememberMe ? '5 days' : '1 day',
+        userRole: user.fullRole,
+        userStatus: user.status,
+        rememberMe,
+        origin: clientInfo.origin,
+        processingTime: Date.now() - startTime
+      },
+      timestamp: loginTime
+    });
+
+    // Create Set-Cookie header
     const cookieValue = `__session=${sessionCookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${
       expiresIn / 1000
     };${process.env.NODE_ENV === "production" ? " Secure;" : ""}`;
 
-    // Return response with Set-Cookie header
-    return new Response(JSON.stringify({ success: true }), {
+    console.log(`✅ Login successful for ${email} in ${Date.now() - startTime}ms`);
+    
+    // Return success response with user info (non-sensitive)
+    return new Response(JSON.stringify({ 
+      success: true,
+      user: {
+        firebaseUid: user.firebaseUid,
+        email: user.email,
+        displayName: user.displayName,
+        fullRole: user.fullRole,
+        status: user.status,
+        lastLogin: loginTime.toISOString()
+      }
+    }), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
         "Set-Cookie": cookieValue,
+        "Cache-Control": "no-cache, no-store, must-revalidate"
       },
     });
-  } catch (error) {
-    console.error("Session login error:", error);
-    return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
+    
+  } catch (error: any) {
+    console.error("❌ Session login error:", error);
+    
+    // Log system error
+    try {
+      await AuditLog.create({
+        action: AuditAction.USER_LOGIN,
+        success: false,
+        level: AuditLevel.ERROR,
+        ip: clientInfo.ip,
+        userAgent: clientInfo.userAgent,
+        resource: 'auth',
+        errorMessage: error.message,
+        details: {
+          error: 'System error during login',
+          processingTime: Date.now() - startTime
+        },
+        timestamp: new Date()
+      });
+    } catch (auditError) {
+      console.error('Failed to log system error:', auditError);
+    }
+    
+    return new Response(JSON.stringify({ error: "Login failed. Please try again." }), { 
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+}
+
+// Helper function to log failed login attempts
+async function logFailedLogin(
+  firebaseUid: string | null, 
+  email: string | null, 
+  reason: string, 
+  clientInfo: any
+) {
+  try {
+    await AuditLog.create({
+      action: AuditAction.USER_LOGIN,
+      success: false,
+      level: AuditLevel.WARNING,
+      userId: firebaseUid,
+      userEmail: email,
+      ip: clientInfo.ip,
+      userAgent: clientInfo.userAgent,
+      resource: 'auth',
+      errorMessage: reason,
+      details: {
+        failureReason: reason,
+        origin: clientInfo.origin,
+        timestamp: new Date().toISOString()
+      },
+      timestamp: new Date()
+    });
+  } catch (auditError) {
+    console.error('Failed to log failed login attempt:', auditError);
   }
 }

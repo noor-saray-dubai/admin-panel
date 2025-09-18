@@ -186,7 +186,7 @@ const ValidatedTextarea = ({
   )
 }
 
-// Initial form data
+// Initial form data with all required defaults
 const initialFormData: MallFormData = {
   name: "",
   subtitle: "",
@@ -349,6 +349,11 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
   const [hasDraft, setHasDraft] = useState(false)
   const [showDraftRestoreDialog, setShowDraftRestoreDialog] = useState(false)
   const [draftTimestamp, setDraftTimestamp] = useState<string | null>(null)
+  
+  // Unsaved changes state
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false)
+  const [pendingClose, setPendingClose] = useState(false)
 
   // Create debounced save function
   const debouncedSave = useMemo(
@@ -376,7 +381,8 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
   // Auto-calculate pricing when per sqft or area changes
   const updatePriceCalculations = useCallback((perSqft: number, totalArea: number) => {
     const totalNumeric = Math.round(perSqft * totalArea)
-    const total = formatPrice(totalNumeric, formData.price.currency)
+    const currency = formData.price?.currency ?? "AED"
+    const total = formatPrice(totalNumeric, currency)
 
     setFormData(prev => ({
       ...prev,
@@ -387,7 +393,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
         total
       }
     }))
-  }, [formData.price.currency])
+  }, [formData.price?.currency])
 
   // Format price for display
   const formatPrice = (amount: number, currency: string) => {
@@ -401,6 +407,23 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
       return `${currency} ${amount.toLocaleString()}`
     }
   }
+
+  // Handle keyboard events (Escape key)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isOpen && !showDraftRestoreDialog && !showUnsavedChangesDialog && !isSubmitting) {
+        handleModalClose()
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown)
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen, showDraftRestoreDialog, showUnsavedChangesDialog, isSubmitting])
 
   // Initialize form data and handle draft restoration
   useEffect(() => {
@@ -492,7 +515,8 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
       updateSizeCalculations(value)
     }
     if (field === 'price.perSqft' && typeof value === 'number') {
-      updatePriceCalculations(value, formData.size.totalArea)
+      const totalArea = formData.size?.totalArea ?? 0
+      updatePriceCalculations(value, totalArea)
     }
 
     // Trigger validation for current step after a delay
@@ -500,6 +524,11 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
       const currentStepId = steps[currentStep].id
       validateStep(currentStepId)
     }, 100)
+
+    // Update unsaved changes flag
+    setTimeout(() => {
+      setHasUnsavedChanges(hasFormChanges())
+    }, 0)
 
     // Save draft automatically for add mode only
     if (mode === 'add') {
@@ -562,56 +591,123 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
         break
         
       case "size-price":
-        if (formData.size.totalArea <= 0) stepErrors['size.totalArea'] = "Total area must be greater than 0"
-        if (formData.size.floors < 1) stepErrors['size.floors'] = "Floors must be at least 1"
-        if (formData.price.perSqft <= 0) stepErrors['price.perSqft'] = "Price per sqft must be greater than 0"
-        if (formData.financials.capRate < 0 || formData.financials.capRate > 100) {
-          stepErrors['financials.capRate'] = "Cap rate must be between 0 and 100"
-        }
+        // Size validations - all required
+        const totalArea = formData.size?.totalArea ?? 0
+        const retailArea = formData.size?.retailArea ?? 0
+        const floors = formData.size?.floors ?? 1
+        
+        if (totalArea <= 0) stepErrors['size.totalArea'] = "Total area is required and must be greater than 0"
+        if (retailArea <= 0) stepErrors['size.retailArea'] = "Retail area is required and must be greater than 0"
+        if (floors < 1) stepErrors['size.floors'] = "Floors must be at least 1"
+        
+        // Price validations - all required
+        const perSqft = formData.price?.perSqft ?? 0
+        const totalPrice = formData.price?.total?.trim() ?? ""
+        const currency = formData.price?.currency ?? ""
+        
+        if (perSqft <= 0) stepErrors['price.perSqft'] = "Price per sqft is required and must be greater than 0"
+        if (!totalPrice) stepErrors['price.total'] = "Total price display is required"
+        if (!currency) stepErrors['price.currency'] = "Currency is required"
+        
+        // Financial validations - required fields
+        const capRate = formData.financials?.capRate ?? 0
+        const roi = formData.financials?.roi ?? 0
+        const appreciation = formData.financials?.appreciation ?? 0
+        const payback = formData.financials?.payback ?? 0
+        
+        if (capRate < 0) stepErrors['financials.capRate'] = "Cap rate is required and cannot be negative"
+        if (roi < 0) stepErrors['financials.roi'] = "ROI is required and cannot be negative"
+        if (appreciation < 0) stepErrors['financials.appreciation'] = "Appreciation rate is required and cannot be negative"
+        if (payback < 0) stepErrors['financials.payback'] = "Payback period is required and cannot be negative"
         break
         
       case "rental":
-        if (formData.rentalDetails.totalStores < 0) stepErrors['rentalDetails.totalStores'] = "Total stores cannot be negative"
-        if (formData.rentalDetails.maxStores < 1) stepErrors['rentalDetails.maxStores'] = "Max stores must be at least 1"
-        if (formData.rentalDetails.vacantStores < 0) stepErrors['rentalDetails.vacantStores'] = "Vacant stores cannot be negative"
-        if (formData.rentalDetails.currentOccupancy < 0 || formData.rentalDetails.currentOccupancy > 100) {
-          stepErrors['rentalDetails.currentOccupancy'] = "Occupancy must be between 0 and 100%"
-        }
+        // Rental details validations - required fields
+        const maxStores = formData.rentalDetails.maxStores ?? 0
+        const totalStores = formData.rentalDetails.totalStores ?? 0
+        const vacantStores = formData.rentalDetails.vacantStores ?? 0
+        const occupancy = formData.rentalDetails.currentOccupancy ?? 0
+        const averageRent = formData.rentalDetails.averageRent ?? 0
+        
+        if (maxStores < 1) stepErrors['rentalDetails.maxStores'] = "Maximum stores capacity is required and must be at least 1"
+        if (totalStores < 0) stepErrors['rentalDetails.totalStores'] = "Total stores cannot be negative"
+        if (vacantStores < 0) stepErrors['rentalDetails.vacantStores'] = "Vacant stores cannot be negative"
+        if (occupancy < 0 || occupancy > 100) stepErrors['rentalDetails.currentOccupancy'] = "Occupancy must be between 0 and 100%"
+        if (averageRent < 0) stepErrors['rentalDetails.averageRent'] = "Average rent cannot be negative"
+        
+        // Operational details validations
+        const maintenanceStatus = formData.operationalDetails?.maintenanceStatus ?? ""
+        if (!maintenanceStatus) stepErrors['operationalDetails.maintenanceStatus'] = "Maintenance status is required"
         break
         
       case "sale-legal":
-        if (formData.saleInformation.askingPriceNumeric < 0) {
-          stepErrors['saleInformation.askingPriceNumeric'] = "Asking price cannot be negative"
-        }
+        // Sale information validations
+        const saleStatus = formData.saleInformation?.saleStatus ?? ""
+        const dealStructure = formData.saleInformation?.dealStructure ?? ""
+        const preferredBuyerType = formData.saleInformation?.preferredBuyerType ?? ""
+        const askingPrice = formData.saleInformation?.askingPriceNumeric ?? 0
+        
+        if (!saleStatus) stepErrors['saleInformation.saleStatus'] = "Sale status is required"
+        if (!dealStructure) stepErrors['saleInformation.dealStructure'] = "Deal structure is required"
+        if (!preferredBuyerType) stepErrors['saleInformation.preferredBuyerType'] = "Preferred buyer type is required"
+        if (askingPrice < 0) stepErrors['saleInformation.askingPriceNumeric'] = "Asking price cannot be negative"
+        
+        // Legal details validations - required fields
+        const zoning = formData.legalDetails?.zoning?.trim() ?? ""
+        if (!zoning) stepErrors['legalDetails.zoning'] = "Zoning is required"
+        else if (zoning.length < 2) stepErrors['legalDetails.zoning'] = "Zoning must be at least 2 characters"
         break
         
       case "features":
-        if (formData.developer.name.trim() && formData.developer.name.length < 2) {
-          stepErrors['developer.name'] = "Developer name must be at least 2 characters"
+        // Developer information - required fields
+        const devName = formData.developer?.name?.trim() ?? ""
+        const devSlug = formData.developer?.slug?.trim() ?? ""
+        
+        if (!devName) stepErrors['developer.name'] = "Developer name is required"
+        else if (devName.length < 2) stepErrors['developer.name'] = "Developer name must be at least 2 characters"
+        
+        if (!devSlug) stepErrors['developer.slug'] = "Developer slug is required"
+        
+        // Year validations - required fields
+        const yearBuilt = formData.yearBuilt ?? new Date().getFullYear()
+        const yearOpened = formData.yearOpened ?? new Date().getFullYear()
+        const currentYear = new Date().getFullYear()
+        
+        if (yearBuilt < 1900 || yearBuilt > 2050) {
+          stepErrors.yearBuilt = "Year built is required and must be between 1900 and 2050"
         }
-        if (formData.yearBuilt < 1900 || formData.yearBuilt > new Date().getFullYear() + 10) {
-          stepErrors.yearBuilt = "Year built must be between 1900 and " + (new Date().getFullYear() + 10)
+        if (yearOpened < 1900 || yearOpened > 2050) {
+          stepErrors.yearOpened = "Year opened is required and must be between 1900 and 2050"
         }
-        if (formData.yearOpened < 1900 || formData.yearOpened > new Date().getFullYear() + 10) {
-          stepErrors.yearOpened = "Year opened must be between 1900 and " + (new Date().getFullYear() + 10)
-        }
+        
+        // Architecture is required
+        const architecture = formData.architecture?.trim() ?? ""
+        if (!architecture) stepErrors.architecture = "Architecture description is required"
+        else if (architecture.length < 3) stepErrors.architecture = "Architecture description must be at least 3 characters"
         break
         
       case "location":
-        if (formData.locationDetails.coordinates.latitude < -90 || formData.locationDetails.coordinates.latitude > 90) {
+        const lat = formData.locationDetails?.coordinates?.latitude ?? 0
+        const lng = formData.locationDetails?.coordinates?.longitude ?? 0
+        
+        if (lat !== 0 && (lat < -90 || lat > 90)) {
           stepErrors['locationDetails.coordinates.latitude'] = "Latitude must be between -90 and 90"
         }
-        if (formData.locationDetails.coordinates.longitude < -180 || formData.locationDetails.coordinates.longitude > 180) {
+        if (lng !== 0 && (lng < -180 || lng > 180)) {
           stepErrors['locationDetails.coordinates.longitude'] = "Longitude must be between -180 and 180"
         }
         break
         
       case "marketing":
-        // No mandatory fields for marketing step
+        // Main image is required
+        if (!formData.image || !formData.image.trim()) {
+          stepErrors.image = "Main mall image is required"
+        }
         break
         
       case "settings":
-        if (formData.rating < 1 || formData.rating > 5) {
+        const rating = formData.rating ?? 5
+        if (rating < 1 || rating > 5) {
           stepErrors.rating = "Rating must be between 1 and 5"
         }
         break
@@ -654,12 +750,47 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
 
   // Check if entire form is valid for submission
   const isFormValid = useCallback((): boolean => {
-    const requiredSteps = ['basic', 'size-price', 'rental'] // Core required steps
+    const requiredSteps = ['basic', 'size-price', 'rental', 'sale-legal', 'features', 'marketing'] // All required steps
     return requiredSteps.every(stepId => {
       const stepErrors = getStepErrors(stepId)
       return Object.keys(stepErrors).length === 0
     })
   }, [getStepErrors])
+
+  // Check if form has meaningful changes from initial state
+  const hasFormChanges = useCallback((): boolean => {
+    // For edit mode, compare with original mall data
+    if (mode === 'edit' && mall) {
+      return (
+        formData.name !== (mall.name || '') ||
+        formData.subtitle !== (mall.subtitle || '') ||
+        formData.status !== (mall.status || '') ||
+        formData.location !== (mall.location || '') ||
+        formData.subLocation !== (mall.subLocation || '') ||
+        formData.ownership !== (mall.ownership || '') ||
+        (formData.size?.totalArea || 0) !== (mall.size?.totalArea || 0) ||
+        (formData.price?.perSqft || 0) !== (mall.price?.perSqft || 0) ||
+        (formData.rentalDetails?.totalStores || 0) !== (mall.rentalDetails?.totalStores || 0) ||
+        (formData.developer?.name || '') !== (mall.developer?.name || '')
+      )
+    }
+    
+    // For add mode, check if any meaningful data has been entered
+    return (
+      formData.name.trim() !== '' ||
+      formData.subtitle.trim() !== '' ||
+      formData.status !== '' ||
+      formData.location.trim() !== '' ||
+      formData.subLocation.trim() !== '' ||
+      formData.ownership !== '' ||
+      (formData.size?.totalArea || 0) > 0 ||
+      (formData.price?.perSqft || 0) > 0 ||
+      (formData.rentalDetails?.totalStores || 0) > 0 ||
+      (formData.developer?.name || '').trim() !== '' ||
+      formData.image !== '' ||
+      (formData.gallery || []).length > 0
+    )
+  }, [formData, mode, mall])
 
   // Handle image upload completion for main image
   const handleMainImageComplete = (result: UploadedImage | UploadedImage[]) => {
@@ -675,9 +806,10 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
 
   // Handle gallery images upload completion
   const handleGalleryImageComplete = (result: UploadedImage | UploadedImage[]) => {
-    const uploadedImages = result as UploadedImage[]
+    const uploadedImages = Array.isArray(result) ? result : [result]
     const newUrls = uploadedImages.map(img => img.url)
-    handleInputChange("gallery", [...formData.gallery, ...newUrls])
+    const currentGallery = formData.gallery || []
+    handleInputChange("gallery", [...currentGallery, ...newUrls])
   }
 
   // Handle image deletion
@@ -686,7 +818,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
       handleInputChange("image", "")
     } else if (formData.floorPlan === imageUrl) {
       handleInputChange("floorPlan", "")
-    } else {
+    } else if (formData.gallery?.includes(imageUrl)) {
       handleInputChange("gallery", formData.gallery.filter(url => url !== imageUrl))
     }
   }
@@ -718,15 +850,61 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
     toast.success("Draft discarded")
   }
 
+  // Handle modal close - always show confirmation
+  const handleModalClose = () => {
+    if (isSubmitting) {
+      // Don't allow closing during submission
+      return
+    }
+    
+    // Always show confirmation dialog
+    setPendingClose(true)
+    setShowUnsavedChangesDialog(true)
+  }
+
+  // Handle unsaved changes dialog actions
+  const handleContinueEditing = () => {
+    setShowUnsavedChangesDialog(false)
+    setPendingClose(false)
+  }
+
+  const handleSaveDraftAndClose = () => {
+    if (mode === 'add') {
+      debouncedSave(formData)
+      toast.success("Draft saved successfully")
+    }
+    setShowUnsavedChangesDialog(false)
+    setPendingClose(false)
+    onClose()
+    resetForm()
+  }
+
+  const handleDiscardAndClose = () => {
+    if (mode === 'add') {
+      clearMallFormDraft()
+    }
+    setShowUnsavedChangesDialog(false)
+    setPendingClose(false)
+    onClose()
+    resetForm()
+  }
+
+  // Reset form state
+  const resetForm = () => {
+    setHasUnsavedChanges(false)
+    setCurrentStep(0)
+    setErrors({})
+  }
+
   // Form submission
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true)
 
       // Final validation
-      const validationErrors = validateMallFormData(formData)
-      if (Object.keys(validationErrors).length > 0) {
-        setErrors(validationErrors)
+      const validationResult = validateMallFormData(formData)
+      if (!validationResult.isValid) {
+        setErrors(validationResult.errors)
         toast.error("Please fix all validation errors before submitting")
         return
       }
@@ -736,13 +914,13 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
         ...formData,
         // Clean up any undefined values
         legalDetails: {
-          ...formData.legalDetails,
-          leaseholdExpiry: formData.legalDetails.leaseholdExpiry || undefined,
-          mortgageDetails: formData.legalDetails.mortgageDetails || undefined
+          ...(formData.legalDetails || {}),
+          leaseholdExpiry: formData.legalDetails?.leaseholdExpiry || undefined,
+          mortgageDetails: formData.legalDetails?.mortgageDetails || undefined
         },
         investorRelations: {
-          ...formData.investorRelations,
-          brokerContact: formData.investorRelations.brokerContact || undefined
+          ...(formData.investorRelations || {}),
+          brokerContact: formData.investorRelations?.brokerContact || undefined
         }
       }
 
@@ -771,11 +949,15 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
 
       toast.success(`Mall ${mode === "edit" ? "updated" : "created"} successfully!`)
       
+      // Clear unsaved changes flag on successful submission
+      setHasUnsavedChanges(false)
+      
       // Call success callback and close modal
       if (onSuccess) {
         onSuccess(result.mall)
       }
       onClose()
+      resetForm()
       
     } catch (error) {
       console.error("Form submission error:", error)
@@ -914,7 +1096,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Total Area (sqft)"
                     field="size.totalArea"
-                    value={formData.size.totalArea}
+                    value={formData.size?.totalArea ?? 0}
                     onChange={(value) => handleInputChange("size.totalArea", value)}
                     formData={formData}
                     errors={errors}
@@ -927,7 +1109,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Retail Area (sqft)"
                     field="size.retailArea"
-                    value={formData.size.retailArea}
+                    value={formData.size?.retailArea ?? 0}
                     onChange={(value) => handleInputChange("size.retailArea", value)}
                     formData={formData}
                     errors={errors}
@@ -941,11 +1123,11 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Total Area (sqm)</Label>
-                    <Input value={formData.size.totalSqm} disabled className="bg-gray-50" />
+                    <Input value={formData.size?.totalSqm ?? 0} disabled className="bg-gray-50" />
                   </div>
                   <div>
                     <Label>Retail Area (sqm)</Label>
-                    <Input value={formData.size.retailSqm} disabled className="bg-gray-50" />
+                    <Input value={formData.size?.retailSqm ?? 0} disabled className="bg-gray-50" />
                   </div>
                 </div>
 
@@ -953,7 +1135,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Floors"
                     field="size.floors"
-                    value={formData.size.floors}
+                    value={formData.size?.floors ?? 1}
                     onChange={(value) => handleInputChange("size.floors", value)}
                     formData={formData}
                     errors={errors}
@@ -964,7 +1146,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Parking Spaces"
                     field="size.parkingSpaces"
-                    value={formData.size.parkingSpaces}
+                    value={formData.size?.parkingSpaces ?? 0}
                     onChange={(value) => handleInputChange("size.parkingSpaces", value)}
                     formData={formData}
                     errors={errors}
@@ -985,7 +1167,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div className="space-y-2">
                     <Label>Currency</Label>
                     <Select
-                      value={formData.price.currency}
+                      value={formData.price?.currency ?? "AED"}
                       onValueChange={(value) => handleInputChange("price.currency", value)}
                     >
                       <SelectTrigger>
@@ -1002,7 +1184,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Price per sqft"
                     field="price.perSqft"
-                    value={formData.price.perSqft}
+                    value={formData.price?.perSqft ?? 0}
                     onChange={(value) => handleInputChange("price.perSqft", value)}
                     formData={formData}
                     errors={errors}
@@ -1013,7 +1195,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   />
                   <div>
                     <Label>Total Price</Label>
-                    <Input value={formData.price.total} disabled className="bg-gray-50" />
+                    <Input value={formData.price?.total ?? ""} disabled className="bg-gray-50" />
                   </div>
                 </div>
 
@@ -1021,7 +1203,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Annual Revenue"
                     field="financials.annualRevenue"
-                    value={formData.financials.annualRevenue}
+                    value={formData.financials?.annualRevenue ?? 0}
                     onChange={(value) => handleInputChange("financials.annualRevenue", value)}
                     formData={formData}
                     errors={errors}
@@ -1032,7 +1214,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="NOI (Net Operating Income)"
                     field="financials.noi"
-                    value={formData.financials.noi}
+                    value={formData.financials?.noi ?? 0}
                     onChange={(value) => handleInputChange("financials.noi", value)}
                     formData={formData}
                     errors={errors}
@@ -1043,7 +1225,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Cap Rate (%)"
                     field="financials.capRate"
-                    value={formData.financials.capRate}
+                    value={formData.financials?.capRate ?? 0}
                     onChange={(value) => handleInputChange("financials.capRate", value)}
                     formData={formData}
                     errors={errors}
@@ -1071,7 +1253,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Total Stores"
                     field="rentalDetails.totalStores"
-                    value={formData.rentalDetails.totalStores}
+                    value={formData.rentalDetails.totalStores ?? 0}
                     onChange={(value) => handleInputChange("rentalDetails.totalStores", value)}
                     formData={formData}
                     errors={errors}
@@ -1082,7 +1264,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Max Stores Capacity"
                     field="rentalDetails.maxStores"
-                    value={formData.rentalDetails.maxStores}
+                    value={formData.rentalDetails.maxStores ?? 1}
                     onChange={(value) => handleInputChange("rentalDetails.maxStores", value)}
                     formData={formData}
                     errors={errors}
@@ -1093,7 +1275,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Vacant Stores"
                     field="rentalDetails.vacantStores"
-                    value={formData.rentalDetails.vacantStores}
+                    value={formData.rentalDetails.vacantStores ?? 0}
                     onChange={(value) => handleInputChange("rentalDetails.vacantStores", value)}
                     formData={formData}
                     errors={errors}
@@ -1107,7 +1289,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Current Occupancy (%)"
                     field="rentalDetails.currentOccupancy"
-                    value={formData.rentalDetails.currentOccupancy}
+                    value={formData.rentalDetails.currentOccupancy ?? 0}
                     onChange={(value) => handleInputChange("rentalDetails.currentOccupancy", value)}
                     formData={formData}
                     errors={errors}
@@ -1120,7 +1302,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Average Rent (per sqft)"
                     field="rentalDetails.averageRent"
-                    value={formData.rentalDetails.averageRent}
+                    value={formData.rentalDetails.averageRent ?? 0}
                     onChange={(value) => handleInputChange("rentalDetails.averageRent", value)}
                     formData={formData}
                     errors={errors}
@@ -1141,7 +1323,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <ValidatedInput
                   label="Management Company"
                   field="operationalDetails.managementCompany"
-                  value={formData.operationalDetails.managementCompany}
+                  value={formData.operationalDetails?.managementCompany ?? ""}
                   onChange={(value) => handleInputChange("operationalDetails.managementCompany", value)}
                   formData={formData}
                   errors={errors}
@@ -1154,7 +1336,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Service Charges (annual)"
                     field="operationalDetails.serviceCharges"
-                    value={formData.operationalDetails.serviceCharges}
+                    value={formData.operationalDetails?.serviceCharges ?? 0}
                     onChange={(value) => handleInputChange("operationalDetails.serviceCharges", value)}
                     formData={formData}
                     errors={errors}
@@ -1165,7 +1347,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Utility Costs (annual)"
                     field="operationalDetails.utilityCosts"
-                    value={formData.operationalDetails.utilityCosts}
+                    value={formData.operationalDetails?.utilityCosts ?? 0}
                     onChange={(value) => handleInputChange("operationalDetails.utilityCosts", value)}
                     formData={formData}
                     errors={errors}
@@ -1178,7 +1360,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <div className="space-y-2">
                   <Label>Maintenance Status</Label>
                   <Select
-                    value={formData.operationalDetails.maintenanceStatus}
+                    value={formData.operationalDetails?.maintenanceStatus ?? "new"}
                     onValueChange={(value) => handleInputChange("operationalDetails.maintenanceStatus", value)}
                   >
                     <SelectTrigger>
@@ -1211,7 +1393,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Asking Price"
                     field="saleInformation.askingPrice"
-                    value={formData.saleInformation.askingPrice}
+                    value={formData.saleInformation?.askingPrice ?? ""}
                     onChange={(value) => handleInputChange("saleInformation.askingPrice", value)}
                     formData={formData}
                     errors={errors}
@@ -1222,7 +1404,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Asking Price (Numeric)"
                     field="saleInformation.askingPriceNumeric"
-                    value={formData.saleInformation.askingPriceNumeric}
+                    value={formData.saleInformation?.askingPriceNumeric ?? 0}
                     onChange={(value) => handleInputChange("saleInformation.askingPriceNumeric", value)}
                     formData={formData}
                     errors={errors}
@@ -1236,7 +1418,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div className="space-y-2">
                     <Label>Sale Status</Label>
                     <Select
-                      value={formData.saleInformation.saleStatus}
+                      value={formData.saleInformation?.saleStatus ?? "available"}
                       onValueChange={(value) => handleInputChange("saleInformation.saleStatus", value)}
                     >
                       <SelectTrigger>
@@ -1253,7 +1435,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div className="space-y-2">
                     <Label>Deal Structure</Label>
                     <Select
-                      value={formData.saleInformation.dealStructure}
+                      value={formData.saleInformation?.dealStructure ?? "assetSale"}
                       onValueChange={(value) => handleInputChange("saleInformation.dealStructure", value)}
                     >
                       <SelectTrigger>
@@ -1280,7 +1462,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Title Deed Number"
                     field="legalDetails.titleDeedNumber"
-                    value={formData.legalDetails.titleDeedNumber}
+                    value={formData.legalDetails?.titleDeedNumber ?? ""}
                     onChange={(value) => handleInputChange("legalDetails.titleDeedNumber", value)}
                     formData={formData}
                     errors={errors}
@@ -1291,7 +1473,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="RERA Number"
                     field="legalDetails.reraNumber"
-                    value={formData.legalDetails.reraNumber}
+                    value={formData.legalDetails?.reraNumber ?? ""}
                     onChange={(value) => handleInputChange("legalDetails.reraNumber", value)}
                     formData={formData}
                     errors={errors}
@@ -1304,7 +1486,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <ValidatedInput
                   label="Zoning"
                   field="legalDetails.zoning"
-                  value={formData.legalDetails.zoning}
+                  value={formData.legalDetails?.zoning ?? ""}
                   onChange={(value) => handleInputChange("legalDetails.zoning", value)}
                   formData={formData}
                   errors={errors}
@@ -1326,11 +1508,11 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-4 gap-4">
-                  {Object.entries(formData.amenities).map(([key, value]) => (
+                  {Object.entries(formData.amenities || {}).map(([key, value]) => (
                     <div key={key} className="flex items-center space-x-2">
                       <Checkbox
                         id={key}
-                        checked={value}
+                        checked={value || false}
                         onCheckedChange={(checked) => 
                           handleInputChange(`amenities.${key}`, checked)
                         }
@@ -1353,7 +1535,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Developer Name"
                     field="developer.name"
-                    value={formData.developer.name}
+                    value={formData.developer?.name ?? ""}
                     onChange={(value) => handleInputChange("developer.name", value)}
                     formData={formData}
                     errors={errors}
@@ -1364,7 +1546,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Year Established"
                     field="developer.established"
-                    value={formData.developer.established}
+                    value={formData.developer?.established ?? new Date().getFullYear()}
                     onChange={(value) => handleInputChange("developer.established", value)}
                     formData={formData}
                     errors={errors}
@@ -1379,7 +1561,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Year Built"
                     field="yearBuilt"
-                    value={formData.yearBuilt}
+                    value={formData.yearBuilt ?? new Date().getFullYear()}
                     onChange={(value) => handleInputChange("yearBuilt", value)}
                     formData={formData}
                     errors={errors}
@@ -1391,7 +1573,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Year Opened"
                     field="yearOpened"
-                    value={formData.yearOpened}
+                    value={formData.yearOpened ?? new Date().getFullYear()}
                     onChange={(value) => handleInputChange("yearOpened", value)}
                     formData={formData}
                     errors={errors}
@@ -1403,7 +1585,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Annual Visitors"
                     field="visitorsAnnually"
-                    value={formData.visitorsAnnually}
+                    value={formData.visitorsAnnually ?? 0}
                     onChange={(value) => handleInputChange("visitorsAnnually", value)}
                     formData={formData}
                     errors={errors}
@@ -1416,7 +1598,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <ValidatedTextarea
                   label="Architecture Description"
                   field="architecture"
-                  value={formData.architecture}
+                  value={formData.architecture ?? ""}
                   onChange={(value) => handleInputChange("architecture", value)}
                   formData={formData}
                   errors={errors}
@@ -1441,7 +1623,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <ValidatedTextarea
                   label="Location Description"
                   field="locationDetails.description"
-                  value={formData.locationDetails.description}
+                  value={formData.locationDetails?.description ?? ""}
                   onChange={(value) => handleInputChange("locationDetails.description", value)}
                   formData={formData}
                   errors={errors}
@@ -1455,7 +1637,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Latitude"
                     field="locationDetails.coordinates.latitude"
-                    value={formData.locationDetails.coordinates.latitude}
+                    value={formData.locationDetails?.coordinates?.latitude ?? 0}
                     onChange={(value) => handleInputChange("locationDetails.coordinates.latitude", value)}
                     formData={formData}
                     errors={errors}
@@ -1467,7 +1649,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Longitude"
                     field="locationDetails.coordinates.longitude"
-                    value={formData.locationDetails.coordinates.longitude}
+                    value={formData.locationDetails?.coordinates?.longitude ?? 0}
                     onChange={(value) => handleInputChange("locationDetails.coordinates.longitude", value)}
                     formData={formData}
                     errors={errors}
@@ -1489,7 +1671,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Metro Station"
                     field="locationDetails.connectivity.metroStation"
-                    value={formData.locationDetails.connectivity.metroStation}
+                    value={formData.locationDetails?.connectivity?.metroStation ?? ""}
                     onChange={(value) => handleInputChange("locationDetails.connectivity.metroStation", value)}
                     formData={formData}
                     errors={errors}
@@ -1500,7 +1682,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Metro Distance (km)"
                     field="locationDetails.connectivity.metroDistance"
-                    value={formData.locationDetails.connectivity.metroDistance}
+                    value={formData.locationDetails?.connectivity?.metroDistance ?? 0}
                     onChange={(value) => handleInputChange("locationDetails.connectivity.metroDistance", value)}
                     formData={formData}
                     errors={errors}
@@ -1522,7 +1704,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Catchment Population"
                     field="locationDetails.demographics.catchmentPopulation"
-                    value={formData.locationDetails.demographics.catchmentPopulation}
+                    value={formData.locationDetails?.demographics?.catchmentPopulation ?? 0}
                     onChange={(value) => handleInputChange("locationDetails.demographics.catchmentPopulation", value)}
                     formData={formData}
                     errors={errors}
@@ -1533,7 +1715,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Average Income"
                     field="locationDetails.demographics.averageIncome"
-                    value={formData.locationDetails.demographics.averageIncome}
+                    value={formData.locationDetails?.demographics?.averageIncome ?? ""}
                     onChange={(value) => handleInputChange("locationDetails.demographics.averageIncome", value)}
                     formData={formData}
                     errors={errors}
@@ -1544,7 +1726,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Tourist Footfall (annual)"
                     field="locationDetails.demographics.touristFootfall"
-                    value={formData.locationDetails.demographics.touristFootfall}
+                    value={formData.locationDetails?.demographics?.touristFootfall ?? 0}
                     onChange={(value) => handleInputChange("locationDetails.demographics.touristFootfall", value)}
                     formData={formData}
                     errors={errors}
@@ -1570,9 +1752,13 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div>
                     <Label>Main Image</Label>
                     <InstantImageUpload
+                      mode="single"
+                      projectTitle={formData.name || "Mall"}
+                      imageType="cover"
+                      existingImages={formData.image ?? ""}
+                      editMode={mode === "edit" && !!(formData.image)}
                       onUploadComplete={handleMainImageComplete}
-                      currentImage={formData.image}
-                      onRemove={() => handleImageDelete(formData.image)}
+                      onDelete={() => handleImageDelete(formData.image ?? "")}
                       className="mt-2"
                     />
                   </div>
@@ -1580,9 +1766,13 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div>
                     <Label>Floor Plan</Label>
                     <InstantImageUpload
+                      mode="single"
+                      projectTitle={formData.name || "Mall"}
+                      imageType="gallery"
+                      existingImages={formData.floorPlan ?? ""}
+                      editMode={mode === "edit" && !!(formData.floorPlan)}
                       onUploadComplete={handleFloorPlanComplete}
-                      currentImage={formData.floorPlan}
-                      onRemove={() => handleImageDelete(formData.floorPlan)}
+                      onDelete={() => handleImageDelete(formData.floorPlan ?? "")}
                       className="mt-2"
                     />
                   </div>
@@ -1590,7 +1780,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div>
                     <Label>Gallery Images</Label>
                     <div className="grid grid-cols-3 gap-2 mt-2">
-                      {formData.gallery.map((imageUrl, index) => (
+                      {(formData.gallery || []).map((imageUrl, index) => (
                         <div key={index} className="relative group">
                           <img 
                             src={imageUrl} 
@@ -1608,9 +1798,15 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                       ))}
                     </div>
                     <InstantImageUpload
+                      mode="multiple"
+                      projectTitle={formData.name || "Mall"}
+                      imageType="gallery"
+                      existingImages={formData.gallery || []}
+                      editMode={mode === "edit" && (formData.gallery?.length || 0) > 0}
                       onUploadComplete={handleGalleryImageComplete}
-                      multiple
+                      onDelete={handleImageDelete}
                       className="mt-2"
+                      maxFiles={10}
                     />
                   </div>
                 </div>
@@ -1625,7 +1821,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <ValidatedInput
                   label="Brochure URL"
                   field="marketingMaterials.brochure"
-                  value={formData.marketingMaterials.brochure}
+                  value={formData.marketingMaterials?.brochure ?? ""}
                   onChange={(value) => handleInputChange("marketingMaterials.brochure", value)}
                   formData={formData}
                   errors={errors}
@@ -1638,7 +1834,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Video Tour URL"
                     field="marketingMaterials.videoTour"
-                    value={formData.marketingMaterials.videoTour}
+                    value={formData.marketingMaterials?.videoTour ?? ""}
                     onChange={(value) => handleInputChange("marketingMaterials.videoTour", value)}
                     formData={formData}
                     errors={errors}
@@ -1649,7 +1845,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="3D Virtual Tour URL"
                     field="marketingMaterials.virtualTour3D"
-                    value={formData.marketingMaterials.virtualTour3D}
+                    value={formData.marketingMaterials?.virtualTour3D ?? ""}
                     onChange={(value) => handleInputChange("marketingMaterials.virtualTour3D", value)}
                     formData={formData}
                     errors={errors}
@@ -1669,7 +1865,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="ndaRequired"
-                    checked={formData.investorRelations.ndaRequired}
+                    checked={formData.investorRelations?.ndaRequired ?? false}
                     onCheckedChange={(checked) => 
                       handleInputChange("investorRelations.ndaRequired", checked)
                     }
@@ -1680,7 +1876,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                 <ValidatedInput
                   label="Data Room Access URL"
                   field="investorRelations.dataRoomAccessUrl"
-                  value={formData.investorRelations.dataRoomAccessUrl}
+                  value={formData.investorRelations?.dataRoomAccessUrl ?? ""}
                   onChange={(value) => handleInputChange("investorRelations.dataRoomAccessUrl", value)}
                   formData={formData}
                   errors={errors}
@@ -1705,7 +1901,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <ValidatedInput
                     label="Mall Rating (1-5)"
                     field="rating"
-                    value={formData.rating}
+                    value={formData.rating ?? 5}
                     onChange={(value) => handleInputChange("rating", value)}
                     formData={formData}
                     errors={errors}
@@ -1721,7 +1917,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="verified"
-                      checked={formData.verified}
+                      checked={formData.verified ?? true}
                       onCheckedChange={(checked) => handleInputChange("verified", checked)}
                     />
                     <Label htmlFor="verified">Verified Mall</Label>
@@ -1730,7 +1926,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="isActive"
-                      checked={formData.isActive}
+                      checked={formData.isActive ?? true}
                       onCheckedChange={(checked) => handleInputChange("isActive", checked)}
                     />
                     <Label htmlFor="isActive">Active on Platform</Label>
@@ -1739,7 +1935,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="isAvailable"
-                      checked={formData.isAvailable}
+                      checked={formData.isAvailable ?? true}
                       onCheckedChange={(checked) => handleInputChange("isAvailable", checked)}
                     />
                     <Label htmlFor="isAvailable">Available for Sale/Investment</Label>
@@ -1748,7 +1944,7 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="isOperational"
-                      checked={formData.isOperational}
+                      checked={formData.isOperational ?? false}
                       onCheckedChange={(checked) => handleInputChange("isOperational", checked)}
                     />
                     <Label htmlFor="isOperational">Currently Operational</Label>
@@ -1776,13 +1972,13 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
                         <span className="font-medium">Status:</span> {formData.status || "Not set"}
                       </div>
                       <div>
-                        <span className="font-medium">Total Area:</span> {formData.size.totalArea || 0} sqft
+                        <span className="font-medium">Total Area:</span> {formData.size?.totalArea || 0} sqft
                       </div>
                       <div>
-                        <span className="font-medium">Price:</span> {formData.price.total || "Not calculated"}
+                        <span className="font-medium">Price:</span> {formData.price?.total || "Not calculated"}
                       </div>
                       <div>
-                        <span className="font-medium">Stores:</span> {formData.rentalDetails.totalStores || 0}
+                        <span className="font-medium">Stores:</span> {formData.rentalDetails?.totalStores || 0}
                       </div>
                     </div>
                   </div>
@@ -1832,12 +2028,62 @@ export function MallFormModal({ isOpen, onClose, onSuccess, mall, mode }: MallFo
         </DialogContent>
       </Dialog>
 
+      {/* Close Confirmation Dialog */}
+      <Dialog open={showUnsavedChangesDialog} onOpenChange={(open) => !open && handleContinueEditing()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className={`h-5 w-5 ${hasUnsavedChanges ? 'text-amber-500' : 'text-blue-500'}`} />
+              {hasUnsavedChanges ? 'Unsaved Changes' : 'Confirm Close'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              {hasUnsavedChanges 
+                ? 'You have unsaved changes in the mall form. What would you like to do?'
+                : 'Are you sure you want to close the mall form?'
+              }
+            </p>
+            <div className="grid gap-2">
+              <Button 
+                variant="outline" 
+                onClick={handleContinueEditing}
+                className="justify-start"
+              >
+                {hasUnsavedChanges ? 'Continue Editing' : 'Cancel'}
+              </Button>
+              {hasUnsavedChanges && mode === 'add' && (
+                <Button 
+                  variant="outline" 
+                  onClick={handleSaveDraftAndClose}
+                  className="justify-start text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                >
+                  Save Draft & Close
+                </Button>
+              )}
+              <Button 
+                variant={hasUnsavedChanges ? "destructive" : "default"}
+                onClick={handleDiscardAndClose}
+                className="justify-start"
+              >
+                {hasUnsavedChanges ? 'Discard Changes & Close' : 'Yes, Close Form'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Main Form Modal */}
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog open={isOpen} onOpenChange={isSubmitting ? undefined : handleModalClose}>
       <DialogContent className="max-w-6xl max-h-[95vh] p-0 flex flex-col">
         <DialogHeader className="p-6 pb-0 flex-shrink-0">
-          <DialogTitle className="text-2xl font-bold">
+          <DialogTitle className="text-2xl font-bold flex items-center gap-2">
             {mode === "add" ? "Add New Mall" : "Edit Mall"}
+            {hasUnsavedChanges && (
+              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                Unsaved Changes
+              </Badge>
+            )}
           </DialogTitle>
         </DialogHeader>
 

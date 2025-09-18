@@ -151,6 +151,7 @@ export interface PlotCardProps {
   onView: (plot: IPlot) => void;
   onEdit: (plot: IPlot) => void;
   onDelete: (plot: IPlot) => void;
+  isDeleting?: boolean;
 }
 
 export interface PlotFormModalProps {
