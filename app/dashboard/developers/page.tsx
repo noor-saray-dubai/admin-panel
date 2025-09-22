@@ -1,11 +1,13 @@
-import { DevelopersPage } from "@/components/developers-page";
-import { Suspense } from "react";
+// app/dashboard/developers/page.tsx
+import { DeveloperTabs } from '@/components/developer-tabs'
+import React from 'react'
 
-
-export default function Developers() {
+const page = () => {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <DevelopersPage />
-   </Suspense>
+    <div>
+      <DeveloperTabs />
+    </div>
   )
 }
+
+export default page

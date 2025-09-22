@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { Users, Settings, Home, FileText, MessageSquare, Shield, Briefcase, Building, ShoppingCart, ChevronLeft, Menu, User, LogOut, Newspaper } from "lucide-react"
+import { Users, Settings, Home, FileText, MessageSquare, Shield, Briefcase, Building, ShoppingCart, ChevronLeft, Menu, User, Newspaper } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
@@ -16,7 +16,7 @@ const navigationMap = {
   [Collection.BLOGS]: { name: "Blogs", href: "/dashboard/blogs", icon: MessageSquare, collection: Collection.BLOGS },
   [Collection.NEWS]: { name: "News", href: "/dashboard/news", icon: Newspaper, collection: Collection.NEWS },
   [Collection.COMMUNITIES]: { name: "Communities", href: "/dashboard/communities", icon: Users, collection: Collection.COMMUNITIES },
-  [Collection.DEVELOPERS]: { name: "Developers", href: "/dashboard/developers", icon: Shield, collection: Collection.DEVELOPERS },
+  [Collection.DEVELOPERS]: { name: "Developers", href: "/dashboard/developers?tab=all&page=1", icon: Shield, collection: Collection.DEVELOPERS },
   [Collection.CAREERS]: { name: "Careers", href: "/dashboard/careers", icon: Briefcase, collection: Collection.CAREERS },
   [Collection.PLOTS]: { name: "Plots", href: "/dashboard/plots?tab=all&page=1", icon: Building, collection: Collection.PLOTS },
   [Collection.MALLS]: { name: "Malls", href: "/dashboard/malls?tab=all&page=1", icon: ShoppingCart, collection: Collection.MALLS },
@@ -49,10 +49,11 @@ export function LuxurySidebar({
   const { 
     user, 
     loading, 
-    signOut, 
     getAccessibleCollections,
     getUserSubRoleForCollection,
-    isActive: isUserActive 
+    isActive: isUserActive,
+    isAdmin,
+    isSuperAdmin 
   } = useEnhancedAuth()
 
   const isActive = (href: string) => {
@@ -80,6 +81,18 @@ export function LuxurySidebar({
         navItems.push({ ...item, key })
       }
     })
+    
+    // Add admin-specific navigation items
+    if (isAdmin() || isSuperAdmin()) {
+      navItems.push({
+        name: "Permission Requests",
+        href: "/dashboard/admin/permission-requests",
+        icon: Shield,
+        collection: null,
+        key: 'admin-permission-requests',
+        adminOnly: true
+      })
+    }
     
     return navItems
   }
@@ -235,16 +248,6 @@ export function LuxurySidebar({
                 </div>
               )}
             </div>
-            {!isCollapsed && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={signOut}
-                className="text-gray-500 hover:text-red-600 transition-colors duration-200 p-1 h-auto"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            )}
           </div>
         </div>
       </div>

@@ -1,8 +1,9 @@
+//components/luxury-signin.tsx
 "use client"
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { signInWithEmailAndPassword } from "firebase/auth"
 import { auth } from "@/firebase"
@@ -11,7 +12,20 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Eye, EyeOff, CheckCircle } from "lucide-react"
+import { Eye, EyeOff, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { useToast } from "@/components/ui/toast-system"
+import { cn } from "@/lib/utils"
+
+// Types for form validation
+interface FormErrors {
+  email?: string
+  password?: string
+  general?: string
+}
+
+// Rate limiting configuration
+const MAX_LOGIN_ATTEMPTS = 3
+const RATE_LIMIT_WINDOW = 5 * 60 * 1000 // 5 minutes
 
 export function LuxurySignIn() {
   const [email, setEmail] = useState("")
@@ -20,77 +34,216 @@ export function LuxurySignIn() {
   const [rememberMe, setRememberMe] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [loginAttempts, setLoginAttempts] = useState(0)
+  const [lastAttemptTime, setLastAttemptTime] = useState<number>(0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  const emailInputRef = useRef<HTMLInputElement>(null)
+  const passwordInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { success, error: showError } = useToast()
+
+  // Form validation functions
+  const validateEmail = (email: string): string | undefined => {
+    if (!email) return "Email is required"
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) return "Please enter a valid email address"
+    return undefined
+  }
+
+  const validatePassword = (password: string): string | undefined => {
+    if (!password) return "Password is required"
+    if (password.length < 6) return "Password must be at least 6 characters"
+    return undefined
+  }
+
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {}
+    
+    const emailError = validateEmail(email)
+    if (emailError) newErrors.email = emailError
+    
+    const passwordError = validatePassword(password)
+    if (passwordError) newErrors.password = passwordError
+    
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  // Rate limiting check
+  const checkRateLimit = (): boolean => {
+    const now = Date.now()
+    if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+      const timeLeft = RATE_LIMIT_WINDOW - (now - lastAttemptTime)
+      if (timeLeft > 0) {
+        const minutesLeft = Math.ceil(timeLeft / (60 * 1000))
+        showError(
+          "Too many attempts",
+          `Please try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}`,
+          8000
+        )
+        return false
+      } else {
+        // Reset attempts after rate limit window
+        setLoginAttempts(0)
+        setLastAttemptTime(0)
+      }
+    }
+    return true
+  }
 
   useEffect(() => {
     const message = searchParams.get('message')
     if (message === 'password-reset-success') {
       setSuccessMessage('Password reset successful! You can now sign in with your new password.')
+      success(
+        "Password Reset Successful",
+        "You can now sign in with your new password.",
+        6000
+      )
       // Clear the message after 10 seconds
       setTimeout(() => setSuccessMessage(''), 10000)
     }
-  }, [searchParams])
+  }, [searchParams, success])
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setIsLoading(true);
+  // Auto-focus email input on mount
+  useEffect(() => {
+    emailInputRef.current?.focus()
+  }, [])
 
-  try {
-    // Step 1: Authenticate with Firebase (client-side)
-    console.log('🔐 Starting Firebase client authentication...');
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const firebaseUser = userCredential.user;
-    
-    console.log('✅ Firebase authentication successful:', firebaseUser.uid);
-    
-    // Step 2: Get ID token and send to server for session creation
-    console.log('🎫 Getting ID token for server validation...');
-    const idToken = await firebaseUser.getIdToken();
-    
-    // Step 3: Create server session (more secure than the previous approach)
-    console.log('🍪 Creating server session...');
-    const res = await fetch("/api/sessionLogin", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${idToken}` // Send token securely
-      },
-      body: JSON.stringify({
-        firebaseUid: firebaseUser.uid,
-        email: firebaseUser.email,
-        rememberMe,
-      }),
-    });
+  // Clear field-specific errors when user types
+  useEffect(() => {
+    if (errors.email && email) {
+      setErrors(prev => ({ ...prev, email: undefined }))
+    }
+  }, [email, errors.email])
 
-    if (!res.ok) {
-      throw new Error("Session creation failed");
+  useEffect(() => {
+    if (errors.password && password) {
+      setErrors(prev => ({ ...prev, password: undefined }))
+    }
+  }, [password, errors.password])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // Clear any existing general errors
+    setErrors(prev => ({ ...prev, general: undefined }))
+    
+    // Validate form
+    if (!validateForm()) {
+      return
     }
     
-    console.log('🎉 Login successful! Redirecting...');
-    
-    // Login successful, redirect to dashboard
-    router.push("/dashboard");
-  } catch (error: any) {
-    console.error("Login error:", error);
-    
-    // Provide user-friendly error messages
-    let errorMessage = "Invalid credentials or server error";
-    if (error.code === 'auth/user-not-found') {
-      errorMessage = "No account found with this email";
-    } else if (error.code === 'auth/wrong-password') {
-      errorMessage = "Incorrect password";
-    } else if (error.code === 'auth/invalid-email') {
-      errorMessage = "Invalid email address";
-    } else if (error.code === 'auth/user-disabled') {
-      errorMessage = "Account has been disabled";
+    // Check rate limiting
+    if (!checkRateLimit()) {
+      return
     }
     
-    alert(errorMessage);
-  } finally {
-    setIsLoading(false);
+    setIsLoading(true)
+    setIsSubmitting(true)
+    
+    try {
+      // Step 1: Authenticate with Firebase (client-side)
+      console.log('🔐 Starting Firebase client authentication...')
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      const firebaseUser = userCredential.user
+      
+      console.log('✅ Firebase authentication successful:', firebaseUser.uid)
+      
+      // Step 2: Get ID token and send to server for session creation
+      console.log('🎫 Getting ID token for server validation...')
+      const idToken = await firebaseUser.getIdToken()
+      
+      // Step 3: Create server session (more secure than the previous approach)
+      console.log('🍪 Creating server session...')
+      const res = await fetch("/api/sessionLogin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${idToken}` // Send token securely
+        },
+        body: JSON.stringify({
+          firebaseUid: firebaseUser.uid,
+          email: firebaseUser.email,
+          rememberMe,
+        }),
+      })
+
+      if (!res.ok) {
+        throw new Error("Session creation failed")
+      }
+      
+      console.log('🎉 Login successful! Redirecting...')
+      
+      // Reset login attempts on successful login
+      setLoginAttempts(0)
+      setLastAttemptTime(0)
+      
+      // Keep loading state active until redirect completes
+      // No toast needed - redirect itself indicates success
+      router.push("/dashboard")
+      // Don't set loading to false on success - let the page navigation handle it
+      
+    } catch (error: any) {
+      console.error("Login error:", error)
+      
+      // Increment login attempts
+      const newAttempts = loginAttempts + 1
+      setLoginAttempts(newAttempts)
+      setLastAttemptTime(Date.now())
+      
+      // Provide user-friendly error messages
+      let errorTitle = "Login Failed"
+      let errorMessage = "Invalid credentials or server error"
+      
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = "No account found with this email address"
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = "Incorrect password. Please try again"
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Please enter a valid email address"
+      } else if (error.code === 'auth/user-disabled') {
+        errorMessage = "This account has been disabled. Contact support"
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many failed attempts. Please try again later"
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Please check your connection"
+      } else if (error.message === "Session creation failed") {
+        errorMessage = "Server error. Please try again"
+      }
+      
+      // Show error toast
+      showError(
+        errorTitle,
+        errorMessage,
+        6000
+      )
+      
+      // Set form error for additional UI feedback
+      setErrors({ general: errorMessage })
+      
+      // Focus appropriate field based on error
+      if (error.code === 'auth/invalid-email') {
+        emailInputRef.current?.focus()
+      } else if (error.code === 'auth/wrong-password') {
+        passwordInputRef.current?.focus()
+      }
+      
+      // Only turn off loading state on error
+      setIsLoading(false)
+      setIsSubmitting(false)
+    }
   }
-};
+
+  // Handle Enter key press
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !isLoading && !isSubmitting) {
+      handleSubmit(e as any)
+    }
+  }
 
 
   return (
@@ -121,44 +274,84 @@ const handleSubmit = async (e: React.FormEvent) => {
                 </div>
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-6">
+            {/* General Error Display */}
+            {errors.general && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center">
+                  <AlertCircle className="w-5 h-5 text-red-500 mr-2" />
+                  <p className="text-red-700 text-sm">{errors.general}</p>
+                </div>
+              </div>
+            )}
+            
+            <form onSubmit={handleSubmit} className="space-y-6" noValidate>
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-gray-700">
-                  Email
+                  Email <span className="text-red-500" aria-label="required">*</span>
                 </Label>
                 <Input
+                  ref={emailInputRef}
                   id="email"
                   type="email"
                   placeholder="admin@noorsaray.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   required
-                  className="h-11 border-gray-200 focus:border-gray-300 focus:ring-0"
+                  aria-invalid={!!errors.email}
+                  aria-describedby={errors.email ? "email-error" : undefined}
+                  className={cn(
+                    "h-11 border-gray-200 focus:border-gray-300 focus:ring-0",
+                    errors.email && "border-red-300 focus:border-red-400"
+                  )}
+                  disabled={isLoading}
                 />
+                {errors.email && (
+                  <p id="email-error" className="text-sm text-red-600 flex items-center mt-1">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {errors.email}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-gray-700">
-                  Password
+                  Password <span className="text-red-500" aria-label="required">*</span>
                 </Label>
                 <div className="relative">
                   <Input
+                    ref={passwordInputRef}
                     id="password"
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     required
-                    className="h-11 pr-10 border-gray-200 focus:border-gray-300 focus:ring-0"
+                    aria-invalid={!!errors.password}
+                    aria-describedby={errors.password ? "password-error" : undefined}
+                    className={cn(
+                      "h-11 pr-10 border-gray-200 focus:border-gray-300 focus:ring-0",
+                      errors.password && "border-red-300 focus:border-red-400"
+                    )}
+                    disabled={isLoading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                    disabled={isLoading}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {errors.password && (
+                  <p id="password-error" className="text-sm text-red-600 flex items-center mt-1">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {errors.password}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between">
@@ -177,11 +370,22 @@ const handleSubmit = async (e: React.FormEvent) => {
 
               <Button
                 type="submit"
-                className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white"
-                disabled={isLoading}
+                className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                disabled={isLoading || isSubmitting}
+                aria-describedby="login-button-status"
               >
-                {isLoading ? "Signing in..." : "Sign In"}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  "Sign In"
+                )}
               </Button>
+              <div id="login-button-status" className="sr-only" aria-live="polite">
+                {isLoading ? "Signing in, please wait" : ""}
+              </div>
             </form>
           </CardContent>
         </Card>

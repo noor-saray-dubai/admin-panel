@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Search, User, LogOut, Settings, Loader2, AlertTriangle } from "lucide-react"
+import { Bell, Search, LogOut, Loader2, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { browserSessionPersistence, setPersistence, signOut, inMemoryPersistence } from "firebase/auth"
@@ -16,6 +16,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { useToast } from "@/components/ui/toast-system"
+import { useEnhancedAuth } from "@/hooks/useEnhancedAuth"
 
 // Types
 interface LogoutState {
@@ -28,6 +30,11 @@ const MAX_RETRY_ATTEMPTS = 3
 const LOGOUT_TIMEOUT = 15000 // 15 seconds
 
 export function LuxuryHeader() {
+  // Hooks
+  const router = useRouter()
+  const { success, error: showError, info } = useToast()
+  const { user, signOut: authSignOut } = useEnhancedAuth()
+
   // States
   const [searchFocused, setSearchFocused] = useState(false)
   const [searchValue, setSearchValue] = useState("")
@@ -43,7 +50,6 @@ export function LuxuryHeader() {
   // Refs
   const searchRef = useRef<HTMLInputElement>(null)
   const logoutTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const router = useRouter()
 
   // Cleanup on unmount
   useEffect(() => {
@@ -176,124 +182,105 @@ export function LuxuryHeader() {
     }
   }, [clearAllUserData])
 
-  // Main logout function - COMPLETELY REWRITTEN
+  // Enhanced logout function with toast notifications
   const handleLogout = useCallback(async () => {
     if (logoutState.isLoading) return;
 
     setLogoutState(prev => ({ ...prev, isLoading: true, error: null }));
+    
+    // Show initial loading toast
+    info("Signing out...", "Please wait while we securely log you out.", 10000);
 
     // Force redirect if logout hangs
     logoutTimeoutRef.current = setTimeout(() => {
-      console.warn("Logout timeout reached, forcing redirect");
+      showError(
+        "Logout Timeout", 
+        "Logout is taking longer than expected. Redirecting now.",
+        5000
+      );
       forceRedirect();
     }, LOGOUT_TIMEOUT);
 
     try {
-      console.log("Starting enhanced logout process...");
-
-      // 🔹 STEP 1: Call backend API FIRST with logout headers
-      console.log("Calling backend logout API...");
-      const controller = new AbortController();
-      const apiTimeoutId = setTimeout(() => controller.abort(), 8000);
-
-      try {
-        const response = await fetch("/api/logout", {
+      // 🔹 STEP 1: Use enhanced auth signOut (handles backend cleanup)
+      if (authSignOut) {
+        await authSignOut();
+      } else {
+        // Fallback to manual cleanup
+        await fetch("/api/logout", {
           method: "POST",
           credentials: "include",
           headers: { 
             "Content-Type": "application/json",
-            "X-Logout-In-Progress": "true", // Signal to middleware
+            "X-Logout-In-Progress": "true",
             "Cache-Control": "no-cache, no-store, must-revalidate",
           },
-          signal: controller.signal,
-        });
-
-        clearTimeout(apiTimeoutId);
-
-        if (!response.ok) {
-          const errorData = await response.text().catch(() => "Unknown error");
-          console.warn(`Logout API failed: ${response.status} - ${errorData}`);
-          // Don't throw - continue with client cleanup
-        } else {
-          console.log("Logout API successful");
-        }
-      } catch (apiError) {
-        clearTimeout(apiTimeoutId);
-        console.warn("API call failed, continuing with client cleanup:", apiError);
-      }
-
-      // 🔹 STEP 2: Clear client storage BEFORE Firebase operations
-      clearAllUserData();
-
-      // 🔹 STEP 3: Firebase cleanup with proper persistence handling
-      if (auth.currentUser) {
-        console.log("Cleaning up Firebase session...");
+        }).catch(console.warn);
         
-        try {
-          // First, disable persistence completely
+        // Clear client storage
+        clearAllUserData();
+        
+        // Firebase cleanup
+        if (auth.currentUser) {
           await setPersistence(auth, inMemoryPersistence);
-          console.log("Firebase persistence disabled");
-          
-          // Then sign out
           await signOut(auth);
-          console.log("Firebase signOut completed");
-
-          // Wait for auth state to actually clear (critical!)
-          await new Promise((resolve) => {
-            const unsubscribe = auth.onAuthStateChanged((user) => {
-              if (!user) {
-                console.log("Auth state confirmed cleared");
-                unsubscribe();
-                resolve(void 0);
-              }
-            });
-            
-            // Timeout fallback - don't wait forever
-            setTimeout(() => {
-              console.log("Auth state timeout reached");
-              unsubscribe();
-              resolve(void 0);
-            }, 3000);
-          });
-
-        } catch (firebaseError) {
-          console.warn("Firebase cleanup failed:", firebaseError);
-          // Continue anyway
         }
       }
 
-      // 🔹 STEP 4: Final cleanup and redirect
-      clearAllUserData(); // Clear again after Firebase operations
-      
       // Clear timeout and redirect
       if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current);
-      console.log("Logout process completed, redirecting...");
-      forceRedirect();
+      
+      // Success toast
+      success(
+        "Signed Out Successfully", 
+        "You have been securely logged out.",
+        3000
+      );
+      
+      // Small delay to show success before redirect
+      setTimeout(() => {
+        forceRedirect();
+      }, 500);
 
     } catch (err) {
-      console.error("Logout failed:", err);
       if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current);
 
       const newRetryCount = logoutState.retryCount + 1;
+      const errorMessage = err instanceof Error ? err.message : "Logout failed";
+      
       if (newRetryCount >= MAX_RETRY_ATTEMPTS) {
-        console.warn("Max retries reached, forcing redirect");
-        forceRedirect();
+        showError(
+          "Logout Failed", 
+          "Multiple attempts failed. Forcing logout for security.",
+          5000
+        );
+        setTimeout(forceRedirect, 1000);
         return;
       }
 
+      showError(
+        "Logout Failed", 
+        `${errorMessage}. You can retry or force logout.`,
+        8000
+      );
+      
       setLogoutState({
         isLoading: false,
-        error: err instanceof Error ? err.message : "Logout failed",
+        error: errorMessage,
         retryCount: newRetryCount
       });
     }
-  }, [logoutState.isLoading, logoutState.retryCount, forceRedirect, clearAllUserData]);
+  }, [logoutState.isLoading, logoutState.retryCount, forceRedirect, clearAllUserData, authSignOut, info, success, showError]);
 
   // Force logout (nuclear option)
   const handleForceLogout = useCallback(() => {
-    console.log("Force logout initiated")
-    forceRedirect()
-  }, [forceRedirect])
+    info(
+      "Force Logout", 
+      "Forcing logout and clearing all session data...",
+      3000
+    );
+    setTimeout(forceRedirect, 500);
+  }, [forceRedirect, info])
 
   // Handle dropdown state changes
   const handleDropdownOpenChange = useCallback((open: boolean) => {
@@ -361,7 +348,12 @@ export function LuxuryHeader() {
             >
               <Avatar className="h-8 w-8 transition-all duration-200">
                 <AvatarFallback className="bg-gray-900 text-white text-xs font-semibold transition-all duration-200 hover:bg-gray-800">
-                  NS
+                  {user?.displayName 
+                    ? user.displayName.substring(0, 2).toUpperCase()
+                    : user?.email
+                      ? user.email.substring(0, 2).toUpperCase()
+                      : 'NS'
+                  }
                 </AvatarFallback>
               </Avatar>
               {logoutState.isLoading && (
@@ -377,14 +369,19 @@ export function LuxuryHeader() {
           >
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium">Noorsaray Admin</p>
-                <p className="text-xs text-muted-foreground">admin@noorsaray.com</p>
+                <p className="text-sm font-medium">
+                  {user?.displayName || 'Admin User'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {user?.email || 'admin@noorsaray.com'}
+                </p>
+                {user?.fullRole && (
+                  <p className="text-xs text-blue-600 font-medium capitalize">
+                    {user.fullRole.replace('_', ' ')}
+                  </p>
+                )}
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-
-            {/* Regular Menu Items */}
-
             <DropdownMenuSeparator />
 
             {/* Error Display */}

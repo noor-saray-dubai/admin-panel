@@ -301,3 +301,199 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+// PATCH - Review permission request (approve/reject)
+export async function PATCH(request: NextRequest) {
+  try {
+    // 1. Verify authentication
+    const cookieHeader = request.headers.get("cookie") || "";
+    const cookies = parse(cookieHeader);
+    const sessionCookie = cookies.__session;
+    
+    if (!sessionCookie) {
+      return NextResponse.json({
+        success: false,
+        error: "Authentication required"
+      }, { status: 401 });
+    }
+    
+    const decodedToken = await adminAuth.verifySessionCookie(sessionCookie, true);
+    const userFirebaseUid = decodedToken.uid;
+    
+    // 2. Get current user and verify admin rights
+    await connectToDatabase();
+    const currentUser = await EnhancedUser.findOne({ firebaseUid: userFirebaseUid });
+    
+    if (!currentUser) {
+      return NextResponse.json({
+        success: false,
+        error: "User profile not found"
+      }, { status: 404 });
+    }
+    
+    // Only admins and super admins can review requests
+    const isAdmin = [FullRole.ADMIN, FullRole.SUPER_ADMIN].includes(currentUser.fullRole);
+    if (!isAdmin) {
+      return NextResponse.json({
+        success: false,
+        error: "Insufficient permissions - admin access required"
+      }, { status: 403 });
+    }
+    
+    // 3. Parse request data
+    const body = await request.json();
+    const {
+      requestId,
+      action, // 'approve' or 'reject'
+      reviewNotes,
+      grantedPermissions, // For partial approvals
+      grantedExpiry
+    } = body;
+    
+    // Validation
+    if (!requestId) {
+      return NextResponse.json({
+        success: false,
+        error: "Request ID is required"
+      }, { status: 400 });
+    }
+    
+    if (!['approve', 'reject'].includes(action)) {
+      return NextResponse.json({
+        success: false,
+        error: "Action must be 'approve' or 'reject'"
+      }, { status: 400 });
+    }
+    
+    // 4. Find the permission request
+    const permissionRequest = await PermissionRequest.findById(requestId);
+    if (!permissionRequest) {
+      return NextResponse.json({
+        success: false,
+        error: "Permission request not found"
+      }, { status: 404 });
+    }
+    
+    // Check if already reviewed
+    if (permissionRequest.status !== RequestStatus.PENDING) {
+      return NextResponse.json({
+        success: false,
+        error: `Request has already been ${permissionRequest.status}`
+      }, { status: 400 });
+    }
+    
+    // 5. Update request status
+    const newStatus = action === 'approve' ? RequestStatus.APPROVED : RequestStatus.REJECTED;
+    
+    permissionRequest.status = newStatus;
+    permissionRequest.reviewedBy = userFirebaseUid;
+    permissionRequest.reviewedByEmail = currentUser.email;
+    permissionRequest.reviewedByName = currentUser.displayName;
+    permissionRequest.reviewedAt = new Date();
+    permissionRequest.reviewNotes = reviewNotes || '';
+    
+    if (action === 'approve') {
+      // Use granted permissions if provided, otherwise use requested permissions
+      permissionRequest.grantedPermissions = grantedPermissions || permissionRequest.requestedPermissions;
+      
+      // Set granted expiry
+      if (grantedExpiry) {
+        permissionRequest.grantedExpiry = new Date(grantedExpiry);
+      } else if (permissionRequest.requestedExpiry) {
+        permissionRequest.grantedExpiry = permissionRequest.requestedExpiry;
+      }
+      
+      // 6. Grant actual permissions to user
+      const targetUser = await EnhancedUser.findOne({ firebaseUid: permissionRequest.requestedBy });
+      if (!targetUser) {
+        return NextResponse.json({
+          success: false,
+          error: "Target user not found"
+        }, { status: 404 });
+      }
+      
+      // Add new permissions to user
+      const currentPermissions = targetUser.collectionPermissions || [];
+      const newPermissions = [...currentPermissions];
+      
+      for (const grantedPerm of permissionRequest.grantedPermissions) {
+        // Check if user already has this permission
+        const existingIndex = newPermissions.findIndex(p => 
+          p.collection === grantedPerm.collection && p.subRole === grantedPerm.subRole
+        );
+        
+        if (existingIndex === -1) {
+          // Add new permission
+          newPermissions.push({
+            collection: grantedPerm.collection,
+            subRole: grantedPerm.subRole,
+            grantedBy: userFirebaseUid,
+            grantedAt: new Date(),
+            expiresAt: permissionRequest.grantedExpiry || null
+          });
+        } else {
+          // Update existing permission
+          newPermissions[existingIndex] = {
+            ...newPermissions[existingIndex],
+            grantedBy: userFirebaseUid,
+            grantedAt: new Date(),
+            expiresAt: permissionRequest.grantedExpiry || null
+          };
+        }
+      }
+      
+      targetUser.collectionPermissions = newPermissions;
+      await targetUser.save();
+    }
+    
+    await permissionRequest.save();
+    
+    // 7. Create audit log
+    const clientInfo = {
+      ip: request.headers.get('x-forwarded-for') || 'unknown',
+      userAgent: request.headers.get('user-agent')
+    };
+    
+    await AuditLog.create({
+      action: AuditAction.USER_UPDATED,
+      success: true,
+      level: AuditLevel.INFO,
+      userId: userFirebaseUid,
+      userEmail: currentUser.email,
+      ip: clientInfo.ip,
+      userAgent: clientInfo.userAgent,
+      resource: 'permission_request',
+      details: {
+        action: `permission_request_${action}d`,
+        requestId: requestId,
+        targetUser: permissionRequest.requestedBy,
+        targetUserEmail: permissionRequest.requestedByEmail,
+        permissions: action === 'approve' ? permissionRequest.grantedPermissions : permissionRequest.requestedPermissions,
+        reviewNotes: reviewNotes || 'No notes provided'
+      },
+      timestamp: new Date()
+    });
+    
+    return NextResponse.json({
+      success: true,
+      message: `Permission request ${action}d successfully`,
+      request: {
+        _id: permissionRequest._id,
+        status: permissionRequest.status,
+        reviewedBy: permissionRequest.reviewedByName,
+        reviewedAt: permissionRequest.reviewedAt,
+        reviewNotes: permissionRequest.reviewNotes,
+        grantedPermissions: permissionRequest.grantedPermissions
+      }
+    });
+    
+  } catch (error: any) {
+    console.error('Error reviewing permission request:', error);
+    
+    return NextResponse.json({
+      success: false,
+      error: "Failed to review permission request",
+      details: error.message
+    }, { status: 500 });
+  }
+}
