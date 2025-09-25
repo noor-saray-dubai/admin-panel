@@ -69,4 +69,7 @@ async function handler(request: NextRequest) {
 }
 
 // Export with collection access protection
-export const GET = withCollectionAccess(Collection.DEVELOPERS)(handler)
+// export const GET = withCollectionAccess(Collection.DEVELOPERS)(handler).
+export async function GET(request: NextRequest) {
+  return handler(request);
+}

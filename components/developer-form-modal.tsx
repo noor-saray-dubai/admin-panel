@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +12,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { Upload, X, Eye, Star, MapPin, Calendar, Building, Phone, Mail, Globe, Plus, Minus, AlertCircle } from "lucide-react"
+import {
+  saveDeveloperFormDraft,
+  loadDeveloperFormDraft,
+  clearDeveloperFormDraft,
+  hasSavedDeveloperDraft,
+  getDeveloperDraftTimestamp,
+  createDebouncedDeveloperSave
+} from "@/lib/developer-form-persistence"
 
 interface IDescriptionSection {
   title?: string
@@ -41,7 +49,7 @@ interface Developer {
   verified: boolean
 }
 
-interface DeveloperFormData {
+export interface DeveloperFormData {
   name: string
   logo: File | null
   coverImage: File | null
@@ -557,10 +565,44 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
     networkError: false
   });
 
-  // Initialize form data
+  // Draft persistence state (only for add mode)
+  const [hasDraft, setHasDraft] = useState(false)
+  const [showDraftRestoreDialog, setShowDraftRestoreDialog] = useState(false)
+  const [draftTimestamp, setDraftTimestamp] = useState<string | null>(null)
+  
+  // Unsaved changes state
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false)
+  const [pendingClose, setPendingClose] = useState(false)
+
+  // Create debounced save function
+  const debouncedSave = useMemo(
+    () => createDebouncedDeveloperSave(1500), // Save 1.5 seconds after user stops typing
+    []
+  )
+
+  // Handle keyboard events (Escape key)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isOpen && !showDraftRestoreDialog && !showUnsavedChangesDialog && !submissionState.isSubmitting) {
+        handleModalClose()
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown)
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen, showDraftRestoreDialog, showUnsavedChangesDialog, submissionState.isSubmitting])
+
+  // Initialize form data and handle draft restoration
   useEffect(() => {
     if (isOpen) {
       if (mode === "edit" && developer) {
+        // Edit mode - load existing developer data
         setFormData({
           name: developer.name || "",
           logo: null,
@@ -579,88 +621,141 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
         
         if (developer.logo) setLogoPreview(developer.logo)
         if (developer.coverImage) setCoverImagePreview(developer.coverImage)
+        setHasDraft(false)
       } else {
-        setFormData(initialFormData)
-        setLogoPreview(null)
-        setCoverImagePreview(null)
+        // Add mode - check for saved draft
+        const savedDraft = hasSavedDeveloperDraft()
+        setHasDraft(savedDraft)
+
+        if (savedDraft) {
+          const timestamp = getDeveloperDraftTimestamp()
+          setDraftTimestamp(timestamp)
+          setShowDraftRestoreDialog(true)
+        } else {
+          setFormData(initialFormData)
+          setLogoPreview(null)
+          setCoverImagePreview(null)
+        }
       }
+
       setErrors({})
       setSubmissionState({
         isSubmitting: false,
         apiError: null,
         networkError: false
-      });
+      })
     }
   }, [developer, mode, isOpen])
 
+  // Check if form has meaningful changes from initial state
+  const hasFormChanges = useCallback((): boolean => {
+    // For edit mode, compare with original developer data
+    if (mode === 'edit' && developer) {
+      return (
+        formData.name !== (developer.name || '') ||
+        formData.overview !== (developer.overview || '') ||
+        formData.location !== (developer.location || '') ||
+        formData.establishedYear !== (developer.establishedYear || new Date().getFullYear()) ||
+        formData.website !== (developer.website || '') ||
+        formData.email !== (developer.email || '') ||
+        formData.phone !== (developer.phone || '') ||
+        formData.verified !== (developer.verified ?? true) ||
+        JSON.stringify(formData.description) !== JSON.stringify(developer.description || [{ description: "" }]) ||
+        JSON.stringify(formData.specialization) !== JSON.stringify(developer.specialization || []) ||
+        JSON.stringify(formData.awards) !== JSON.stringify(developer.awards || []) ||
+        formData.logo !== null ||
+        formData.coverImage !== null
+      )
+    }
+    
+    // For add mode, check if any meaningful data has been entered
+    return (
+      formData.name.trim() !== '' ||
+      formData.overview.trim() !== '' ||
+      formData.location.trim() !== '' ||
+      formData.establishedYear !== new Date().getFullYear() ||
+      formData.website.trim() !== '' ||
+      (formData.email !== 'nsr@noorsaray.com' && formData.email.trim() !== '') ||
+      (formData.phone !== '+971 509856282' && formData.phone.trim() !== '') ||
+      formData.description.some(desc => desc.description.trim() !== '' || desc.title?.trim() !== '') ||
+      formData.specialization.length > 0 ||
+      formData.awards.length > 0 ||
+      formData.logo !== null ||
+      formData.coverImage !== null
+    )
+  }, [formData, mode, developer])
+
+  // Handle input changes with auto-save and validation
   const handleInputChange = (field: keyof DeveloperFormData, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+
+    // Update unsaved changes flag
+    setTimeout(() => {
+      setHasUnsavedChanges(hasFormChanges())
+    }, 0)
+
+    // Save draft automatically for add mode only
+    if (mode === 'add') {
+      setTimeout(() => {
+        setFormData(current => {
+          debouncedSave(current)
+          return current
+        })
+      }, 0)
+    }
   }
 
   const handleSpecializationChange = (spec: string, checked: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      specialization: checked 
-        ? [...prev.specialization, spec] 
-        : prev.specialization.filter((s) => s !== spec),
-    }))
+    const newSpecialization = checked 
+      ? [...formData.specialization, spec] 
+      : formData.specialization.filter((s) => s !== spec)
+    
+    handleInputChange('specialization', newSpecialization)
   }
 
   // Description sections management
   const addDescriptionSection = () => {
-    setFormData(prev => ({
-      ...prev,
-      description: [...prev.description, { description: "" }]
-    }))
+    const newDescription = [...formData.description, { description: "" }]
+    handleInputChange('description', newDescription)
   }
 
   const removeDescriptionSection = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      description: prev.description.filter((_, i) => i !== index)
-    }))
+    const newDescription = formData.description.filter((_, i) => i !== index)
+    handleInputChange('description', newDescription)
   }
 
   const updateDescriptionSection = (index: number, field: 'title' | 'description', value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      description: prev.description.map((section, i) => 
-        i === index 
-          ? { ...section, [field]: value }
-          : section
-      )
-    }))
+    const newDescription = formData.description.map((section, i) => 
+      i === index 
+        ? { ...section, [field]: value }
+        : section
+    )
+    handleInputChange('description', newDescription)
   }
 
   // Awards management
   const addAward = () => {
-    setFormData(prev => ({
-      ...prev,
-      awards: [...prev.awards, { name: "", year: new Date().getFullYear() }]
-    }))
+    const newAwards = [...formData.awards, { name: "", year: new Date().getFullYear() }]
+    handleInputChange('awards', newAwards)
   }
 
   const removeAward = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      awards: prev.awards.filter((_, i) => i !== index)
-    }))
+    const newAwards = formData.awards.filter((_, i) => i !== index)
+    handleInputChange('awards', newAwards)
   }
 
   const updateAward = (index: number, field: 'name' | 'year', value: string | number) => {
-    setFormData(prev => ({
-      ...prev,
-      awards: prev.awards.map((award, i) => 
-        i === index 
-          ? { ...award, [field]: value }
-          : award
-      )
-    }))
+    const newAwards = formData.awards.map((award, i) => 
+      i === index 
+        ? { ...award, [field]: value }
+        : award
+    )
+    handleInputChange('awards', newAwards)
   }
 
   // Handle logo upload
   const handleLogoUpload = (file: File | null) => {
-    setFormData(prev => ({ ...prev, logo: file }))
+    handleInputChange('logo', file)
     if (file) {
       const reader = new FileReader()
       reader.onload = (e) => {
@@ -672,7 +767,7 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
 
   // Handle cover image upload
   const handleCoverImageUpload = (file: File | null) => {
-    setFormData(prev => ({ ...prev, coverImage: file }))
+    handleInputChange('coverImage', file)
     if (file) {
       const reader = new FileReader()
       reader.onload = (e) => {
@@ -684,12 +779,12 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
 
   // Remove images
   const removeLogo = () => {
-    setFormData(prev => ({ ...prev, logo: null }))
+    handleInputChange('logo', null)
     setLogoPreview(null)
   }
 
   const removeCoverImage = () => {
-    setFormData(prev => ({ ...prev, coverImage: null }))
+    handleInputChange('coverImage', null)
     setCoverImagePreview(null)
   }
 
@@ -698,9 +793,87 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
     return text.trim().split(/\s+/).filter(word => word.length > 0).length
   }
 
+  // Handle draft restoration
+  const handleRestoreDraft = () => {
+    try {
+      const draft = loadDeveloperFormDraft()
+      if (draft) {
+        setFormData({
+          ...draft,
+          logo: null, // Reset file fields as they're not persisted
+          coverImage: null
+        })
+        setLogoPreview(null)
+        setCoverImagePreview(null)
+        toast.success("Draft restored successfully")
+      }
+    } catch (error) {
+      toast.error("Failed to restore draft")
+    }
+    setShowDraftRestoreDialog(false)
+  }
+
+  const handleDiscardDraft = () => {
+    clearDeveloperFormDraft()
+    setFormData(initialFormData)
+    setLogoPreview(null)
+    setCoverImagePreview(null)
+    setHasDraft(false)
+    setShowDraftRestoreDialog(false)
+    toast.success("Draft discarded")
+  }
+
+  // Handle modal close - always show confirmation
+  const handleModalClose = () => {
+    if (submissionState.isSubmitting) {
+      // Don't allow closing during submission
+      return
+    }
+    
+    // Always show confirmation dialog
+    setPendingClose(true)
+    setShowUnsavedChangesDialog(true)
+  }
+
+  // Handle unsaved changes dialog actions
+  const handleContinueEditing = () => {
+    setShowUnsavedChangesDialog(false)
+    setPendingClose(false)
+  }
+
+  const handleSaveDraftAndClose = () => {
+    if (mode === 'add') {
+      debouncedSave(formData)
+      toast.success("Draft saved successfully")
+    }
+    setShowUnsavedChangesDialog(false)
+    setPendingClose(false)
+    onClose()
+    resetForm()
+  }
+
+  const handleDiscardAndClose = () => {
+    if (mode === 'add') {
+      clearDeveloperFormDraft()
+    }
+    setShowUnsavedChangesDialog(false)
+    setPendingClose(false)
+    onClose()
+    resetForm()
+  }
+
+  // Reset form state
+  const resetForm = () => {
+    setHasUnsavedChanges(false)
+    setFormData(initialFormData)
+    setLogoPreview(null)
+    setCoverImagePreview(null)
+    setErrors({})
+  }
+
   // Fill fake data for testing
   const fillFakeData = () => {
-    setFormData({
+    const newFormData = {
       name: "Elite Developers LLC",
       logo: null,
       coverImage: null,
@@ -725,7 +898,19 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
         { name: "Excellence in Design Award", year: 2022 }
       ],
       verified: true,
-    })
+    }
+    
+    setFormData(newFormData)
+    
+    // Trigger auto-save for add mode
+    if (mode === 'add') {
+      debouncedSave(newFormData)
+    }
+    
+    // Update unsaved changes flag
+    setTimeout(() => {
+      setHasUnsavedChanges(hasFormChanges())
+    }, 0)
   }
 
   // Validate entire form
@@ -848,9 +1033,22 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
       }
 
       // Success
+      // Clear draft on successful submission for add mode
+      if (mode === "add") {
+        clearDeveloperFormDraft()
+      }
+
       toast.success(`Developer ${mode === 'edit' ? 'updated' : 'created'} successfully!`)
-      onSuccess?.(result.developer)
-      handleClose()
+      
+      // Clear unsaved changes flag on successful submission
+      setHasUnsavedChanges(false)
+      
+      // Call success callback and close modal
+      if (onSuccess) {
+        onSuccess(result.developer)
+      }
+      onClose()
+      resetForm()
 
     } catch (error) {
       console.error('Error saving developer:', error)
@@ -875,610 +1073,679 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
   }
 
   const handleClose = () => {
-    setFormData(initialFormData)
-    setLogoPreview(null)
-    setCoverImagePreview(null)
-    setErrors({})
-    setSubmissionState({
-      isSubmitting: false,
-      apiError: null,
-      networkError: false
-    });
-    onClose()
+    if (submissionState.isSubmitting) {
+      return
+    }
+    handleModalClose()
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-6xl max-h-[95vh] p-0 flex flex-col">
-        <DialogHeader className="p-6 pb-0 flex-shrink-0">
-          <DialogTitle className="text-2xl font-bold">
-            {mode === "add" ? "Add New Developer" : "Edit Developer"}
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0">
-          <div className="space-y-8 py-4">
-
-            {/* Basic Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Basic Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <ValidatedInput
-                    label="Developer Name"
-                    field="name"
-                    value={formData.name}
-                    onChange={(value) => handleInputChange("name", value)}
-                    formData={formData}
-                    errors={errors}
-                    setErrors={setErrors}
-                    placeholder="Enter developer name"
-                    required
-                    maxLength={100}
-                  />
-                  <ValidatedInput
-                    label="Location"
-                    field="location"
-                    value={formData.location}
-                    onChange={(value) => handleInputChange("location", value)}
-                    formData={formData}
-                    errors={errors}
-                    setErrors={setErrors}
-                    placeholder="e.g., Dubai, UAE"
-                    required
-                    maxLength={100}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="overview">
-                    Overview <span className="text-red-500">*</span>
-                  </Label>
-                  <Textarea
-                    id="overview"
-                    placeholder="Brief overview (max 20 words)"
-                    value={formData.overview}
-                    onChange={(e) => {
-                      const newValue = e.target.value
-                      const wordCount = getWordCount(newValue)
-                      if (wordCount <= 20) {
-                        handleInputChange("overview", newValue)
-                        setErrors(prev => ({ ...prev, overview: validateField("overview", newValue, formData) }))
-                      }
-                    }}
-                    onPaste={(e) => {
-                      const pastedText = e.clipboardData.getData('text')
-                      const wordCount = getWordCount(pastedText)
-                      if (wordCount > 20) {
-                        e.preventDefault()
-                        const words = pastedText.trim().split(/\s+/).slice(0, 20)
-                        const trimmedText = words.join(' ')
-                        handleInputChange("overview", trimmedText)
-                        setErrors(prev => ({ ...prev, overview: validateField("overview", trimmedText, formData) }))
-                      }
-                    }}
-                    rows={2}
-                    className={`mt-1 ${errors.overview ? 'border-red-500' : ''}`}
-                  />
-                  <WordCounter current={getWordCount(formData.overview)} max={20} />
-                  {errors.overview && (
-                    <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-                      <AlertCircle className="h-3 w-3" />
-                      {errors.overview}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Description Sections */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Description Sections
-                  <Button type="button" variant="outline" size="sm" onClick={addDescriptionSection}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Section
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {formData.description.map((section, index) => (
-                  <div key={index} className="border p-4 rounded-lg space-y-3">
-                    <div className="flex justify-between items-center">
-                      <Label>Section {index + 1}</Label>
-                      {formData.description.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeDescriptionSection(index)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                    
-                    <div>
-                      <Label>Title (Optional)</Label>
-                      <Input
-                        placeholder="Section title"
-                        value={section.title || ""}
-                        onChange={(e) => {
-                          const newValue = e.target.value
-                          if (newValue.length <= 100) {
-                            updateDescriptionSection(index, 'title', newValue)
-                          }
-                        }}
-                        onPaste={(e) => {
-                          const pastedText = e.clipboardData.getData('text')
-                          if (pastedText.length > 100) {
-                            e.preventDefault()
-                            const trimmedText = pastedText.slice(0, 100)
-                            updateDescriptionSection(index, 'title', trimmedText)
-                          }
-                        }}
-                        className={`mt-1 ${errors[`description-title-${index}`] ? 'border-red-500' : ''}`}
-                      />
-                      <CharacterCounter current={(section.title || "").length} max={100} />
-                      {errors[`description-title-${index}`] && (
-                        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-                          <AlertCircle className="h-3 w-3" />
-                          {errors[`description-title-${index}`]}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <Label>Description <span className="text-red-500">*</span></Label>
-                      <Textarea
-                        placeholder="Section description"
-                        value={section.description}
-                        onChange={(e) => {
-                          const newValue = e.target.value
-                          if (newValue.length <= 500) {
-                            updateDescriptionSection(index, 'description', newValue)
-                            setErrors(prev => ({ 
-                              ...prev, 
-                              [`description-${index}`]: newValue.trim() ? '' : 'Description is required'
-                            }))
-                          }
-                        }}
-                        onPaste={(e) => {
-                          const pastedText = e.clipboardData.getData('text')
-                          if (pastedText.length > 500) {
-                            e.preventDefault()
-                            const trimmedText = pastedText.slice(0, 500)
-                            updateDescriptionSection(index, 'description', trimmedText)
-                            setErrors(prev => ({ 
-                              ...prev, 
-                              [`description-${index}`]: trimmedText.trim() ? '' : 'Description is required'
-                            }))
-                          }
-                        }}
-                        rows={3}
-                        className={`mt-1 ${errors[`description-${index}`] ? 'border-red-500' : ''}`}
-                      />
-                      <CharacterCounter current={section.description.length} max={500} />
-                      {errors[`description-${index}`] && (
-                        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-                          <AlertCircle className="h-3 w-3" />
-                          {errors[`description-${index}`]}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            {/* Company Details */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Company Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <ValidatedInput
-                    label="Established Year"
-                    field="establishedYear"
-                    type="number"
-                    value={formData.establishedYear}
-                    onChange={(value) => handleInputChange("establishedYear", value)}
-                    formData={formData}
-                    errors={errors}
-                    setErrors={setErrors}
-                    required
-                  />
-                  <div>
-                    <div className="flex items-center space-x-2 pt-6">
-                      <Checkbox
-                        id="verified"
-                        checked={formData.verified}
-                        onCheckedChange={(checked) => handleInputChange("verified", checked as boolean)}
-                      />
-                      <Label htmlFor="verified">Verified Developer</Label>
-                    </div>
-                  </div>
-                </div>
-
-                <ValidatedInput
-                  label="Website"
-                  field="website"
-                  value={formData.website}
-                  onChange={(value) => handleInputChange("website", value)}
-                  formData={formData}
-                  errors={errors}
-                  setErrors={setErrors}
-                  placeholder="https://www.example.com"
-                />
-              </CardContent>
-            </Card>
-
-            {/* Contact Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Contact Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <ValidatedInput
-                    label="Email"
-                    field="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(value) => handleInputChange("email", value)}
-                    formData={formData}
-                    errors={errors}
-                    setErrors={setErrors}
-                    placeholder="nsr@noorsaray.com"
-                    required
-                  />
-                  <ValidatedInput
-                    label="Phone"
-                    field="phone"
-                    value={formData.phone}
-                    onChange={(value) => handleInputChange("phone", value)}
-                    formData={formData}
-                    errors={errors}
-                    setErrors={setErrors}
-                    placeholder="+971 509856282"
-                    required
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Images */}
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  Images {mode === 'add' ? <span className="text-red-500">*</span> : '(Optional - leave blank to keep existing)'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                  <ImageUpload
-                    label="Company Logo"
-                    value={formData.logo}
-                    onChange={handleLogoUpload}
-                    preview={logoPreview}
-                    onRemove={removeLogo}
-                    required={mode === 'add'}
-                    errors={errors}
-                    field="logo"
-                  />
-                  <ImageUpload
-                    label="Cover Image"
-                    value={formData.coverImage}
-                    onChange={handleCoverImageUpload}
-                    preview={coverImagePreview}
-                    onRemove={removeCoverImage}
-                    required={mode === 'add'}
-                    errors={errors}
-                    field="coverImage"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Specialization */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Specialization</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-3 gap-3">
-                  {specializationOptions.map((spec) => (
-                    <div key={spec} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={spec}
-                        checked={formData.specialization.includes(spec)}
-                        onCheckedChange={(checked) => handleSpecializationChange(spec, checked as boolean)}
-                      />
-                      <Label htmlFor={spec} className="text-sm">
-                        {spec}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-                {errors.specialization && (
-                  <div className="flex items-center gap-1 text-red-500 text-xs mt-2">
-                    <AlertCircle className="h-3 w-3" />
-                    {errors.specialization}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Awards */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Awards (Optional)
-                  <Button type="button" variant="outline" size="sm" onClick={addAward}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Award
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {formData.awards.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No awards added yet. Click "Add Award" to add awards.</p>
-                ) : (
-                  formData.awards.map((award, index) => (
-                    <div key={index} className="border p-4 rounded-lg space-y-3">
-                      <div className="flex justify-between items-center">
-                        <Label>Award {index + 1}</Label>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeAward(index)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>Award Name <span className="text-red-500">*</span></Label>
-                          <Input
-                            placeholder="Award name"
-                            value={award.name}
-                            onChange={(e) => {
-                              const newValue = e.target.value
-                              if (newValue.length <= 200) {
-                                updateAward(index, 'name', newValue)
-                                setErrors(prev => ({ 
-                                  ...prev, 
-                                  [`award-name-${index}`]: newValue.trim() ? '' : 'Award name is required'
-                                }))
-                              }
-                            }}
-                            onPaste={(e) => {
-                              const pastedText = e.clipboardData.getData('text')
-                              if (pastedText.length > 200) {
-                                e.preventDefault()
-                                const trimmedText = pastedText.slice(0, 200)
-                                updateAward(index, 'name', trimmedText)
-                                setErrors(prev => ({ 
-                                  ...prev, 
-                                  [`award-name-${index}`]: trimmedText.trim() ? '' : 'Award name is required'
-                                }))
-                              }
-                            }}
-                            className={`mt-1 ${errors[`award-name-${index}`] ? 'border-red-500' : ''}`}
-                          />
-                          <CharacterCounter current={award.name.length} max={200} />
-                          {errors[`award-name-${index}`] && (
-                            <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-                              <AlertCircle className="h-3 w-3" />
-                              {errors[`award-name-${index}`]}
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div>
-                          <Label>Year <span className="text-red-500">*</span></Label>
-                          <Input
-                            type="number"
-                            placeholder="2023"
-                            min="1900"
-                            max={new Date().getFullYear()}
-                            value={award.year}
-                            onChange={(e) => {
-                              const year = parseInt(e.target.value) || new Date().getFullYear()
-                              updateAward(index, 'year', year)
-                              const currentYear = new Date().getFullYear()
-                              const error = year < 1900 ? 'Year cannot be before 1900' : 
-                                           year > currentYear ? 'Year cannot be in the future' : ''
-                              setErrors(prev => ({ ...prev, [`award-year-${index}`]: error }))
-                            }}
-                            className={`mt-1 ${errors[`award-year-${index}`] ? 'border-red-500' : ''}`}
-                          />
-                          {errors[`award-year-${index}`] && (
-                            <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-                              <AlertCircle className="h-3 w-3" />
-                              {errors[`award-year-${index}`]}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Preview Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Eye className="h-5 w-5" />
-                  Developer Preview
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Header */}
-                <div className="border-b pb-4">
-                  <div className="flex items-start gap-4 mb-4">
-                    {logoPreview && (
-                      <img src={logoPreview} alt="Logo" className="w-16 h-16 object-cover rounded-lg" />
-                    )}
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-2xl font-bold">{formData.name || "Developer Name"}</h3>
-                        {formData.verified && (
-                          <Badge className="bg-green-500">
-                            <span className="mr-1">✓</span> Verified
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-600">
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-4 w-4" />
-                          {formData.location || "Location"}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          Est. {formData.establishedYear}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {coverImagePreview && (
-                    <img src={coverImagePreview} alt="Cover" className="w-full h-48 object-cover rounded-lg" />
-                  )}
-                </div>
-
-                {/* Overview */}
-                {formData.overview && (
-                  <div>
-                    <h4 className="font-semibold mb-2">Overview</h4>
-                    <p className="text-gray-700">{formData.overview}</p>
-                  </div>
-                )}
-
-                {/* Description */}
-                {formData.description.some(section => section.description.trim()) && (
-                  <div>
-                    <h4 className="font-semibold mb-2">About</h4>
-                    <div className="space-y-3">
-                      {formData.description
-                        .filter(section => section.description.trim())
-                        .map((section, index) => (
-                        <div key={index}>
-                          {section.title && (
-                            <h5 className="font-medium mb-1">{section.title}</h5>
-                          )}
-                          <p className="text-gray-700">{section.description}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Awards */}
-                {formData.awards.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-3">Awards & Recognition</h4>
-                    <div className="space-y-2">
-                      {formData.awards.map((award, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Star className="h-4 w-4 text-yellow-500" />
-                          <span className="font-medium">{award.name}</span>
-                          <span className="text-gray-500">({award.year})</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Specialization */}
-                {formData.specialization.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-3">Specialization</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {formData.specialization.map((spec) => (
-                        <Badge key={spec} variant="outline">
-                          {spec}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Contact */}
-                <div>
-                  <h4 className="font-semibold mb-3">Contact Information</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    {formData.website && (
-                      <div className="flex items-center gap-2">
-                        <Globe className="h-4 w-4 text-gray-500" />
-                        <a href={formData.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                          Website
-                        </a>
-                      </div>
-                    )}
-                    {formData.email && (
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 text-gray-500" />
-                        <a href={`mailto:${formData.email}`} className="text-blue-600 hover:underline">
-                          {formData.email}
-                        </a>
-                      </div>
-                    )}
-                    {formData.phone && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-gray-500" />
-                        <a href={`tel:${formData.phone}`} className="text-blue-600 hover:underline">
-                          {formData.phone}
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="border-t p-6 bg-gray-50 flex-shrink-0">
-          {/* Error Display */}
-          <ErrorDisplay 
-            submissionState={submissionState}
-            onRetry={() => {
-              setSubmissionState(prev => ({ ...prev, apiError: null, networkError: false }));
-            }}
-          />
-          
-          <div className="flex gap-2 justify-between">
-            <Button variant="outline" onClick={fillFakeData} disabled={submissionState.isSubmitting}>
-              Fill Test Data
-            </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleClose} disabled={submissionState.isSubmitting}>
-                Cancel
+    <>
+      {/* Draft Restoration Dialog */}
+      <Dialog open={showDraftRestoreDialog} onOpenChange={setShowDraftRestoreDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Restore Saved Draft?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              You have a saved draft from {draftTimestamp}. Would you like to restore it or start fresh?
+            </p>
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={handleDiscardDraft}>
+                Start Fresh
               </Button>
-              <Button 
-                onClick={handleSubmit} 
-                disabled={submissionState.isSubmitting || Object.keys(errors).some(key => errors[key])}
-              >
-                {submissionState.isSubmitting ? 
-                  (mode === "edit" ? "Updating..." : "Creating...") : 
-                  (mode === "edit" ? "Update Developer" : "Create Developer")
-                }
+              <Button onClick={handleRestoreDraft}>
+                Restore Draft
               </Button>
             </div>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      {/* Close Confirmation Dialog */}
+      <Dialog open={showUnsavedChangesDialog} onOpenChange={(open) => !open && handleContinueEditing()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className={`h-5 w-5 ${hasUnsavedChanges ? 'text-amber-500' : 'text-blue-500'}`} />
+              {hasUnsavedChanges ? 'Unsaved Changes' : 'Confirm Close'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              {hasUnsavedChanges 
+                ? 'You have unsaved changes in the developer form. What would you like to do?'
+                : 'Are you sure you want to close the developer form?'
+              }
+            </p>
+            <div className="grid gap-2">
+              <Button 
+                variant="outline" 
+                onClick={handleContinueEditing}
+                className="justify-start"
+              >
+                {hasUnsavedChanges ? 'Continue Editing' : 'Cancel'}
+              </Button>
+              {hasUnsavedChanges && mode === 'add' && (
+                <Button 
+                  variant="outline" 
+                  onClick={handleSaveDraftAndClose}
+                  className="justify-start text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                >
+                  Save Draft & Close
+                </Button>
+              )}
+              <Button 
+                variant={hasUnsavedChanges ? "destructive" : "default"}
+                onClick={handleDiscardAndClose}
+                className="justify-start"
+              >
+                {hasUnsavedChanges ? 'Discard Changes & Close' : 'Yes, Close Form'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Main Form Modal */}
+      <Dialog open={isOpen} onOpenChange={submissionState.isSubmitting ? undefined : handleModalClose}>
+        <DialogContent className="max-w-6xl max-h-[95vh] p-0 flex flex-col">
+          <DialogHeader className="p-6 pb-0 flex-shrink-0">
+            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+              {mode === "add" ? "Add New Developer" : "Edit Developer"}
+              {hasUnsavedChanges && (
+                <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                  Unsaved Changes
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0">
+            <div className="space-y-8 py-4">
+
+              {/* Basic Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Basic Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <ValidatedInput
+                      label="Developer Name"
+                      field="name"
+                      value={formData.name}
+                      onChange={(value) => handleInputChange("name", value)}
+                      formData={formData}
+                      errors={errors}
+                      setErrors={setErrors}
+                      placeholder="Enter developer name"
+                      required
+                      maxLength={100}
+                    />
+                    <ValidatedInput
+                      label="Location"
+                      field="location"
+                      value={formData.location}
+                      onChange={(value) => handleInputChange("location", value)}
+                      formData={formData}
+                      errors={errors}
+                      setErrors={setErrors}
+                      placeholder="e.g., Dubai, UAE"
+                      required
+                      maxLength={100}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="overview">
+                      Overview <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea
+                      id="overview"
+                      placeholder="Brief overview (max 20 words)"
+                      value={formData.overview}
+                      onChange={(e) => {
+                        const newValue = e.target.value
+                        const wordCount = getWordCount(newValue)
+                        if (wordCount <= 20) {
+                          handleInputChange("overview", newValue)
+                          setErrors(prev => ({ ...prev, overview: validateField("overview", newValue, formData) }))
+                        }
+                      }}
+                      onPaste={(e) => {
+                        const pastedText = e.clipboardData.getData('text')
+                        const wordCount = getWordCount(pastedText)
+                        if (wordCount > 20) {
+                          e.preventDefault()
+                          const words = pastedText.trim().split(/\s+/).slice(0, 20)
+                          const trimmedText = words.join(' ')
+                          handleInputChange("overview", trimmedText)
+                          setErrors(prev => ({ ...prev, overview: validateField("overview", trimmedText, formData) }))
+                        }
+                      }}
+                      rows={2}
+                      className={`mt-1 ${errors.overview ? 'border-red-500' : ''}`}
+                    />
+                    <WordCounter current={getWordCount(formData.overview)} max={20} />
+                    {errors.overview && (
+                      <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.overview}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Description Sections */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    Description Sections
+                    <Button type="button" variant="outline" size="sm" onClick={addDescriptionSection}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Section
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {formData.description.map((section, index) => (
+                    <div key={index} className="border p-4 rounded-lg space-y-3">
+                      <div className="flex justify-between items-center">
+                        <Label>Section {index + 1}</Label>
+                        {formData.description.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeDescriptionSection(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      
+                      <div>
+                        <Label>Title (Optional)</Label>
+                        <Input
+                          placeholder="Section title"
+                          value={section.title || ""}
+                          onChange={(e) => {
+                            const newValue = e.target.value
+                            if (newValue.length <= 100) {
+                              updateDescriptionSection(index, 'title', newValue)
+                            }
+                          }}
+                          onPaste={(e) => {
+                            const pastedText = e.clipboardData.getData('text')
+                            if (pastedText.length > 100) {
+                              e.preventDefault()
+                              const trimmedText = pastedText.slice(0, 100)
+                              updateDescriptionSection(index, 'title', trimmedText)
+                            }
+                          }}
+                          className={`mt-1 ${errors[`description-title-${index}`] ? 'border-red-500' : ''}`}
+                        />
+                        <CharacterCounter current={(section.title || "").length} max={100} />
+                        {errors[`description-title-${index}`] && (
+                          <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                            <AlertCircle className="h-3 w-3" />
+                            {errors[`description-title-${index}`]}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <Label>Description <span className="text-red-500">*</span></Label>
+                        <Textarea
+                          placeholder="Section description"
+                          value={section.description}
+                          onChange={(e) => {
+                            const newValue = e.target.value
+                            if (newValue.length <= 500) {
+                              updateDescriptionSection(index, 'description', newValue)
+                              setErrors(prev => ({ 
+                                ...prev, 
+                                [`description-${index}`]: newValue.trim() ? '' : 'Description is required'
+                              }))
+                            }
+                          }}
+                          onPaste={(e) => {
+                            const pastedText = e.clipboardData.getData('text')
+                            if (pastedText.length > 500) {
+                              e.preventDefault()
+                              const trimmedText = pastedText.slice(0, 500)
+                              updateDescriptionSection(index, 'description', trimmedText)
+                              setErrors(prev => ({ 
+                                ...prev, 
+                                [`description-${index}`]: trimmedText.trim() ? '' : 'Description is required'
+                              }))
+                            }
+                          }}
+                          rows={3}
+                          className={`mt-1 ${errors[`description-${index}`] ? 'border-red-500' : ''}`}
+                        />
+                        <CharacterCounter current={section.description.length} max={500} />
+                        {errors[`description-${index}`] && (
+                          <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                            <AlertCircle className="h-3 w-3" />
+                            {errors[`description-${index}`]}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              {/* Company Details */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Company Details</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <ValidatedInput
+                      label="Established Year"
+                      field="establishedYear"
+                      type="number"
+                      value={formData.establishedYear}
+                      onChange={(value) => handleInputChange("establishedYear", value)}
+                      formData={formData}
+                      errors={errors}
+                      setErrors={setErrors}
+                      required
+                    />
+                    <div>
+                      <div className="flex items-center space-x-2 pt-6">
+                        <Checkbox
+                          id="verified"
+                          checked={formData.verified}
+                          onCheckedChange={(checked) => handleInputChange("verified", checked as boolean)}
+                        />
+                        <Label htmlFor="verified">Verified Developer</Label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <ValidatedInput
+                    label="Website"
+                    field="website"
+                    value={formData.website}
+                    onChange={(value) => handleInputChange("website", value)}
+                    formData={formData}
+                    errors={errors}
+                    setErrors={setErrors}
+                    placeholder="https://www.example.com"
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Contact Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Contact Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <ValidatedInput
+                      label="Email"
+                      field="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(value) => handleInputChange("email", value)}
+                      formData={formData}
+                      errors={errors}
+                      setErrors={setErrors}
+                      placeholder="nsr@noorsaray.com"
+                      required
+                    />
+                    <ValidatedInput
+                      label="Phone"
+                      field="phone"
+                      value={formData.phone}
+                      onChange={(value) => handleInputChange("phone", value)}
+                      formData={formData}
+                      errors={errors}
+                      setErrors={setErrors}
+                      placeholder="+971 509856282"
+                      required
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Images */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>
+                    Images {mode === 'add' ? <span className="text-red-500">*</span> : '(Optional - leave blank to keep existing)'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-2 gap-6">
+                    <ImageUpload
+                      label="Company Logo"
+                      value={formData.logo}
+                      onChange={handleLogoUpload}
+                      preview={logoPreview}
+                      onRemove={removeLogo}
+                      required={mode === 'add'}
+                      errors={errors}
+                      field="logo"
+                    />
+                    <ImageUpload
+                      label="Cover Image"
+                      value={formData.coverImage}
+                      onChange={handleCoverImageUpload}
+                      preview={coverImagePreview}
+                      onRemove={removeCoverImage}
+                      required={mode === 'add'}
+                      errors={errors}
+                      field="coverImage"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Specialization */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Specialization</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-3">
+                    {specializationOptions.map((spec) => (
+                      <div key={spec} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={spec}
+                          checked={formData.specialization.includes(spec)}
+                          onCheckedChange={(checked) => handleSpecializationChange(spec, checked as boolean)}
+                        />
+                        <Label htmlFor={spec} className="text-sm">
+                          {spec}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  {errors.specialization && (
+                    <div className="flex items-center gap-1 text-red-500 text-xs mt-2">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.specialization}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Awards */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    Awards (Optional)
+                    <Button type="button" variant="outline" size="sm" onClick={addAward}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Award
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {formData.awards.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No awards added yet. Click "Add Award" to add awards.</p>
+                  ) : (
+                    formData.awards.map((award, index) => (
+                      <div key={index} className="border p-4 rounded-lg space-y-3">
+                        <div className="flex justify-between items-center">
+                          <Label>Award {index + 1}</Label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeAward(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label>Award Name <span className="text-red-500">*</span></Label>
+                            <Input
+                              placeholder="Award name"
+                              value={award.name}
+                              onChange={(e) => {
+                                const newValue = e.target.value
+                                if (newValue.length <= 200) {
+                                  updateAward(index, 'name', newValue)
+                                  setErrors(prev => ({ 
+                                    ...prev, 
+                                    [`award-name-${index}`]: newValue.trim() ? '' : 'Award name is required'
+                                  }))
+                                }
+                              }}
+                              onPaste={(e) => {
+                                const pastedText = e.clipboardData.getData('text')
+                                if (pastedText.length > 200) {
+                                  e.preventDefault()
+                                  const trimmedText = pastedText.slice(0, 200)
+                                  updateAward(index, 'name', trimmedText)
+                                  setErrors(prev => ({ 
+                                    ...prev, 
+                                    [`award-name-${index}`]: trimmedText.trim() ? '' : 'Award name is required'
+                                  }))
+                                }
+                              }}
+                              className={`mt-1 ${errors[`award-name-${index}`] ? 'border-red-500' : ''}`}
+                            />
+                            <CharacterCounter current={award.name.length} max={200} />
+                            {errors[`award-name-${index}`] && (
+                              <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                                <AlertCircle className="h-3 w-3" />
+                                {errors[`award-name-${index}`]}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div>
+                            <Label>Year <span className="text-red-500">*</span></Label>
+                            <Input
+                              type="number"
+                              placeholder="2023"
+                              min="1900"
+                              max={new Date().getFullYear()}
+                              value={award.year}
+                              onChange={(e) => {
+                                const year = parseInt(e.target.value) || new Date().getFullYear()
+                                updateAward(index, 'year', year)
+                                const currentYear = new Date().getFullYear()
+                                const error = year < 1900 ? 'Year cannot be before 1900' : 
+                                             year > currentYear ? 'Year cannot be in the future' : ''
+                                setErrors(prev => ({ ...prev, [`award-year-${index}`]: error }))
+                              }}
+                              className={`mt-1 ${errors[`award-year-${index}`] ? 'border-red-500' : ''}`}
+                            />
+                            {errors[`award-year-${index}`] && (
+                              <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
+                                <AlertCircle className="h-3 w-3" />
+                                {errors[`award-year-${index}`]}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Preview Section */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Eye className="h-5 w-5" />
+                    Developer Preview
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Header */}
+                  <div className="border-b pb-4">
+                    <div className="flex items-start gap-4 mb-4">
+                      {logoPreview && (
+                        <img src={logoPreview} alt="Logo" className="w-16 h-16 object-cover rounded-lg" />
+                      )}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-2xl font-bold">{formData.name || "Developer Name"}</h3>
+                          {formData.verified && (
+                            <Badge className="bg-green-500">
+                              <span className="mr-1">✓</span> Verified
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <div className="flex items-center gap-1">
+                            <MapPin className="h-4 w-4" />
+                            {formData.location || "Location"}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-4 w-4" />
+                            Est. {formData.establishedYear}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {coverImagePreview && (
+                      <img src={coverImagePreview} alt="Cover" className="w-full h-48 object-cover rounded-lg" />
+                    )}
+                  </div>
+
+                  {/* Overview */}
+                  {formData.overview && (
+                    <div>
+                      <h4 className="font-semibold mb-2">Overview</h4>
+                      <p className="text-gray-700">{formData.overview}</p>
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  {formData.description.some(section => section.description.trim()) && (
+                    <div>
+                      <h4 className="font-semibold mb-2">About</h4>
+                      <div className="space-y-3">
+                        {formData.description
+                          .filter(section => section.description.trim())
+                          .map((section, index) => (
+                          <div key={index}>
+                            {section.title && (
+                              <h5 className="font-medium mb-1">{section.title}</h5>
+                            )}
+                            <p className="text-gray-700">{section.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Awards */}
+                  {formData.awards.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold mb-3">Awards & Recognition</h4>
+                      <div className="space-y-2">
+                        {formData.awards.map((award, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Star className="h-4 w-4 text-yellow-500" />
+                            <span className="font-medium">{award.name}</span>
+                            <span className="text-gray-500">({award.year})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Specialization */}
+                  {formData.specialization.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold mb-3">Specialization</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {formData.specialization.map((spec) => (
+                          <Badge key={spec} variant="outline">
+                            {spec}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Contact */}
+                  <div>
+                    <h4 className="font-semibold mb-3">Contact Information</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                      {formData.website && (
+                        <div className="flex items-center gap-2">
+                          <Globe className="h-4 w-4 text-gray-500" />
+                          <a href={formData.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                            Website
+                          </a>
+                        </div>
+                      )}
+                      {formData.email && (
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4 text-gray-500" />
+                          <a href={`mailto:${formData.email}`} className="text-blue-600 hover:underline">
+                            {formData.email}
+                          </a>
+                        </div>
+                      )}
+                      {formData.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="h-4 w-4 text-gray-500" />
+                          <a href={`tel:${formData.phone}`} className="text-blue-600 hover:underline">
+                            {formData.phone}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="border-t p-6 bg-gray-50 flex-shrink-0">
+            {/* Error Display */}
+            <ErrorDisplay 
+              submissionState={submissionState}
+              onRetry={() => {
+                setSubmissionState(prev => ({ ...prev, apiError: null, networkError: false }));
+              }}
+            />
+            
+            <div className="flex gap-2 justify-between">
+              <Button variant="outline" onClick={fillFakeData} disabled={submissionState.isSubmitting}>
+                Fill Test Data
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleClose} disabled={submissionState.isSubmitting}>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleSubmit} 
+                  disabled={submissionState.isSubmitting || Object.keys(errors).some(key => errors[key])}
+                >
+                  {submissionState.isSubmitting ? 
+                    (mode === "edit" ? "Updating..." : "Creating...") : 
+                    (mode === "edit" ? "Update Developer" : "Create Developer")
+                  }
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

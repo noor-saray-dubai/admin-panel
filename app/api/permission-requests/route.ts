@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     // 6. Filter out permissions user already has
     const currentPermissions = currentUser.collectionPermissions || [];
     const newPermissions = requestedPermissions.filter(requested => {
-      return !currentPermissions.some(current => 
+      return !currentPermissions.some((current: { collection: any; subRole: any; }) => 
         current.collection === requested.collection && 
         current.subRole === requested.subRole
       );
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
     });
     
     const hasOverlappingRequest = existingPendingRequests.some(existingRequest => 
-      existingRequest.requestedPermissions.some(existing => 
+      existingRequest.requestedPermissions.some((existing: { collection: any; subRole: any; }) => 
         newPermissions.some(requested => 
           existing.collection === requested.collection && 
           existing.subRole === requested.subRole

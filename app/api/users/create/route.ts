@@ -1,4 +1,3 @@
-// app/api/users/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { FirebaseAdminService, adminAuth } from "@/lib/firebaseAdmin";
@@ -50,6 +49,9 @@ interface CreateUserError {
   error: string;
   details?: string;
 }
+
+// Role hierarchy type definition
+type RoleHierarchy = Record<FullRole, number>;
 
 // Helper function to validate collection permissions
 function validateCollectionPermissions(permissions: CollectionPermission[]): boolean {
@@ -194,8 +196,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateUse
       }, { status: 400 });
     }
     
-    // 5. Role hierarchy and admin creation restrictions
-    const roleHierarchy = {
+    // 5. Role hierarchy and admin creation restrictions - FIXED TYPE SAFETY
+    const roleHierarchy: RoleHierarchy = {
       [FullRole.USER]: 1,
       [FullRole.AGENT]: 2,
       [FullRole.MARKETING]: 2,
@@ -206,8 +208,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateUse
       [FullRole.SUPER_ADMIN]: 4
     };
     
-    const currentUserRoleLevel = roleHierarchy[currentUser.fullRole];
+    // Type-safe role level access
+    const currentUserRoleLevel = roleHierarchy[currentUser.fullRole as FullRole];
     const newUserRoleLevel = roleHierarchy[fullRole];
+    
+    // Additional safety check - ensure we have valid role levels
+    if (currentUserRoleLevel === undefined || newUserRoleLevel === undefined) {
+      return NextResponse.json({
+        success: false,
+        error: "Invalid role detected in hierarchy check"
+      }, { status: 400 });
+    }
     
     // Only super admins can create admin roles
     if (fullRole === FullRole.ADMIN && currentUser.fullRole !== FullRole.SUPER_ADMIN) {
@@ -290,9 +301,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateUse
     
     if (sendInvitation) {
       try {
+        // Generate Firebase password reset link
         passwordResetLink = await FirebaseAdminService.sendPasswordResetEmail(email);
+        
+        // Import EmailService dynamically to avoid import issues
+        const { default: EmailService } = await import('@/lib/emailService');
+        
+        // Send the actual email with the reset link
+        await EmailService.sendPasswordReset(email, displayName, passwordResetLink);
+        
         invitationSent = true;
-        console.log('✅ Invitation email sent');
+        console.log('✅ Invitation email sent via SMTP');
       } catch (error) {
         console.warn('⚠️ Failed to send invitation email:', error);
         // Don't fail the user creation if email fails
@@ -414,6 +433,42 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // Verify session
     await adminAuth.verifySessionCookie(sessionCookie, true);
     
+    // Type-safe role hierarchy for GET endpoint
+    const roleHierarchy: Record<FullRole, { level: number; description: string }> = {
+      [FullRole.USER]: {
+        level: 1,
+        description: "Basic user with limited access"
+      },
+      [FullRole.AGENT]: {
+        level: 2,
+        description: "Agent with specialized access"
+      },
+      [FullRole.MARKETING]: {
+        level: 2,
+        description: "Marketing team member"
+      },
+      [FullRole.SALES]: {
+        level: 2,
+        description: "Sales team member"
+      },
+      [FullRole.HR]: {
+        level: 2,
+        description: "HR team member"
+      },
+      [FullRole.COMMUNITY_MANAGER]: {
+        level: 2,
+        description: "Community management role"
+      },
+      [FullRole.ADMIN]: {
+        level: 3,
+        description: "Administrator with broad access"
+      },
+      [FullRole.SUPER_ADMIN]: {
+        level: 4,
+        description: "Super administrator with full access"
+      }
+    };
+    
     // Return form data
     return NextResponse.json({
       success: true,
@@ -422,20 +477,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         collections: Object.values(Collection),
         subRoles: Object.values(SubRole),
         userStatuses: Object.values(UserStatus),
-        roleHierarchy: {
-          [FullRole.USER]: {
-            level: 1,
-            description: "Basic user with limited access"
-          },
-          [FullRole.ADMIN]: {
-            level: 2,
-            description: "Administrator with broad access"
-          },
-          [FullRole.SUPER_ADMIN]: {
-            level: 3,
-            description: "Super administrator with full access"
-          }
-        }
+        roleHierarchy
       }
     });
     

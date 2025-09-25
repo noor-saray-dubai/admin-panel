@@ -3,18 +3,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { adminAuth } from "@/lib/firebaseAdmin";
 import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
-import { 
-  Collection, 
-  Action, 
-  FullRole, 
-  SubRole, 
+import {
+  Collection,
+  Action,
+  FullRole,
+  SubRole,
   UserStatus,
   IEnhancedUser,
   CollectionPermission,
-  EnhancedUser 
+  EnhancedUser
 } from "@/models/enhancedUser";
 import { parse } from "cookie";
-
+type RoleHierarchy = Record<FullRole, number>;
 // GET - List all users with pagination and filtering
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
@@ -22,38 +22,38 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const cookieHeader = request.headers.get("cookie") || "";
     const cookies = parse(cookieHeader);
     const sessionCookie = cookies.__session;
-    
+
     if (!sessionCookie) {
       return NextResponse.json({
         success: false,
         error: "Authentication required"
       }, { status: 401 });
     }
-    
+
     const decodedToken = await adminAuth.verifySessionCookie(sessionCookie, true);
     const currentUserFirebaseUid = decodedToken.uid;
-    
+
     // Get current user and check permissions using EnhancedUser
     await connectToDatabase();
     const currentUser = await EnhancedUser.findOne({ firebaseUid: currentUserFirebaseUid });
-    
+
     if (!currentUser) {
       return NextResponse.json({
         success: false,
         error: "User profile not found"
       }, { status: 404 });
     }
-    
+
     // Only admins and super admins can view users
     const isAdmin = [FullRole.ADMIN, FullRole.SUPER_ADMIN].includes(currentUser.fullRole);
-    
+
     if (!isAdmin) {
       return NextResponse.json({
         success: false,
         error: "Only admins and super admins can view users"
       }, { status: 403 });
     }
-    
+
     // Parse query parameters
     const url = new URL(request.url);
     const page = parseInt(url.searchParams.get('page') || '1');
@@ -63,18 +63,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const status = url.searchParams.get('status');
     const role = url.searchParams.get('role');
     const search = url.searchParams.get('search');
-    
+
     // Build filter criteria
     const filter: any = {};
-    
+
     if (status && Object.values(UserStatus).includes(status as UserStatus)) {
       filter.status = status;
     }
-    
+
     if (role && Object.values(FullRole).includes(role as FullRole)) {
       filter.fullRole = role;
     }
-    
+
     if (search) {
       filter.$or = [
         { displayName: { $regex: search, $options: 'i' } },
@@ -82,20 +82,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         { department: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     // Get users with pagination using EnhancedUser model directly
     const skip = (page - 1) * limit;
     const sortOptions: any = {};
     sortOptions[sortBy] = sortOrder === 'asc' ? 1 : -1;
-    
+
     const users = await EnhancedUser.find(filter)
       .sort(sortOptions)
       .skip(skip)
       .limit(limit)
       .lean();
-    
+
     const total = await EnhancedUser.countDocuments(filter);
-    
+
     // Remove sensitive information
     const sanitizedUsers = users.map(user => ({
       _id: user._id,
@@ -113,9 +113,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       loginAttempts: user.loginAttempts,
       createdBy: user.createdBy
     }));
-    
+
     const totalPages = Math.ceil(total / limit);
-    
+
     return NextResponse.json({
       success: true,
       data: sanitizedUsers,
@@ -135,7 +135,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         sortOrder
       }
     });
-    
+
   } catch (error: any) {
     console.error('Error fetching users:', error);
     return NextResponse.json({
@@ -153,39 +153,39 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     const cookieHeader = request.headers.get("cookie") || "";
     const cookies = parse(cookieHeader);
     const sessionCookie = cookies.__session;
-    
+
     if (!sessionCookie) {
       return NextResponse.json({
         success: false,
         error: "Authentication required"
       }, { status: 401 });
     }
-    
+
     const decodedToken = await adminAuth.verifySessionCookie(sessionCookie, true);
     const currentUserFirebaseUid = decodedToken.uid;
-    
+
     // Get current user and check permissions using EnhancedUser
     await connectToDatabase();
     const currentUser = await EnhancedUser.findOne({ firebaseUid: currentUserFirebaseUid });
-    
+
     if (!currentUser) {
       return NextResponse.json({
         success: false,
         error: "User profile not found"
       }, { status: 404 });
     }
-    
+
     // Only admins and super admins can edit users
     const isAdmin = [FullRole.ADMIN, FullRole.SUPER_ADMIN].includes(currentUser.fullRole);
     const isSuperAdmin = currentUser.fullRole === FullRole.SUPER_ADMIN;
-    
+
     if (!isAdmin) {
       // Create audit log for unauthorized access attempt
       const clientInfo = {
         ip: request.headers.get('x-forwarded-for') || 'unknown',
         userAgent: request.headers.get('user-agent')
       };
-      
+
       await AuditLog.create({
         action: AuditAction.UNAUTHORIZED_ACCESS_ATTEMPT,
         success: false,
@@ -203,18 +203,18 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         },
         timestamp: new Date()
       });
-      
+
       return NextResponse.json({
         success: false,
         error: "Only admins and super admins can edit users"
       }, { status: 403 });
     }
-    
+
     // Parse request body
     const body = await request.json();
-    const { 
-      firebaseUid, 
-      updates 
+    const {
+      firebaseUid,
+      updates
     }: {
       firebaseUid: string;
       updates: {
@@ -226,26 +226,26 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         phoneNumber?: string;
       }
     } = body;
-    
+
     if (!firebaseUid || !updates) {
       return NextResponse.json({
         success: false,
         error: "Missing required fields: firebaseUid, updates"
       }, { status: 400 });
     }
-    
+
     // Get target user using EnhancedUser model
     const targetUser = await EnhancedUser.findOne({ firebaseUid });
-    
+
     if (!targetUser) {
       return NextResponse.json({
         success: false,
         error: "Target user not found"
       }, { status: 404 });
     }
-    
+
     // Role hierarchy check - can't edit users with equal or higher roles
-    const roleHierarchy = {
+    const roleHierarchy: RoleHierarchy = {
       [FullRole.USER]: 1,
       [FullRole.AGENT]: 2,
       [FullRole.MARKETING]: 2,
@@ -255,21 +255,20 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       [FullRole.ADMIN]: 3,
       [FullRole.SUPER_ADMIN]: 4
     };
-    
-    const currentUserRoleLevel = roleHierarchy[currentUser.fullRole];
-    const targetUserRoleLevel = roleHierarchy[targetUser.fullRole];
-    
+    const currentUserRoleLevel = roleHierarchy[currentUser.fullRole as FullRole];
+    const targetUserRoleLevel = roleHierarchy[targetUser.fullRole as FullRole];
+
     if (targetUserRoleLevel >= currentUserRoleLevel) {
       return NextResponse.json({
         success: false,
         error: "Cannot edit user with equal or higher role than your own"
       }, { status: 403 });
     }
-    
+
     // If updating role, check new role level and admin creation restrictions
     if (updates.fullRole) {
       const newRoleLevel = roleHierarchy[updates.fullRole];
-      
+
       // Only super admins can assign admin roles
       if (updates.fullRole === FullRole.ADMIN && !isSuperAdmin) {
         return NextResponse.json({
@@ -277,7 +276,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
           error: "Only super admins can assign admin roles"
         }, { status: 403 });
       }
-      
+
       // Cannot assign super admin roles via API for security
       if (updates.fullRole === FullRole.SUPER_ADMIN) {
         return NextResponse.json({
@@ -285,7 +284,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
           error: "Super admin roles cannot be assigned via API for security reasons"
         }, { status: 403 });
       }
-      
+
       // Role level restrictions
       if (newRoleLevel >= currentUserRoleLevel) {
         return NextResponse.json({
@@ -293,7 +292,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
           error: "Cannot assign role equal or higher than your own"
         }, { status: 403 });
       }
-      
+
       // Additional check: Regular admins cannot demote other admins or super admins
       if (!isSuperAdmin && targetUserRoleLevel >= 3) { // Admin or Super Admin
         return NextResponse.json({
@@ -302,7 +301,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         }, { status: 403 });
       }
     }
-    
+
     // Store original values for audit log
     const originalValues = {
       displayName: targetUser.displayName,
@@ -312,40 +311,40 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       department: targetUser.department,
       phoneNumber: targetUser.phoneNumber
     };
-    
+
     // Update user in MongoDB using EnhancedUser model
     Object.assign(targetUser, {
       ...updates,
       updatedAt: new Date(),
       updatedBy: currentUser._id
     });
-    
+
     const updatedUser = await targetUser.save();
-    
+
     // Update Firebase custom claims if role or permissions changed
     if (updates.fullRole || updates.collectionPermissions) {
       const newRole = updates.fullRole || targetUser.fullRole;
       const newPermissions = updates.collectionPermissions || targetUser.collectionPermissions;
-      
+
       await adminAuth.setCustomUserClaims(firebaseUid, {
         role: newRole,
-        permissions: newPermissions.map(p => `${p.collection}:${p.subRole}`)
+        permissions: newPermissions.map((p: { collection: any; subRole: any; }) => `${p.collection}:${p.subRole}`)
       });
     }
-    
+
     // Update Firebase user profile if display name changed
     if (updates.displayName) {
       await adminAuth.updateUser(firebaseUid, {
         displayName: updates.displayName
       });
     }
-    
+
     // Create audit log
     const clientInfo = {
       ip: request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent')
     };
-    
+
     await AuditLog.create({
       action: AuditAction.USER_UPDATED,
       success: true,
@@ -365,7 +364,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       },
       timestamp: new Date()
     });
-    
+
     return NextResponse.json({
       success: true,
       message: "User updated successfully",
@@ -378,7 +377,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         collectionPermissions: updatedUser.collectionPermissions
       }
     });
-    
+
   } catch (error: any) {
     console.error('Error updating user:', error);
     return NextResponse.json({
@@ -396,28 +395,28 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     const cookieHeader = request.headers.get("cookie") || "";
     const cookies = parse(cookieHeader);
     const sessionCookie = cookies.__session;
-    
+
     if (!sessionCookie) {
       return NextResponse.json({
         success: false,
         error: "Authentication required"
       }, { status: 401 });
     }
-    
+
     const decodedToken = await adminAuth.verifySessionCookie(sessionCookie, true);
     const currentUserFirebaseUid = decodedToken.uid;
-    
+
     // Get current user and check permissions using EnhancedUser
     await connectToDatabase();
     const currentUser = await EnhancedUser.findOne({ firebaseUid: currentUserFirebaseUid });
-    
+
     if (!currentUser) {
       return NextResponse.json({
         success: false,
         error: "User profile not found"
       }, { status: 404 });
     }
-    
+
     // Only super admins can delete users (more restrictive)
     if (currentUser.fullRole !== FullRole.SUPER_ADMIN) {
       // Create audit log for unauthorized delete attempt
@@ -425,7 +424,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
         ip: request.headers.get('x-forwarded-for') || 'unknown',
         userAgent: request.headers.get('user-agent')
       };
-      
+
       await AuditLog.create({
         action: AuditAction.UNAUTHORIZED_ACCESS_ATTEMPT,
         success: false,
@@ -443,24 +442,24 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
         },
         timestamp: new Date()
       });
-      
+
       return NextResponse.json({
         success: false,
         error: "Only super admins can delete users"
       }, { status: 403 });
     }
-    
+
     // Parse request body
     const body = await request.json();
     const { firebaseUid }: { firebaseUid: string } = body;
-    
+
     if (!firebaseUid) {
       return NextResponse.json({
         success: false,
         error: "Missing required field: firebaseUid"
       }, { status: 400 });
     }
-    
+
     // Can't delete yourself
     if (firebaseUid === currentUserFirebaseUid) {
       return NextResponse.json({
@@ -468,19 +467,19 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
         error: "Cannot delete your own account"
       }, { status: 400 });
     }
-    
+
     // Get target user using EnhancedUser model
     const targetUser = await EnhancedUser.findOne({ firebaseUid });
-    
+
     if (!targetUser) {
       return NextResponse.json({
         success: false,
         error: "Target user not found"
       }, { status: 404 });
     }
-    
+
     // Role hierarchy check
-    const roleHierarchy = {
+    const roleHierarchy: RoleHierarchy = {
       [FullRole.USER]: 1,
       [FullRole.AGENT]: 2,
       [FullRole.MARKETING]: 2,
@@ -490,29 +489,29 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
       [FullRole.ADMIN]: 3,
       [FullRole.SUPER_ADMIN]: 4
     };
-    
-    const currentUserRoleLevel = roleHierarchy[currentUser.fullRole];
-    const targetUserRoleLevel = roleHierarchy[targetUser.fullRole];
-    
+
+    const currentUserRoleLevel = roleHierarchy[currentUser.fullRole as FullRole];
+    const targetUserRoleLevel = roleHierarchy[targetUser.fullRole as FullRole];
+
     if (targetUserRoleLevel >= currentUserRoleLevel) {
       return NextResponse.json({
         success: false,
         error: "Cannot delete user with equal or higher role than your own"
       }, { status: 403 });
     }
-    
+
     // Delete from Firebase first
     await adminAuth.deleteUser(firebaseUid);
-    
+
     // Delete from MongoDB using EnhancedUser model
     await EnhancedUser.findOneAndDelete({ firebaseUid });
-    
+
     // Create audit log
     const clientInfo = {
       ip: request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent')
     };
-    
+
     await AuditLog.create({
       action: AuditAction.USER_DELETED,
       success: true,
@@ -535,12 +534,12 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
       },
       timestamp: new Date()
     });
-    
+
     return NextResponse.json({
       success: true,
       message: `User ${targetUser.displayName} deleted successfully`
     });
-    
+
   } catch (error: any) {
     console.error('Error deleting user:', error);
     return NextResponse.json({

@@ -8,7 +8,7 @@
     "lint": "next lint",
     "start": "next start",
     "setup": "node scripts/setup.js",
-    "create-admin": "node scripts/createSuperAdmin.js",
+    "create-admin": "node scripts/upgradeSuperadmin.js",
     "check": "node scripts/checkSetup.js",
     "clear-audit": "node scripts/clearAuditLogs.js"
   },

@@ -734,10 +734,12 @@ MallSchema.virtual('investmentSummary').get(function() {
   };
 });
 
+
 MallSchema.virtual('saleReadiness').get(function() {
-  const hasValuation = this.saleInformation.valuationReports?.length > 0;
-  const hasMarketing = this.marketingMaterials?.brochure || this.marketingMaterials?.investmentHighlights?.length > 0;
-  const hasBroker = this.investorRelations?.brokerContact != null;
+  const hasValuation = (this.saleInformation?.valuationReports?.length ?? 0) > 0;
+  const hasMarketing = !!(this.marketingMaterials?.brochure || 
+                         (this.marketingMaterials?.investmentHighlights?.length ?? 0) > 0);
+  const hasBroker = !!this.investorRelations?.brokerContact;
   
   return {
     hasValuation,

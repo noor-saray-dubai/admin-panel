@@ -5,6 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { confirmPasswordReset } from 'firebase/auth';
 // import { auth } from '@/lib/firebase';
 import { Eye, EyeOff, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { auth } from '@/firebase';
+
 
 function ResetPasswordForm() {
   const [password, setPassword] = useState('');

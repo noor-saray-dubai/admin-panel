@@ -9,7 +9,7 @@ class EmailService {
     if (this.transporter) return this.transporter;
 
     // Configure email transporter based on provider
-    this.transporter = nodemailer.createTransporter({
+    this.transporter = nodemailer.createTransport({
       // Using Gmail as an example - you can change this to your preferred provider
       service: 'gmail',
       auth: {
