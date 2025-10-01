@@ -3,8 +3,8 @@
 import { cn } from "@/lib/utils"
 import { Users, Settings, Home, FileText, MessageSquare, Shield, Briefcase, Building, ShoppingCart, ChevronLeft, Menu, User, Newspaper } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { useState } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { useState, useMemo, useTransition } from "react"
 import { useEnhancedAuth } from "@/hooks/useEnhancedAuth"
 import { Button } from "@/components/ui/button"
 import { Collection } from "@/types/user"
@@ -34,7 +34,9 @@ export function LuxurySidebar({
   onToggle 
 }: LuxurySidebarProps = {}) {
   const pathname = usePathname()
+  const router = useRouter()
   const [internalCollapsed, setInternalCollapsed] = useState(false)
+  const [isPending, startTransition] = useTransition()
   
   // Use external collapsed state if provided, otherwise use internal
   const isCollapsed = externalCollapsed !== undefined ? externalCollapsed : internalCollapsed
@@ -46,6 +48,7 @@ export function LuxurySidebar({
       setInternalCollapsed(!internalCollapsed)
     }
   }
+  
   const { 
     user, 
     loading, 
@@ -65,8 +68,8 @@ export function LuxurySidebar({
     return pathname.startsWith(hrefPath)
   }
 
-  // Get navigation items user has access to
-  const getAccessibleNavItems = () => {
+  // Memoize navigation items to prevent recalculation
+  const accessibleNavItems = useMemo(() => {
     if (!user || loading) return []
     
     const accessibleCollections = getAccessibleCollections()
@@ -95,6 +98,16 @@ export function LuxurySidebar({
     }
     
     return navItems
+  }, [user, loading, getAccessibleCollections, isAdmin, isSuperAdmin])
+
+  // Optimized click handler with prefetch and immediate UI feedback
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    e.preventDefault()
+    
+    // Immediate navigation with transition
+    startTransition(() => {
+      router.push(href)
+    })
   }
 
   return (
@@ -112,10 +125,14 @@ export function LuxurySidebar({
 
       {/* Logo Section */}
       <div className="flex h-20 items-center px-4 border-b border-gray-100">
-        <Link href="/" className={cn(
-          "flex items-center transition-all duration-300",
-          isCollapsed ? "justify-center" : "space-x-3"
-        )}>
+        <Link 
+          href="/" 
+          onClick={(e) => handleNavClick(e, "/")}
+          className={cn(
+            "flex items-center transition-all duration-300",
+            isCollapsed ? "justify-center" : "space-x-3"
+          )}
+        >
           <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-sm">N</span>
           </div>
@@ -144,67 +161,70 @@ export function LuxurySidebar({
             ))}
           </div>
         ) : (
-          getAccessibleNavItems().map((item) => {
+          accessibleNavItems.map((item) => {
             const active = isActive(item.href)
             const subRole = item.collection ? getUserSubRoleForCollection(item.collection) : null
 
             return (
               <div key={item.key} className="relative group/tooltip">
-              <Link
-                href={item.href}
-                className={cn(
-                  "group relative w-full flex items-center rounded-lg transition-all duration-200 transform hover:scale-[1.02]",
-                  isCollapsed ? "justify-center px-2 py-3" : "px-4 py-3",
-                  "text-sm font-medium",
-                  active 
-                    ? "bg-gradient-to-r from-gray-900 to-gray-700 text-white shadow-lg shadow-gray-900/25" 
-                    : "text-gray-600 hover:text-gray-900 hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100 hover:shadow-md",
-                )}
-              >
-                {/* Active indicator bar */}
-                {active && (
-                  <div className="absolute left-0 top-0 h-full w-1 bg-white rounded-r-full" />
-                )}
-                
-                <item.icon className={cn(
-                  "h-5 w-5 transition-all duration-200 flex-shrink-0",
-                  !isCollapsed && "mr-3",
-                  active ? "text-white drop-shadow-sm" : "text-gray-500 group-hover:text-gray-700"
-                )} />
-                
-                {!isCollapsed && (
-                  <div className="flex flex-col">
-                    <span className={cn(
-                      "font-medium transition-all duration-200",
-                      active ? "text-white font-semibold" : "group-hover:font-medium"
-                    )}>
-                      {item.name}
-                    </span>
-                    {subRole && (
+                <Link
+                  href={item.href}
+                  onClick={(e) => handleNavClick(e, item.href)}
+                  prefetch={true}
+                  className={cn(
+                    "group relative w-full flex items-center rounded-lg transition-all duration-200 transform hover:scale-[1.02]",
+                    isCollapsed ? "justify-center px-2 py-3" : "px-4 py-3",
+                    "text-sm font-medium",
+                    active 
+                      ? "bg-gradient-to-r from-gray-900 to-gray-700 text-white shadow-lg shadow-gray-900/25" 
+                      : "text-gray-600 hover:text-gray-900 hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100 hover:shadow-md",
+                    isPending && "opacity-70 pointer-events-none"
+                  )}
+                >
+                  {/* Active indicator bar */}
+                  {active && (
+                    <div className="absolute left-0 top-0 h-full w-1 bg-white rounded-r-full" />
+                  )}
+                  
+                  <item.icon className={cn(
+                    "h-5 w-5 transition-all duration-200 flex-shrink-0",
+                    !isCollapsed && "mr-3",
+                    active ? "text-white drop-shadow-sm" : "text-gray-500 group-hover:text-gray-700"
+                  )} />
+                  
+                  {!isCollapsed && (
+                    <div className="flex flex-col">
                       <span className={cn(
-                        "text-xs transition-all duration-200 capitalize",
-                        active ? "text-white/70" : "text-gray-400"
+                        "font-medium transition-all duration-200",
+                        active ? "text-white font-semibold" : "group-hover:font-medium"
                       )}>
-                        {subRole.replace('_', ' ')}
+                        {item.name}
                       </span>
-                    )}
-                  </div>
-                )}
+                      {subRole && (
+                        <span className={cn(
+                          "text-xs transition-all duration-200 capitalize",
+                          active ? "text-white/70" : "text-gray-400"
+                        )}>
+                          {subRole.replace('_', ' ')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Subtle glow effect on active */}
+                  {active && (
+                    <div className="absolute inset-0 bg-gradient-to-r from-gray-900/50 to-transparent rounded-lg blur-sm -z-10" />
+                  )}
+                </Link>
                 
-                {/* Subtle glow effect on active */}
-                {active && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-gray-900/50 to-transparent rounded-lg blur-sm -z-10" />
-                )}
-              </Link>
-              
-              {/* Tooltip for collapsed state */}
-              {isCollapsed && (
-                <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                  <div className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
-                    {item.name}
+                {/* Tooltip for collapsed state */}
+                {isCollapsed && (
+                  <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                    <div className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+                      {item.name}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
               </div>
             )
           })

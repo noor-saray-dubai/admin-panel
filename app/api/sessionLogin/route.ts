@@ -1,7 +1,10 @@
+// app/api/sessionLogin/route.ts - WITH REDIS CACHE PRE-WARMING
+
 import { adminAuth } from "@/lib/firebaseAdmin";
 import { connectToDatabase } from "@/lib/db";
 import { EnhancedUser, UserStatus } from "@/models/enhancedUser";
 import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
+import { redis, CACHE_KEYS, CACHE_TTL } from "@/lib/redis/redisClient";
 
 export async function POST(req: Request) {
   const startTime = Date.now();
@@ -29,10 +32,9 @@ export async function POST(req: Request) {
       });
     }
     
-    const idToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const idToken = authHeader.substring(7);
     
     if (!firebaseUid || !email || !idToken) {
-      // Log failed attempt - missing credentials
       await logFailedLogin(firebaseUid, email, 'Missing required authentication data', clientInfo);
       return new Response(JSON.stringify({ error: "Authentication data required" }), { 
         status: 400,
@@ -45,7 +47,6 @@ export async function POST(req: Request) {
     try {
       decodedToken = await adminAuth.verifyIdToken(idToken);
       
-      // Verify the UID matches
       if (decodedToken.uid !== firebaseUid) {
         await logFailedLogin(firebaseUid, email, 'UID mismatch in token', clientInfo);
         return new Response(JSON.stringify({ error: "Invalid authentication token" }), { 
@@ -69,7 +70,6 @@ export async function POST(req: Request) {
     const user = await EnhancedUser.findOne({ firebaseUid });
     
     if (!user) {
-      // Log failed attempt - user not found
       await logFailedLogin(null, email, 'User not found in database', clientInfo);
       return new Response(JSON.stringify({ error: "Invalid credentials" }), { 
         status: 401,
@@ -105,9 +105,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // At this point, Firebase authentication already happened on client
-    // and token has been verified, so we can proceed with session creation
-
     // Set session expiration
     const expiresIn = rememberMe
       ? 60 * 60 * 24 * 5 * 1000 // 5 days in ms
@@ -118,10 +115,58 @@ export async function POST(req: Request) {
 
     // Update user login information
     const loginTime = new Date();
-    user.lastLogin = loginTime;
-    user.loginAttempts = 0; // Reset failed attempts on successful login
-    user.lockedUntil = undefined; // Clear any lock
-    await user.save();
+    await EnhancedUser.updateOne(
+      { firebaseUid: user.firebaseUid },
+      {
+        $set: {
+          lastLogin: loginTime,
+          loginAttempts: 0
+        },
+        $unset: {
+          lockedUntil: ""
+        }
+      }
+    );
+
+    // Prepare user response (transform to ClientUser format)
+    const userResponse = {
+      _id: user._id.toString(),
+      firebaseUid: user.firebaseUid,
+      email: user.email,
+      displayName: user.displayName,
+      fullRole: user.fullRole,
+      department: user.department,
+      status: user.status,
+      collectionPermissions: user.collectionPermissions,
+      permissionOverrides: user.permissionOverrides,
+      profileImage: user.profileImage,
+      phone: user.phone,
+      address: user.address,
+      bio: user.bio,
+      lastLogin: loginTime.toISOString(),
+      loginAttempts: 0,
+      createdAt: user.createdAt,
+      updatedAt: loginTime.toISOString()
+    };
+
+    // ✅ PRE-WARM REDIS CACHE FOR INSTANT NAVIGATION
+    let cachePreWarmed = false;
+    try {
+      const cacheKey = CACHE_KEYS.user(user.firebaseUid);
+      
+      // Store as JSON string for consistency
+      await redis.setex(
+        cacheKey, 
+        CACHE_TTL.USER_DATA, 
+        JSON.stringify(userResponse)
+      );
+      
+      cachePreWarmed = true;
+      console.log(`💾 User cached on login: ${user.firebaseUid} (6 hours TTL)`);
+    } catch (cacheError) {
+      console.error('❌ Redis cache pre-warm error:', cacheError);
+      // Don't fail login if cache fails - graceful degradation
+    }
 
     // Create comprehensive audit log for successful login
     await AuditLog.create({
@@ -140,7 +185,8 @@ export async function POST(req: Request) {
         userStatus: user.status,
         rememberMe,
         origin: clientInfo.origin,
-        processingTime: Date.now() - startTime
+        processingTime: Date.now() - startTime,
+        cachePreWarmed
       },
       timestamp: loginTime
     });
@@ -150,19 +196,11 @@ export async function POST(req: Request) {
       expiresIn / 1000
     };${process.env.NODE_ENV === "production" ? " Secure;" : ""}`;
 
-    console.log(`✅ Login successful for ${email} in ${Date.now() - startTime}ms`);
+    console.log(`✅ Login successful for ${email} in ${Date.now() - startTime}ms (cached: ${cachePreWarmed})`);
     
-    // Return success response with user info (non-sensitive)
     return new Response(JSON.stringify({ 
       success: true,
-      user: {
-        firebaseUid: user.firebaseUid,
-        email: user.email,
-        displayName: user.displayName,
-        fullRole: user.fullRole,
-        status: user.status,
-        lastLogin: loginTime.toISOString()
-      }
+      user: userResponse
     }), {
       status: 200,
       headers: {
@@ -175,7 +213,6 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("❌ Session login error:", error);
     
-    // Log system error
     try {
       await AuditLog.create({
         action: AuditAction.USER_LOGIN,

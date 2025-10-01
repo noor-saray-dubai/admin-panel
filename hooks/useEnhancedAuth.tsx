@@ -16,7 +16,7 @@ import {
 
 // Navigation mapping for client-side
 export const NAVIGATION_COLLECTION_MAP = {
-  dashboard: null, // Everyone can see dashboard
+  dashboard: null,
   projects: Collection.PROJECTS,
   blogs: Collection.BLOGS,
   news: Collection.NEWS,
@@ -35,7 +35,7 @@ function userCanAccessNav(user: ClientUser, navItem: NavigationItem): boolean {
   const collection = NAVIGATION_COLLECTION_MAP[navItem];
   
   if (!collection) {
-    return true; // No collection requirement (like dashboard)
+    return true;
   }
 
   return ClientPermissionChecker.getUserAccessibleCollections(user).includes(collection);
@@ -48,7 +48,6 @@ function getUserAccessibleNavItems(user: ClientUser): NavigationItem[] {
 }
 
 interface EnhancedAuthUser extends ClientUser {
-  // Firebase-specific properties
   uid: string;
   email: string;
   displayName: string;
@@ -57,126 +56,151 @@ interface EnhancedAuthUser extends ClientUser {
 }
 
 interface UseEnhancedAuthReturn {
-  // User data
   user: EnhancedAuthUser | null;
   mongoUser: ClientUser | null;
   loading: boolean;
-  
-  // Authentication methods
   signOut: () => Promise<void>;
   refreshUserData: () => Promise<void>;
-  
-  // Permission checking methods
   hasCollectionPermission: (collection: Collection, action: Action) => boolean;
   getUserSubRoleForCollection: (collection: Collection) => SubRole | null;
   getUserActionsForCollection: (collection: Collection) => Action[];
   getAccessibleCollections: () => Collection[];
-  
-  // Role checking methods
   hasRole: (role: FullRole) => boolean;
   hasAnyRole: (roles: FullRole[]) => boolean;
   isAdmin: () => boolean;
   isSuperAdmin: () => boolean;
-  
-  // User management permissions
   canCreateUsers: () => boolean;
   canManageUsers: () => boolean;
-  
-  // Navigation methods
   canAccessNav: (navItem: NavigationItem) => boolean;
   getAccessibleNavItems: () => NavigationItem[];
-  
-  // Status checks
   isActive: () => boolean;
   isInvited: () => boolean;
   isSuspended: () => boolean;
 }
+
+// 🔥 DEDUPLICATION: Global pending fetches map
+const pendingFetches = new Map<string, Promise<ClientUser | null>>();
+
+// 🔥 DEBUG: Track hook instances
+let hookInstanceCounter = 0;
 
 export function useEnhancedAuth(): UseEnhancedAuthReturn {
   const [user, setUser] = useState<EnhancedAuthUser | null>(null);
   const [mongoUser, setMongoUser] = useState<ClientUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch user data from MongoDB
-  const fetchUserData = async (firebaseUid: string): Promise<ClientUser | null> => {
-    try {
-      console.log('📞 fetchUserData called with UID:', firebaseUid);
-      const response = await fetch('/api/auth/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firebaseUid }),
-      });
+  // 🐛 DEBUG: Identify this hook instance
+  const hookInstanceId = useMemo(() => {
+    const id = ++hookInstanceCounter;
+    const stack = new Error().stack;
+    const callerLine = stack?.split('\n')[2] || 'unknown';
+    console.log(`🎣 [useEnhancedAuth #${id}] Hook initialized`);
+    console.log(`📍 [useEnhancedAuth #${id}] Called from:`, callerLine.trim());
+    return id;
+  }, []);
 
-      console.log('🌐 API Response status:', response.status, response.statusText);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ API Response data:', data);
-        return data.user;
-      } else {
-        const errorData = await response.text();
-        console.log('❌ API Error response:', errorData);
-      }
-      return null;
-    } catch (error) {
-      console.error('❌ Error fetching user data:', error);
-      return null;
+  // Fetch user data from MongoDB with deduplication
+  const fetchUserData = async (firebaseUid: string): Promise<ClientUser | null> => {
+    console.log(`📞 [Hook #${hookInstanceId}] fetchUserData called for UID:`, firebaseUid);
+    
+    // 🔥 DEDUPLICATION: Check if fetch is already in progress
+    if (pendingFetches.has(firebaseUid)) {
+      console.log(`🔄 [Hook #${hookInstanceId}] ⚡ DEDUPLICATING - Using existing fetch for:`, firebaseUid);
+      return pendingFetches.get(firebaseUid)!;
     }
+
+    console.log(`🆕 [Hook #${hookInstanceId}] Creating NEW fetch for:`, firebaseUid);
+    console.log(`📚 [Hook #${hookInstanceId}] Stack trace:`, new Error().stack?.split('\n').slice(1, 4).join('\n'));
+
+    // Create new fetch promise
+    const fetchPromise = (async () => {
+      try {
+        const fetchStart = Date.now();
+        console.log(`🌐 [Hook #${hookInstanceId}] Sending API request...`);
+        
+        const response = await fetch('/api/auth/user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firebaseUid }),
+        });
+
+        const fetchTime = Date.now() - fetchStart;
+        console.log(`🌐 [Hook #${hookInstanceId}] API response in ${fetchTime}ms - Status:`, response.status);
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`✅ [Hook #${hookInstanceId}] User data fetched successfully`);
+          return data.user;
+        } else {
+          const errorData = await response.text();
+          console.log(`❌ [Hook #${hookInstanceId}] API error:`, errorData);
+        }
+        return null;
+      } catch (error) {
+        console.error(`❌ [Hook #${hookInstanceId}] Exception:`, error);
+        return null;
+      } finally {
+        // Clean up after fetch completes
+        console.log(`🧹 [Hook #${hookInstanceId}] Cleaning up pending fetch for:`, firebaseUid);
+        pendingFetches.delete(firebaseUid);
+      }
+    })();
+
+    // Store promise for deduplication
+    pendingFetches.set(firebaseUid, fetchPromise);
+    console.log(`💾 [Hook #${hookInstanceId}] Stored pending fetch. Total pending:`, pendingFetches.size);
+    
+    return fetchPromise;
   };
 
   // Refresh user data from MongoDB
   const refreshUserData = async (): Promise<void> => {
+    console.log(`🔄 [Hook #${hookInstanceId}] refreshUserData called`);
     if (user?.uid) {
       const userData = await fetchUserData(user.uid);
       if (userData) {
         setMongoUser(userData);
-        // Update the combined user object
         setUser(prev => prev ? { ...prev, ...userData } : null);
+        console.log(`✅ [Hook #${hookInstanceId}] User data refreshed`);
       }
     }
   };
 
   useEffect(() => {
+    console.log(`🔥 [Hook #${hookInstanceId}] Setting up Firebase auth listener`);
+    
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
-      console.log('🔥 Firebase auth state changed:', firebaseUser ? firebaseUser.uid : 'No user');
+      console.log(`🔥 [Hook #${hookInstanceId}] Firebase auth state changed`);
+      console.log(`👤 [Hook #${hookInstanceId}] Firebase user:`, firebaseUser ? firebaseUser.uid : 'No user');
+      
       if (firebaseUser) {
-        console.log('👤 Firebase user found:', {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName
-        });
+        console.log(`📞 [Hook #${hookInstanceId}] Triggering fetchUserData...`);
         
         // Get MongoDB user data
-        console.log('📞 Calling fetchUserData...');
         const userData = await fetchUserData(firebaseUser.uid);
-        console.log('📊 MongoDB user data:', userData);
+        console.log(`📊 [Hook #${hookInstanceId}] MongoDB user data:`, userData ? 'Received' : 'None');
         setMongoUser(userData);
 
         if (userData) {
-          // Create combined user object
           const combinedUser: EnhancedAuthUser = {
-            // Firebase properties
             uid: firebaseUser.uid,
             email: firebaseUser.email || userData.email,
             displayName: firebaseUser.displayName || userData.displayName,
             photoURL: firebaseUser.photoURL || userData.profileImage || undefined,
             emailVerified: firebaseUser.emailVerified,
-            
-            // MongoDB properties
             ...userData,
           };
           
+          console.log(`✅ [Hook #${hookInstanceId}] Combined user created`);
           setUser(combinedUser);
         } else {
-          // Firebase user exists but no MongoDB record
+          console.log(`⚠️ [Hook #${hookInstanceId}] No MongoDB record, using Firebase only`);
           setUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email || '',
             displayName: firebaseUser.displayName || '',
             photoURL: firebaseUser.photoURL || undefined,
             emailVerified: firebaseUser.emailVerified,
-            
-            // Default MongoDB fields
             _id: undefined,
             firebaseUid: firebaseUser.uid,
             fullRole: FullRole.USER,
@@ -189,18 +213,23 @@ export function useEnhancedAuth(): UseEnhancedAuthReturn {
           });
         }
       } else {
+        console.log(`🚫 [Hook #${hookInstanceId}] No Firebase user, clearing state`);
         setUser(null);
         setMongoUser(null);
       }
       setLoading(false);
+      console.log(`✅ [Hook #${hookInstanceId}] Auth state processing complete`);
     });
 
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      console.log(`🧹 [Hook #${hookInstanceId}] Cleaning up Firebase listener`);
+      unsubscribe();
+    };
+  }, [hookInstanceId]);
 
   const handleSignOut = async () => {
+    console.log(`🚪 [Hook #${hookInstanceId}] Sign out initiated`);
     try {
-      // Call logout API
       if (user) {
         await fetch('/api/auth/logout', {
           method: 'POST',
@@ -216,12 +245,13 @@ export function useEnhancedAuth(): UseEnhancedAuthReturn {
       localStorage.removeItem("isAuthenticated");
       setUser(null);
       setMongoUser(null);
+      console.log(`✅ [Hook #${hookInstanceId}] Sign out complete`);
     } catch (error) {
-      console.error('Sign out error:', error);
+      console.error(`❌ [Hook #${hookInstanceId}] Sign out error:`, error);
     }
   };
 
-  // Permission checking methods using ClientPermissionChecker
+  // Permission checking methods
   const hasCollectionPermission = useMemo(() => 
     (collection: Collection, action: Action): boolean => {
       if (!user) return false;
@@ -250,7 +280,6 @@ export function useEnhancedAuth(): UseEnhancedAuthReturn {
     }, [user]
   );
 
-  // Role checking methods
   const hasRole = useMemo(() =>
     (role: FullRole): boolean => {
       return user?.fullRole === role;
@@ -278,7 +307,6 @@ export function useEnhancedAuth(): UseEnhancedAuthReturn {
     }, [user]
   );
 
-  // User management permissions
   const canCreateUsers = useMemo(() =>
     (): boolean => {
       if (!user) return false;
@@ -293,7 +321,6 @@ export function useEnhancedAuth(): UseEnhancedAuthReturn {
     }, [user]
   );
 
-  // Navigation methods
   const canAccessNav = useMemo(() =>
     (navItem: NavigationItem): boolean => {
       if (!user) return false;
@@ -308,7 +335,6 @@ export function useEnhancedAuth(): UseEnhancedAuthReturn {
     }, [user]
   );
 
-  // Status checks
   const isActive = useMemo(() =>
     (): boolean => {
       return user?.status === UserStatus.ACTIVE;
@@ -328,46 +354,30 @@ export function useEnhancedAuth(): UseEnhancedAuthReturn {
   );
 
   return {
-    // User data
     user,
     mongoUser,
     loading,
-    
-    // Authentication methods
     signOut: handleSignOut,
     refreshUserData,
-    
-    // Permission checking methods
     hasCollectionPermission,
     getUserSubRoleForCollection,
     getUserActionsForCollection,
     getAccessibleCollections,
-    
-    // Role checking methods
     hasRole,
     hasAnyRole,
     isAdmin,
     isSuperAdmin,
-    
-    // User management permissions
     canCreateUsers,
     canManageUsers,
-    
-    // Navigation methods
     canAccessNav,
     getAccessibleNavItems,
-    
-    // Status checks
     isActive,
     isInvited,
     isSuspended,
   };
 }
 
-/**
- * Client-side Permission Guard Components
- */
-
+// Permission Guard Components and HOCs remain the same...
 interface PermissionGuardProps {
   collection?: Collection;
   action?: Action;
@@ -407,32 +417,26 @@ export function PermissionGuard({
 
   let hasAccess = true;
 
-  // Check if user must be active
   if (requireActive && !isActive()) {
     hasAccess = false;
   }
 
-  // Check collection permission
   if (collection && action && !hasCollectionPermission(collection, action)) {
     hasAccess = false;
   }
 
-  // Check specific role
   if (role && !hasRole(role)) {
     hasAccess = false;
   }
 
-  // Check any of multiple roles
   if (roles && !hasAnyRole(roles)) {
     hasAccess = false;
   }
 
-  // Check admin requirement
   if (requireAdmin && !isAdmin()) {
     hasAccess = false;
   }
 
-  // Check super admin requirement
   if (requireSuperAdmin && !isSuperAdmin()) {
     hasAccess = false;
   }
@@ -440,9 +444,6 @@ export function PermissionGuard({
   return hasAccess ? <>{children}</> : <>{fallback}</>;
 }
 
-/**
- * Navigation Guard for sidebar items
- */
 interface NavGuardProps {
   navItem: NavigationItem;
   fallback?: React.ReactNode;
@@ -458,10 +459,6 @@ export function NavGuard({ navItem, fallback = null, children }: NavGuardProps) 
 
   return canAccessNav(navItem) ? <>{children}</> : <>{fallback}</>;
 }
-
-/**
- * HOCs for component protection
- */
 
 export function withCollectionPermission<T extends object>(
   Component: React.ComponentType<T>,

@@ -443,7 +443,10 @@ export function validateMallData(data: Partial<MallFormData>, isUpdate = false):
 
   return {
     isValid: errors.length === 0,
-    errors,
+    errors: errors.reduce((acc, error, index) => {
+      acc[`error_${index}`] = error;
+      return acc;
+    }, {} as Record<string, string>),
     warnings,
     fieldErrors
   };
@@ -539,7 +542,7 @@ export function validateImageFile(file: File, fieldName: string, maxSizeMB: numb
 // Client-side validation for individual fields
 export function validateField(field: string, value: any, formData: Partial<MallFormData>): string {
   const validation = validateMallData({ [field]: value, ...formData }, true);
-  return validation.fieldErrors[field] || '';
+  return validation.fieldErrors?.[field] || '';
 }
 
 // Client-side validation for entire form
@@ -547,6 +550,6 @@ export function validateMallFormData(formData: MallFormData, isUpdate = false): 
   const validation = validateMallData(formData, isUpdate);
   return {
     isValid: validation.isValid,
-    errors: validation.fieldErrors
+    errors: validation.fieldErrors || {}
   };
 }

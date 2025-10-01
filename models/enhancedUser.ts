@@ -1,3 +1,5 @@
+// models/enhancedUser.ts
+
 import mongoose from "mongoose";
 
 // Collection types that can be managed
@@ -9,6 +11,7 @@ export enum Collection {
   DEVELOPERS = 'developers',
   PLOTS = 'plots',
   MALLS = 'malls',
+  BUILDINGS = 'buildings',
   COMMUNITIES = 'communities',
   USERS = 'users',
   SYSTEM = 'system',
@@ -34,7 +37,7 @@ export enum FullRole {
   ADMIN = 'admin',
   AGENT = 'agent',           // Projects
   MARKETING = 'marketing',   // Blogs, News
-  SALES = 'sales',          // Plots, Malls
+  SALES = 'sales',          // Plots, Malls, Buildings
   HR = 'hr',               // Careers, Developers
   COMMUNITY_MANAGER = 'community_manager', // Communities
   USER = 'user',           // Basic access
@@ -42,12 +45,10 @@ export enum FullRole {
 
 // Sub-Roles (Action Scope) - What actions they can perform
 export enum SubRole {
-  OBSERVER = 'observer',     // View only
-  EDITOR = 'editor',         // View + Edit
-  CONTRIBUTOR = 'contributor', // View + Add + Edit own
-  MODERATOR = 'moderator',   // View + Edit + Approve/Reject
-  MANAGER = 'manager',       // All actions except delete
-  ADMIN = 'admin',          // All actions
+  OBSERVER = 'observer',           // View only
+  CONTRIBUTOR = 'contributor',     // View + Add + Edit
+  MODERATOR = 'moderator',         // View + Add + Edit + Approve/Reject
+  COLLECTION_ADMIN = 'collection_admin', // All actions within this collection
 }
 
 // User status
@@ -69,10 +70,9 @@ export enum RequestStatus {
 // Collection assignment with sub-role
 export interface CollectionPermission {
   collection: Collection;
-  subRole: SubRole; // Single sub-role that defines what actions they can do on this collection
-  customActions?: string[]; // Custom actions for specific collections
+  subRole: SubRole;
+  customActions?: string[];
   restrictions?: {
-    // Optional restrictions like "only own content", "only approved content", etc.
     ownContentOnly?: boolean;
     approvedContentOnly?: boolean;
     departmentContentOnly?: boolean;
@@ -85,15 +85,15 @@ export interface PermissionRequest {
   userId: mongoose.Types.ObjectId;
   requestedBy: mongoose.Types.ObjectId;
   collection: Collection;
-  requestedSubRole: SubRole; // User wants this sub-role for this collection
-  currentSubRole?: SubRole; // Their current sub-role for this collection (if any)
+  requestedSubRole: SubRole;
+  currentSubRole?: SubRole;
   reason: string;
   status: RequestStatus;
   requestedAt: Date;
   reviewedBy?: mongoose.Types.ObjectId;
   reviewedAt?: Date;
   reviewNotes?: string;
-  expiresAt?: Date; // For temporary permissions
+  expiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -106,7 +106,7 @@ export interface IEnhancedUser {
   displayName: string;
   
   // Role system
-  fullRole: FullRole; // Primary role defining collection access
+  fullRole: FullRole;
   department?: string;
   status: UserStatus;
   
@@ -144,28 +144,29 @@ export interface IEnhancedUser {
   updatedBy?: mongoose.Types.ObjectId;
 }
 
-// Default collection access for each Full Role (Admin assigns sub-roles)
+// Default collection access for each Full Role
 export const FULL_ROLE_COLLECTIONS: Record<FullRole, Collection[]> = {
   [FullRole.SUPER_ADMIN]: Object.values(Collection), // Access to all collections
   [FullRole.ADMIN]: [
     Collection.PROJECTS, Collection.BLOGS, Collection.NEWS, Collection.CAREERS,
-    Collection.DEVELOPERS, Collection.PLOTS, Collection.MALLS, Collection.COMMUNITIES, Collection.USERS
+    Collection.DEVELOPERS, Collection.PLOTS, Collection.MALLS, Collection.BUILDINGS, 
+    Collection.COMMUNITIES, Collection.USERS
   ],
   [FullRole.AGENT]: [Collection.PROJECTS],
   [FullRole.MARKETING]: [Collection.BLOGS, Collection.NEWS],
-  [FullRole.SALES]: [Collection.PLOTS, Collection.MALLS],
+  [FullRole.SALES]: [Collection.PLOTS, Collection.MALLS, Collection.BUILDINGS],
   [FullRole.HR]: [Collection.CAREERS, Collection.DEVELOPERS],
   [FullRole.COMMUNITY_MANAGER]: [Collection.COMMUNITIES],
-  [FullRole.USER]: [Collection.PROJECTS], // Very limited default access
+  [FullRole.USER]: [Collection.PROJECTS],
 };
 
-// Default sub-roles for each Full Role (can be overridden by admin)
+// Default sub-roles for each Full Role
 export const FULL_ROLE_DEFAULT_SUBROLES: Record<FullRole, SubRole> = {
-  [FullRole.SUPER_ADMIN]: SubRole.ADMIN,
-  [FullRole.ADMIN]: SubRole.MANAGER,
-  [FullRole.AGENT]: SubRole.EDITOR,
-  [FullRole.MARKETING]: SubRole.EDITOR,
-  [FullRole.SALES]: SubRole.EDITOR,
+  [FullRole.SUPER_ADMIN]: SubRole.COLLECTION_ADMIN,
+  [FullRole.ADMIN]: SubRole.COLLECTION_ADMIN,
+  [FullRole.AGENT]: SubRole.CONTRIBUTOR,
+  [FullRole.MARKETING]: SubRole.CONTRIBUTOR,
+  [FullRole.SALES]: SubRole.CONTRIBUTOR,
   [FullRole.HR]: SubRole.MODERATOR,
   [FullRole.COMMUNITY_MANAGER]: SubRole.MODERATOR,
   [FullRole.USER]: SubRole.OBSERVER,
@@ -174,11 +175,9 @@ export const FULL_ROLE_DEFAULT_SUBROLES: Record<FullRole, SubRole> = {
 // Sub-role action definitions
 export const SUB_ROLE_ACTIONS: Record<SubRole, Action[]> = {
   [SubRole.OBSERVER]: [Action.VIEW],
-  [SubRole.CONTRIBUTOR]: [Action.VIEW, Action.ADD],
-  [SubRole.EDITOR]: [Action.VIEW, Action.ADD, Action.EDIT],
+  [SubRole.CONTRIBUTOR]: [Action.VIEW, Action.ADD, Action.EDIT],
   [SubRole.MODERATOR]: [Action.VIEW, Action.ADD, Action.EDIT, Action.APPROVE, Action.REJECT],
-  [SubRole.MANAGER]: [Action.VIEW, Action.ADD, Action.EDIT, Action.APPROVE, Action.REJECT, Action.PUBLISH, Action.UNPUBLISH],
-  [SubRole.ADMIN]: Object.values(Action), // All actions
+  [SubRole.COLLECTION_ADMIN]: Object.values(Action), // All actions
 };
 
 // Permission Request Schema
@@ -447,13 +446,29 @@ EnhancedUserSchema.methods.isLocked = function(): boolean {
 };
 
 // Pre-save middleware to set default permissions based on role
+// Better pre-save middleware that handles all scenarios
 EnhancedUserSchema.pre('save', function(next) {
-  if (this.isModified('fullRole') || this.isNew) {
-    // Get collections this role can access
+  // Scenario 1: Brand new user being created
+  if (this.isNew) {
+    // Set default permissions for new users if not already set
+    if (!this.collectionPermissions || this.collectionPermissions.length === 0) {
+      const accessibleCollections = FULL_ROLE_COLLECTIONS[this.fullRole] || [];
+      const defaultSubRole = FULL_ROLE_DEFAULT_SUBROLES[this.fullRole] || SubRole.OBSERVER;
+      
+      this.collectionPermissions = accessibleCollections.map(collection => ({
+        collection,
+        subRole: defaultSubRole,
+        customActions: [],
+        restrictions: this.fullRole === FullRole.USER ? { approvedContentOnly: true } : {},
+      }));
+    }
+  }
+  // Scenario 2: Existing user's role is being changed
+  else if (this.isModified('fullRole')) {
+    // When role changes, recalculate permissions
     const accessibleCollections = FULL_ROLE_COLLECTIONS[this.fullRole] || [];
     const defaultSubRole = FULL_ROLE_DEFAULT_SUBROLES[this.fullRole] || SubRole.OBSERVER;
     
-    // Create collection permissions with default sub-role
     this.collectionPermissions = accessibleCollections.map(collection => ({
       collection,
       subRole: defaultSubRole,
@@ -461,8 +476,9 @@ EnhancedUserSchema.pre('save', function(next) {
       restrictions: this.fullRole === FullRole.USER ? { approvedContentOnly: true } : {},
     }));
   }
+  // Scenario 3: Other fields modified (like lastLogin) - don't touch permissions
+  
   next();
 });
-
 export const EnhancedUser = mongoose.models.EnhancedUser || mongoose.model<IEnhancedUser>('EnhancedUser', EnhancedUserSchema);
 export const PermissionRequestModel = mongoose.models.PermissionRequest || mongoose.model<PermissionRequest>('PermissionRequest', PermissionRequestSchema);

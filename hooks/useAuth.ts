@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { User, onAuthStateChanged, signOut } from 'firebase/auth'
 import { auth } from '@/firebase'
-import { UserRole, Permission, IUser } from '@/models/user'
+import { UserRole, Permission, IUser } from '@/models/enhancedUser'
 
 interface AuthUser {
   uid: string
