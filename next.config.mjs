@@ -22,8 +22,6 @@ const nextConfig = {
       exclude: ['error', 'warn'],
     } : false,
   },
-  // Enable SWC minification (faster than Terser)
-  swcMinify: true,
   // Reduce bundle size
   productionBrowserSourceMaps: false,
   // Power production optimizations

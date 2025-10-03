@@ -5,8 +5,10 @@
  * Collection admins can NEVER become system admins through any code path.
  */
 
-import { FullRole, SubRole, Collection, Action } from '@/types/user';
-import type { IEnhancedUser } from '@/models/enhancedUser';
+import { FullRole, SubRole, Collection, Action, ClientUser } from '@/types/user';
+
+// Type alias for compatibility
+type IEnhancedUser = ClientUser;
 
 /**
  * CRITICAL: These are the ONLY system-wide administrative roles

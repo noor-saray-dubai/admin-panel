@@ -58,9 +58,15 @@ interface IDiningVenue {
   description: string;
   cuisine?: string[];
   capacity?: number;
-  operatingHours?: string;
+  operatingHours?: {
+    breakfast: string;
+    lunch: string;
+    dinner: string;
+    allDay: boolean;
+  };
   priceRange?: string; // "$$$$", "$$$", etc.
   reservationRequired?: boolean;
+  dressCode?: string;
 }
 
 interface IWellnessFacilities {
@@ -82,18 +88,6 @@ interface IMeetingsFacilities {
   technicalSupport?: boolean;
 }
 
-interface IFinancials {
-  annualRevenue?: number;
-  occupancyRate?: number; // Average annual occupancy percentage
-  adr?: number; // Average Daily Rate
-  revPAR?: number; // Revenue Per Available Room
-  operatingExpenses?: number;
-  noi?: number; // Net Operating Income
-  capRate: number;
-  roi: number;
-  appreciation: number;
-  payback: number;
-}
 
 interface ITransactionHistory {
   date: Date;
@@ -246,7 +240,6 @@ export interface IHotel extends Document<any, HotelQueryHelpers> {
   facts?: string[]; // Key facts about the hotel
   
   // Business & Investment Information
-  financials?: IFinancials;
   saleInformation?: ISaleInformation;
   legalDetails?: ILegalDetails;
   operationalDetails?: IOperationalDetails;
@@ -396,12 +389,22 @@ const DiningVenueSchema = new Schema<IDiningVenue>({
   },
   cuisine: { type: [String], default: [] },
   capacity: { type: Number, min: [1, 'Capacity must be positive'] },
-  operatingHours: { type: String, trim: true },
+  operatingHours: {
+    breakfast: { type: String, trim: true, default: '' },
+    lunch: { type: String, trim: true, default: '' },
+    dinner: { type: String, trim: true, default: '' },
+    allDay: { type: Boolean, default: false }
+  },
   priceRange: { 
     type: String, 
-    enum: ['$', '$$', '$$$', '$$$$', '$$$$$']
+    enum: {
+      values: ['$', '$$', '$$$', '$$$$', '$$$$$'],
+      message: 'Price range must be one of: $, $$, $$$, $$$$, $$$$$'
+    },
+    required: false
   },
-  reservationRequired: { type: Boolean, default: false }
+  reservationRequired: { type: Boolean, default: false },
+  dressCode: { type: String, trim: true, default: '' }
 }, { _id: false });
 
 const WellnessFacilitiesSchema = new Schema<IWellnessFacilities>({
@@ -455,22 +458,6 @@ const MeetingsFacilitiesSchema = new Schema<IMeetingsFacilities>({
   technicalSupport: { type: Boolean, default: true }
 }, { _id: false });
 
-const FinancialsSchema = new Schema<IFinancials>({
-  annualRevenue: { type: Number, min: [0, 'Revenue cannot be negative'] },
-  occupancyRate: { 
-    type: Number, 
-    min: [0, 'Occupancy rate cannot be negative'],
-    max: [100, 'Occupancy rate cannot exceed 100%']
-  },
-  adr: { type: Number, min: [0, 'ADR cannot be negative'] },
-  revPAR: { type: Number, min: [0, 'RevPAR cannot be negative'] },
-  operatingExpenses: { type: Number, min: [0, 'Operating expenses cannot be negative'] },
-  noi: { type: Number },
-  capRate: { type: Number, min: [0, 'Cap rate cannot be negative'] },
-  roi: { type: Number, min: [0, 'ROI cannot be negative'] },
-  appreciation: { type: Number, min: [0, 'Appreciation cannot be negative'] },
-  payback: { type: Number, min: [0, 'Payback period cannot be negative'] }
-}, { _id: false });
 
 const TransactionHistorySchema = new Schema<ITransactionHistory>({
   date: { type: Date, required: true },
@@ -777,7 +764,6 @@ const HotelSchema = new Schema<IHotel>(
     facts: { type: [String], default: [] },
     
     // Business & Investment Information
-    financials: { type: FinancialsSchema },
     saleInformation: { type: SaleInformationSchema },
     legalDetails: { type: LegalDetailsSchema },
     operationalDetails: { type: OperationalDetailsSchema },
@@ -901,9 +887,7 @@ HotelSchema.virtual('totalAccommodation').get(function() {
 HotelSchema.virtual('investmentSummary').get(function() {
   return {
     askingPrice: this.saleInformation?.askingPrice || this.price.total,
-    capRate: this.financials?.capRate,
-    roi: this.financials?.roi,
-    occupancyRate: this.financials?.occupancyRate || this.occupancyRate,
+    occupancyRate: this.occupancyRate,
     saleStatus: this.saleInformation?.saleStatus || 'notForSale'
   };
 });
@@ -911,8 +895,6 @@ HotelSchema.virtual('investmentSummary').get(function() {
 HotelSchema.virtual('operationalMetrics').get(function() {
   return {
     occupancyRate: this.occupancyRate,
-    adr: this.financials?.adr,
-    revPAR: this.financials?.revPAR,
     totalRooms: this.totalRooms,
     totalSuites: this.totalSuites,
     diningVenues: this.dining?.length || 0
@@ -1010,11 +992,7 @@ HotelSchema.methods.getInvestmentMetrics = function() {
   return {
     askingPrice: this.saleInformation?.askingPrice || this.price.total,
     valuation: this.price.total,
-    capRate: this.financials?.capRate ? `${this.financials.capRate}%` : 'N/A',
-    roi: this.financials?.roi ? `${this.financials.roi}%` : 'N/A',
     occupancyRate: this.occupancyRate ? `${this.occupancyRate}%` : 'N/A',
-    adr: this.financials?.adr ? `${this.financials.adr}` : 'N/A',
-    revPAR: this.financials?.revPAR ? `${this.financials.revPAR}` : 'N/A',
     saleStatus: this.saleInformation?.saleStatus || 'notForSale'
   };
 };
@@ -1153,7 +1131,6 @@ export type {
   IDiningVenue,
   IWellnessFacilities,
   IMeetingsFacilities,
-  IFinancials,
   ISaleInformation,
   ILegalDetails,
   IOperationalDetails,

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   User, 
   Mail, 
@@ -51,7 +51,7 @@ interface ProfileFormData {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, loading: authLoading, refreshUserData } = useEnhancedAuth();
+  const { user, loading: authLoading, refreshUserData } = useAuth();
   
   const [formData, setFormData] = useState<ProfileFormData>({
     displayName: '',

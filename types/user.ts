@@ -8,6 +8,8 @@ export enum Collection {
   CAREERS = 'careers',
   DEVELOPERS = 'developers',
   PLOTS = 'plots',
+  BUILDINGS = 'buildings',
+  HOTELS = 'hotels',
   MALLS = 'malls',
   COMMUNITIES = 'communities',
   USERS = 'users',
@@ -112,11 +114,11 @@ export const FULL_ROLE_COLLECTIONS: Record<FullRole, Collection[]> = {
   [FullRole.SUPER_ADMIN]: Object.values(Collection), // Access to all collections
   [FullRole.ADMIN]: [
     Collection.PROJECTS, Collection.BLOGS, Collection.NEWS, Collection.CAREERS,
-    Collection.DEVELOPERS, Collection.PLOTS, Collection.MALLS, Collection.COMMUNITIES, Collection.USERS
+    Collection.DEVELOPERS, Collection.PLOTS, Collection.BUILDINGS, Collection.HOTELS, Collection.MALLS, Collection.COMMUNITIES, Collection.USERS
   ],
   [FullRole.AGENT]: [Collection.PROJECTS],
   [FullRole.MARKETING]: [Collection.BLOGS, Collection.NEWS],
-  [FullRole.SALES]: [Collection.PLOTS, Collection.MALLS],
+  [FullRole.SALES]: [Collection.PLOTS, Collection.BUILDINGS, Collection.HOTELS, Collection.MALLS],
   [FullRole.HR]: [Collection.CAREERS, Collection.DEVELOPERS],
   [FullRole.COMMUNITY_MANAGER]: [Collection.COMMUNITIES],
   [FullRole.USER]: [Collection.PROJECTS], // Very limited default access
@@ -163,6 +165,14 @@ export class ClientPermissionChecker {
       return allowedActions.includes(action);
     }
 
+    // Check default role permissions
+    const defaultCollections = FULL_ROLE_COLLECTIONS[user.fullRole] || [];
+    if (defaultCollections.includes(collection)) {
+      const defaultSubRole = FULL_ROLE_DEFAULT_SUBROLES[user.fullRole];
+      const allowedActions = SUB_ROLE_ACTIONS[defaultSubRole] || [];
+      return allowedActions.includes(action);
+    }
+
     return false;
   }
 
@@ -182,6 +192,12 @@ export class ClientPermissionChecker {
       return rolePermission.subRole;
     }
 
+    // Check if collection is accessible by default role
+    const defaultCollections = FULL_ROLE_COLLECTIONS[user.fullRole] || [];
+    if (defaultCollections.includes(collection)) {
+      return FULL_ROLE_DEFAULT_SUBROLES[user.fullRole];
+    }
+
     return null;
   }
 
@@ -198,10 +214,14 @@ export class ClientPermissionChecker {
   static getUserAccessibleCollections(user: ClientUser): Collection[] {
     const collections = new Set<Collection>();
 
-    // Add from role permissions
+    // Add default collections for user's full role
+    const defaultCollections = FULL_ROLE_COLLECTIONS[user.fullRole] || [];
+    defaultCollections.forEach(collection => collections.add(collection));
+
+    // Add from role permissions (explicit grants)
     user.collectionPermissions?.forEach(p => collections.add(p.collection));
     
-    // Add from overrides
+    // Add from overrides (additional grants)
     user.permissionOverrides?.forEach(p => collections.add(p.collection));
 
     return Array.from(collections);

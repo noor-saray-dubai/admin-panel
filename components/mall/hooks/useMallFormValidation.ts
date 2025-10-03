@@ -97,8 +97,8 @@ export function useMallFormValidation({ formData }: UseMallFormValidationProps) 
         pricePerSqft: formData.price?.perSqft > 0,
         currency: formData.price?.currency,
         maxStores: formData.rentalDetails?.maxStores >= 1,
-        yearBuilt: formData.yearBuilt >= 1900 && formData.yearBuilt <= 2050,
-        yearOpened: formData.yearOpened >= 1900 && formData.yearOpened <= 2050,
+        yearBuilt: (formData.yearBuilt ?? 0) >= 1900 && (formData.yearBuilt ?? 0) <= 2050,
+        yearOpened: (formData.yearOpened ?? 0) >= 1900 && (formData.yearOpened ?? 0) <= 2050,
         mainImage: formData.image?.trim() && formData.image.trim().length > 0
       }
       

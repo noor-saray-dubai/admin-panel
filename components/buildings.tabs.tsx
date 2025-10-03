@@ -27,7 +27,7 @@ import {
 } from "lucide-react"
 
 import type { IBuilding, BuildingFormData } from "@/types/buildings"
-import { BuildingFormModal } from "@/components/building-form-modal"
+import { BuildingFormModal } from "@/components/building"
 import { DeleteConfirmationModal } from "@/components/delete-confirmation-modal"
 import { BuildingCard } from "@/components/building-card"
 import { BuildingViewModal } from "@/components/building-view-modal"
@@ -277,20 +277,30 @@ export function BuildingTabs() {
 
   // Handle URL action parameter
   useEffect(() => {
-    if (action === "new") {
+    if (action === "new" && !isAddModalOpen) {
+      console.log('🔄 Opening add modal from URL action')
       setIsAddModalOpen(true)
     } else if (action === "edit") {
       // Check if there's a building slug in the URL to edit
       const buildingSlug = searchParams.get("slug")
       if (buildingSlug && buildings.length > 0) {
         const buildingToEdit = buildings.find(b => b.slug === buildingSlug)
-        if (buildingToEdit) {
+        if (buildingToEdit && !isEditModalOpen) {
           setSelectedBuilding(buildingToEdit)
           setIsEditModalOpen(true)
         }
       }
+    } else if (!action) {
+      // Ensure modals are closed when no action is specified
+      if (isAddModalOpen) {
+        console.log('ℹ️ Closing add modal - no action in URL')
+        setIsAddModalOpen(false)
+      }
+      if (isEditModalOpen) {
+        setIsEditModalOpen(false)
+      }
     }
-  }, [action, searchParams, buildings])
+  }, [action, searchParams, buildings, isAddModalOpen, isEditModalOpen])
 
   // Handle tab change
   const handleTabChange = (tab: string) => {
@@ -347,15 +357,39 @@ export function BuildingTabs() {
   }
 
   const closeModal = () => {
+    // First close the modal immediately to prevent any UI flicker
+    setIsAddModalOpen(false)
+    
+    // Clear the selected building state
+    setSelectedBuilding(null)
+    
+    // Then update the URL to remove action parameter
     const currentUrl = new URL(window.location.href)
     currentUrl.searchParams.delete("action")
+    currentUrl.searchParams.delete("slug") // Also remove slug if present
+    
+    // Use replace to avoid adding to browser history
     router.replace(currentUrl.toString())
-    setIsAddModalOpen(false)
+    
+    console.log('✅ Add modal closed successfully')
   }
 
   const closeEditModal = () => {
+    // First close the modal immediately to prevent any UI flicker
     setIsEditModalOpen(false)
+    
+    // Clear the selected building state
     setSelectedBuilding(null)
+    
+    // Then update the URL to remove action and slug parameters
+    const currentUrl = new URL(window.location.href)
+    currentUrl.searchParams.delete("action")
+    currentUrl.searchParams.delete("slug")
+    
+    // Use replace to avoid adding to browser history
+    router.replace(currentUrl.toString())
+    
+    console.log('✅ Edit modal closed successfully')
   }
 
   const closeViewModal = () => {
@@ -376,8 +410,13 @@ export function BuildingTabs() {
   }
 
   const handleEditBuilding = (building: IBuilding) => {
-    setSelectedBuilding(building)
-    setIsEditModalOpen(true)
+    console.log('🔧 Edit button clicked for building:', building.name, building.buildingId)
+    console.log('🔧 Updating URL with action=edit and slug parameter...')
+    const currentUrl = new URL(window.location.href)
+    currentUrl.searchParams.set("action", "edit")
+    currentUrl.searchParams.set("slug", building.slug)
+    router.push(currentUrl.toString())
+    console.log('🔧 URL updated - modal should open via useEffect')
   }
 
   const handleDeleteBuilding = (building: IBuilding) => {

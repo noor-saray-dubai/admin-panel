@@ -73,7 +73,7 @@ export class FirebaseAdminService {
   static async generatePasswordResetLink(
     email: string, 
     actionCodeSettings?: {
-      url?: string;
+      url: string;
       handleCodeInApp?: boolean;
       iOS?: {
         bundleId: string;

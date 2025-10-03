@@ -1,90 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { MapPin, Building, Calendar, DollarSign, Users } from "lucide-react"
-
-interface PaymentMilestone {
-  milestone: string;
-  percentage: string;
-}
-
-interface PaymentPlan {
-  booking: string;
-  construction: PaymentMilestone[];
-  handover: string;
-}
-
-interface NearbyPlace {
-  name: string;
-  distance: string;
-}
-
-interface Coordinates {
-  latitude: number;
-  longitude: number;
-}
-
-interface LocationDetails {
-  description: string;
-  nearby: NearbyPlace[];
-  coordinates: Coordinates;
-}
-
-interface AmenityCategory {
-  category: string;
-  items: string[];
-}
-
-interface UnitType {
-  type: string;
-  size: string;
-  price: string;
-}
-
-
-
-interface Developer {
-  id: string;
-  name: string;
-  slug?: string;
-}
-
-interface IProject {
-  _id: string;
-  id: string;
-  slug: string;
-  name: string;
-  location: string;
-  locationSlug: string;
-  type: string;
-  status: string;
-  statusSlug: string;
-  developer: string;
-  developerSlug: string;
-  price: string;
-  priceNumeric: number;
-  image: string;
-  description: string;
-  overview: string;
-  completionDate: string;
-  totalUnits: number;
-  amenities: AmenityCategory[];
-  unitTypes: UnitType[];
-  gallery: string[];
-  paymentPlan: PaymentPlan;
-  locationDetails: LocationDetails;
-  categories: string[];
-  featured: boolean;
-  launchDate: string;
-  registrationOpen: boolean;
-  flags: {
-    elite: boolean;
-    exclusive: boolean;
-    featured: boolean;
-    highValue: boolean;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
+import type { IProject } from "@/types/projects"
 
 interface ProjectViewModalProps {
   isOpen: boolean
@@ -161,7 +78,7 @@ export function ProjectViewModal({ isOpen, onClose, project }: ProjectViewModalP
               <div className="flex items-center space-x-2">
                 <DollarSign className="h-5 w-5 text-muted-foreground" />
                 <span className="font-medium">Price:</span>
-                <span className="text-green-600 font-semibold">{project.price}</span>
+                <span className="text-green-600 font-semibold">{project.price?.total || 'N/A'}</span>
               </div>
 
               <div className="flex items-center space-x-2">

@@ -17,6 +17,7 @@ export function DeleteConfirmationModal({
   isOpen,
   onClose,
   onConfirm,
+  
   itemName,
   itemType,
   isDeleting = false,

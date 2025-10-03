@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Project from "@/models/project";
-import { v2 as cloudinary } from 'cloudinary';
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { updateProjectSlugs } from "@/lib/slug-utils";
 import { rateLimit } from "@/lib/rate-limiter";
-
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
 
 interface NearbyPlace {
   name: string;
@@ -66,6 +59,8 @@ interface ProjectUpdateData {
   developer?: string;
   price?: string;
   priceNumeric?: number;
+  image?: string; // Cover image URL
+  gallery?: string[]; // Gallery image URLs
   description?: string;
   overview?: string;
   completionDate?: string;
@@ -83,93 +78,16 @@ interface ProjectUpdateData {
 }
 
 /**
- * Enhanced image upload for updates with cleanup of old images
+ * Validate image URL format
  */
-async function uploadImageWithCleanup(
-  fileBuffer: Buffer,
-  fileName: string,
-  folderName: string,
-  oldImageUrl?: string,
-  isGallery: boolean = false,
-  retryCount: number = 3
-): Promise<string> {
-  const uploadConfig = {
-    folder: folderName,
-    public_id: fileName,
-    format: 'webp',
-    quality: 'auto:good',
-    fetch_format: 'auto',
-    width: isGallery ? 1200 : 1920,
-    height: isGallery ? 800 : 1080,
-    crop: 'limit',
-    resource_type: 'image' as const,
-    secure: true,
-    overwrite: true,
-    invalidate: true,
-  };
-
-  for (let attempt = 1; attempt <= retryCount; attempt++) {
-    try {
-      const result = await new Promise<any>((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          uploadConfig,
-          (error, result) => {
-            if (error) {
-              console.error(`Cloudinary upload attempt ${attempt} failed:`, error);
-              reject(error);
-            } else {
-              resolve(result);
-            }
-          }
-        );
-        
-        uploadStream.end(fileBuffer);
-      });
-
-      // Validate the result
-      if (!result?.secure_url) {
-        throw new Error('Upload succeeded but no secure URL returned');
-      }
-
-      // Clean up old image if it exists and is different
-      if (oldImageUrl && oldImageUrl !== result.secure_url) {
-        try {
-          const publicId = extractPublicId(oldImageUrl);
-          if (publicId) {
-            await cloudinary.uploader.destroy(publicId);
-            console.log(`Cleaned up old image: ${publicId}`);
-          }
-        } catch (cleanupError) {
-          console.warn('Failed to cleanup old image:', cleanupError);
-          // Don't fail the update if cleanup fails
-        }
-      }
-
-      return result.secure_url;
-    } catch (error: any) {
-      console.error(`Upload attempt ${attempt}/${retryCount} failed:`, error.message);
-      
-      if (attempt === retryCount) {
-        throw new Error(`Failed to upload image after ${retryCount} attempts: ${error.message}`);
-      }
-      
-      // Exponential backoff
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-    }
-  }
-  
-  throw new Error('Upload failed after all retry attempts');
-}
-
-/**
- * Extract Cloudinary public ID from URL
- */
-function extractPublicId(url: string): string | null {
+function validateImageUrl(url: string): boolean {
   try {
-    const matches = url.match(/\/([^/]+)\.(jpg|jpeg|png|webp|gif)$/);
-    return matches ? matches[1] : null;
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname.toLowerCase();
+    const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    return validExtensions.some(ext => pathname.includes(ext));
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -291,6 +209,25 @@ function validateUpdateData(data: ProjectUpdateData, existingProject: any): {
       if (launchDate > existingProject.completionDate) {
         errors.push("launchDate cannot be after existing completionDate.");
       }
+    }
+  }
+
+  // Image URL validations (optional for updates)
+  if (data.image !== undefined) {
+    if (!data.image || !validateImageUrl(data.image)) {
+      errors.push("image must be a valid image URL.");
+    }
+  }
+  
+  if (data.gallery !== undefined) {
+    if (!Array.isArray(data.gallery)) {
+      errors.push("gallery must be an array of image URLs.");
+    } else {
+      data.gallery.forEach((url, idx) => {
+        if (!url || !validateImageUrl(url)) {
+          errors.push(`gallery[${idx}] must be a valid image URL.`);
+        }
+      });
     }
   }
 
@@ -436,6 +373,12 @@ function sanitizeUpdateData(data: ProjectUpdateData): ProjectUpdateData {
   if (data.overview !== undefined) sanitized.overview = sanitizeString(data.overview);
   if (data.price !== undefined) sanitized.price = sanitizeString(data.price);
   
+  // Handle image URLs
+  if (data.image !== undefined) sanitized.image = data.image.trim();
+  if (data.gallery !== undefined) {
+    sanitized.gallery = data.gallery.map(url => url.trim()).filter(url => url.length > 0);
+  }
+  
   // Copy non-string fields as-is
   ['type', 'status', 'priceNumeric', 'completionDate', 'totalUnits', 'registrationOpen', 'launchDate', 'featured', 'flags'].forEach(field => {
     if ((data as any)[field] !== undefined) {
@@ -521,13 +464,14 @@ function canUpdateProject(user: any, project: any): { canUpdate: boolean; reason
 }
 
 /**
- * Main PUT handler with authentication
+ * Main PUT handler with ZeroTrust authentication
  */
-export const PUT = withAuth(async (
+async function handler(
   request: NextRequest, 
-  { user, audit }, 
   { params }: { params: { slug: string } }
-) => {
+) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -557,38 +501,23 @@ export const PUT = withAuth(async (
       );
     }
 
-    // Check permissions
-    const permissionCheck = canUpdateProject(user, existingProject);
-    if (!permissionCheck.canUpdate) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: permissionCheck.reason || "Insufficient permissions", 
-          error: "FORBIDDEN" 
-        },
-        { status: 403 }
-      );
-    }
+    // Permission check handled by ZeroTrust withCollectionPermission
 
-    // Parse form data
-    const formData = await request.formData();
-    const projectDataString = formData.get("projectData") as string;
-
-    if (!projectDataString) {
+    // Parse JSON data directly
+    let updateData: ProjectUpdateData;
+    try {
+      updateData = await request.json();
+    } catch (parseError) {
+      console.error("JSON parse error:", parseError);
       return NextResponse.json(
-        { success: false, message: "Project data is required", error: "MISSING_PROJECT_DATA" },
+        { success: false, message: "Invalid JSON payload", error: "INVALID_JSON" },
         { status: 400 }
       );
     }
 
-    // Parse and validate JSON
-    let updateData: ProjectUpdateData;
-    try {
-      updateData = JSON.parse(projectDataString);
-    } catch (parseError) {
-      console.error("JSON parse error:", parseError);
+    if (!updateData || typeof updateData !== 'object') {
       return NextResponse.json(
-        { success: false, message: "Invalid project data JSON", error: "INVALID_JSON" },
+        { success: false, message: "Project data is required", error: "MISSING_PROJECT_DATA" },
         { status: 400 }
       );
     }
@@ -637,74 +566,16 @@ export const PUT = withAuth(async (
     // Generate updated slugs
     const slugs = await updateProjectSlugs(mergedData, existingProject);
 
-    // Handle cover image update if provided
+    // Handle cover image update if provided in updateData
     let coverImageUrl = existingProject.image;
-    const coverImageFile = formData.get('coverImage') as File;
-    
-    if (coverImageFile && coverImageFile.size > 0) {
-      if (coverImageFile.size > 10 * 1024 * 1024) {
-        return NextResponse.json(
-          { success: false, message: "Cover image must be less than 10MB", error: "FILE_TOO_LARGE" },
-          { status: 400 }
-        );
-      }
-
-      const coverBuffer = Buffer.from(await coverImageFile.arrayBuffer());
-      coverImageUrl = await uploadImageWithCleanup(
-        coverBuffer,
-        `cover-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        slugs.slug,
-        existingProject.image,
-        false
-      );
+    if (updateData.image !== undefined) {
+      coverImageUrl = updateData.image;
     }
 
-    // Handle gallery images update if provided
+    // Handle gallery images update if provided in updateData
     let galleryUrls = existingProject.gallery;
-    const newGalleryUrls: string[] = [];
-    let galleryIndex = 0;
-    const maxGalleryImages = 20;
-    
-    while (galleryIndex < maxGalleryImages && formData.get(`gallery_${galleryIndex}`)) {
-      const galleryFile = formData.get(`gallery_${galleryIndex}`) as File;
-      
-      if (galleryFile && galleryFile.size > 0) {
-        if (galleryFile.size > 10 * 1024 * 1024) {
-          return NextResponse.json(
-            { success: false, message: `Gallery image ${galleryIndex + 1} must be less than 10MB`, error: "FILE_TOO_LARGE" },
-            { status: 400 }
-          );
-        }
-
-        const galleryBuffer = Buffer.from(await galleryFile.arrayBuffer());
-        const galleryUrl = await uploadImageWithCleanup(
-          galleryBuffer,
-          `gallery-${galleryIndex}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          slugs.slug,
-          existingProject.gallery[galleryIndex],
-          true
-        );
-        newGalleryUrls.push(galleryUrl);
-      }
-      galleryIndex++;
-    }
-
-    // If new gallery images were uploaded, use them
-    if (newGalleryUrls.length > 0) {
-      // Clean up old gallery images that aren't being replaced
-      const oldGalleryUrls = existingProject.gallery.slice(newGalleryUrls.length);
-      for (const oldUrl of oldGalleryUrls) {
-        try {
-          const publicId = extractPublicId(oldUrl);
-          if (publicId) {
-            await cloudinary.uploader.destroy(publicId);
-          }
-        } catch (cleanupError) {
-          console.warn('Failed to cleanup old gallery image:', cleanupError);
-        }
-      }
-      
-      galleryUrls = newGalleryUrls;
+    if (updateData.gallery !== undefined) {
+      galleryUrls = updateData.gallery;
     }
 
     // Prepare update object
@@ -713,7 +584,11 @@ export const PUT = withAuth(async (
       ...slugs,
       image: coverImageUrl,
       gallery: galleryUrls,
-      updatedBy: audit,
+      // Simple audit data (current requirement)
+      updatedBy: user.firebaseUid,
+      // Rich audit data foundation (for future enhancement)
+      // updatedByEmail: user.email,
+      // updatedByRole: user.fullRole,
       updatedAt: new Date(),
     };
 
@@ -752,13 +627,7 @@ export const PUT = withAuth(async (
       );
     }
 
-    // Log successful update
-    console.log(`Project updated successfully by ${user.email}:`, {
-      id: updatedProject._id,
-      name: updatedProject.name,
-      slug: updatedProject.slug,
-      changes: Object.keys(updateData)
-    });
+    // Project updated successfully - audit data stored in database
 
     // Return success response
     return NextResponse.json(
@@ -775,7 +644,7 @@ export const PUT = withAuth(async (
           image: updatedProject.image,
           gallery: updatedProject.gallery,
           updatedAt: updatedProject.updatedAt,
-          updatedBy: updatedProject.updatedBy.email,
+          updatedBy: updatedProject.updatedBy,
           version: updatedProject.version
         },
       },
@@ -809,16 +678,6 @@ export const PUT = withAuth(async (
       );
     }
 
-    if (error.message && error.message.includes('Cloudinary')) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Image upload failed",
-          error: "IMAGE_UPLOAD_ERROR",
-        },
-        { status: 500 }
-      );
-    }
 
     // Generic server error
     return NextResponse.json(
@@ -830,4 +689,8 @@ export const PUT = withAuth(async (
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+// Requires EDIT_CONTENT capability for PROJECTS collection
+export const PUT = withCollectionPermission(Collection.PROJECTS, Action.EDIT)(handler);

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Project from "@/models/project";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { updateProjectSlugs } from "@/lib/slug-utils";
 import { rateLimit } from "@/lib/rate-limiter";
 
@@ -61,6 +62,8 @@ interface ProjectData {
   developer: string;
   price: string;
   priceNumeric: number;
+  image: string; // Cover image URL
+  gallery: string[]; // Gallery image URLs
   description: string;
   completionDate: string;
   totalUnits: number;
@@ -78,89 +81,17 @@ interface ProjectData {
 }
 
 /**
- * Enhanced image upload with Cloudinary optimization (no Sharp dependency)
+ * Validate image URL format
  */
-async function uploadImageToCloudinary(
-  file: File,
-  fileName: string,
-  folderName: string,
-  isGallery: boolean = false,
-  retryCount: number = 3
-): Promise<string> {
-  // Lazy load Cloudinary to avoid potential Sharp conflicts
-  const { v2: cloudinary } = await import('cloudinary');
-  
-  // Configure Cloudinary
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-    api_key: process.env.CLOUDINARY_API_KEY!,
-    api_secret: process.env.CLOUDINARY_API_SECRET!,
-  });
-
-  // Convert File to Buffer
-  const bytes = await file.arrayBuffer();
-  const fileBuffer = Buffer.from(bytes);
-
-  const uploadConfig = {
-    folder: folderName,
-    public_id: fileName,
-    format: 'webp',
-    quality: 'auto:good',
-    fetch_format: 'auto',
-    // Let Cloudinary handle all optimization
-    transformation: [
-      { 
-        width: isGallery ? 1200 : 1920, 
-        height: isGallery ? 800 : 1080, 
-        crop: 'limit' 
-      },
-      { quality: 'auto:good' },
-      { format: 'auto' }
-    ],
-    resource_type: 'image' as const,
-    secure: true,
-    invalidate: true,
-    overwrite: false,
-  };
-
-  for (let attempt = 1; attempt <= retryCount; attempt++) {
-    try {
-      const result = await new Promise<any>((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          uploadConfig,
-          (error, result) => {
-            if (error) {
-              console.error(`Cloudinary upload attempt ${attempt} failed:`, error);
-              reject(error);
-            } else {
-              resolve(result);
-            }
-          }
-        );
-        
-        uploadStream.end(fileBuffer);
-      });
-
-      // Validate the result
-      if (!result?.secure_url) {
-        throw new Error('Upload succeeded but no secure URL returned');
-      }
-
-      console.log(`Image uploaded successfully on attempt ${attempt}:`, result.secure_url);
-      return result.secure_url;
-    } catch (error: any) {
-      console.error(`Upload attempt ${attempt}/${retryCount} failed:`, error.message);
-      
-      if (attempt === retryCount) {
-        throw new Error(`Failed to upload image after ${retryCount} attempts: ${error.message}`);
-      }
-      
-      // Exponential backoff
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-    }
+function validateImageUrl(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname.toLowerCase();
+    const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    return validExtensions.some(ext => pathname.includes(ext));
+  } catch {
+    return false;
   }
-  
-  throw new Error('Upload failed after all retry attempts');
 }
 
 /**
@@ -198,6 +129,21 @@ function validateProjectData(data: ProjectData): { isValid: boolean; errors: str
   validateString(data.description, "description", 10, 2000);
   validateString(data.overview, "overview", 20, 5000);
   validateString(data.price, "price", 1, 50);
+
+  // Image URL validations
+  if (!data.image || !validateImageUrl(data.image)) {
+    errors.push("image must be a valid image URL.");
+  }
+  
+  if (!Array.isArray(data.gallery) || data.gallery.length === 0) {
+    errors.push("gallery must be a non-empty array of image URLs.");
+  } else {
+    data.gallery.forEach((url, idx) => {
+      if (!url || !validateImageUrl(url)) {
+        errors.push(`gallery[${idx}] must be a valid image URL.`);
+      }
+    });
+  }
 
   // Validate enums
   const validTypes = ['Residential', 'Commercial', 'Mixed Use', 'Industrial', 'Hospitality', 'Retail'];
@@ -372,6 +318,8 @@ function sanitizeProjectData(data: ProjectData): ProjectData {
     description: sanitizeString(data.description),
     overview: sanitizeString(data.overview),
     price: sanitizeString(data.price),
+    image: data.image.trim(),
+    gallery: data.gallery.map(url => url.trim()).filter(url => url.length > 0),
     locationDetails: {
       ...data.locationDetails,
       description: sanitizeString(data.locationDetails.description),
@@ -403,37 +351,13 @@ function sanitizeProjectData(data: ProjectData): ProjectData {
   };
 }
 
-/**
- * Validate image file
- */
-function validateImageFile(file: File, fieldName: string, maxSizeMB: number = 10): { isValid: boolean; error?: string } {
-  if (!file || file.size === 0) {
-    return { isValid: false, error: `${fieldName} is required` };
-  }
-
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-  if (!allowedTypes.includes(file.type)) {
-    return { 
-      isValid: false, 
-      error: `${fieldName} must be one of: ${allowedTypes.join(', ')}` 
-    };
-  }
-
-  const maxBytes = maxSizeMB * 1024 * 1024;
-  if (file.size > maxBytes) {
-    return { 
-      isValid: false, 
-      error: `${fieldName} must be less than ${maxSizeMB}MB` 
-    };
-  }
-
-  return { isValid: true };
-}
 
 /**
- * Main POST handler with authentication
+ * Main POST handler with ZeroTrust authentication
  */
-export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -452,21 +376,10 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
     // Connect to database
     await connectToDatabase();
 
-    // Parse form data
-    const formData = await request.formData();
-    const projectDataString = formData.get('projectData') as string;
-    
-    if (!projectDataString) {
-      return NextResponse.json(
-        { success: false, message: "Project data is required", error: "MISSING_PROJECT_DATA" },
-        { status: 400 }
-      );
-    }
-
-    // Parse and validate JSON
+    // Parse JSON request body
     let projectData: ProjectData;
     try {
-      projectData = JSON.parse(projectDataString);
+      projectData = await request.json();
     } catch (parseError) {
       console.error("JSON parse error:", parseError);
       return NextResponse.json(
@@ -516,69 +429,24 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       );
     }
 
-    // Validate cover image
-    const coverImageFile = formData.get('coverImage') as File;
-    const coverValidation = validateImageFile(coverImageFile, "Cover image");
-    if (!coverValidation.isValid) {
-      return NextResponse.json(
-        { success: false, message: coverValidation.error, error: "INVALID_COVER_IMAGE" },
-        { status: 400 }
-      );
-    }
-
-    // Upload cover image
-    const coverImageUrl = await uploadImageToCloudinary(
-      coverImageFile,
-      `cover-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      slugs.slug,
-      false
-    );
-
-    // Handle gallery images upload
-    const galleryUrls: string[] = [];
-    let galleryIndex = 0;
-    const maxGalleryImages = 20;
-    
-    while (galleryIndex < maxGalleryImages && formData.get(`gallery_${galleryIndex}`)) {
-      const galleryFile = formData.get(`gallery_${galleryIndex}`) as File;
-      
-      if (galleryFile && galleryFile.size > 0) {
-        const galleryValidation = validateImageFile(galleryFile, `Gallery image ${galleryIndex + 1}`);
-        if (!galleryValidation.isValid) {
-          return NextResponse.json(
-            { success: false, message: galleryValidation.error, error: "INVALID_GALLERY_IMAGE" },
-            { status: 400 }
-          );
-        }
-
-        const galleryUrl = await uploadImageToCloudinary(
-          galleryFile,
-          `gallery-${galleryIndex}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          slugs.slug,
-          true
-        );
-        galleryUrls.push(galleryUrl);
-      }
-      galleryIndex++;
-    }
-
-    if (galleryUrls.length === 0) {
-      return NextResponse.json(
-        { success: false, message: "At least one gallery image is required", error: "MISSING_GALLERY_IMAGES" },
-        { status: 400 }
-      );
-    }
+    // Image URLs are already validated in validateProjectData
+    // Images are already uploaded via InstantImageUpload component
 
     // Prepare project data for database
     const projectToSave = {
       ...projectData,
       ...slugs,
-      image: coverImageUrl,
-      gallery: galleryUrls,
+      image: projectData.image, // Use URL from form data
+      gallery: projectData.gallery, // Use URLs from form data
       completionDate: new Date(projectData.completionDate),
       launchDate: new Date(projectData.launchDate),
-      createdBy: audit,
-      updatedBy: audit,
+      // Simple audit data (current requirement)
+      createdBy: user.firebaseUid,
+      updatedBy: user.firebaseUid,
+      // Rich audit data foundation (for future enhancement)
+      // createdByEmail: user.email,
+      // createdByRole: user.fullRole,
+      // permissions: { collection: 'projects', action: 'add', subRole: getUserSubRoleForCollection(user, 'projects') },
       version: 1,
       isActive: true,
       createdAt: new Date(),
@@ -588,14 +456,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
     // Create project
     const createdProject = await Project.create(projectToSave);
 
-    // Log successful creation
-    console.log(`Project created successfully by ${user.email}:`, {
-      id: createdProject._id,
-      name: createdProject.name,
-      slug: createdProject.slug,
-      coverImage: createdProject.image,
-      galleryCount: createdProject.gallery.length
-    });
+    // Project created successfully - audit data stored in database
 
     // Return success response
     return NextResponse.json(
@@ -612,7 +473,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
           image: createdProject.image,
           gallery: createdProject.gallery,
           createdAt: createdProject.createdAt,
-          createdBy: createdProject.createdBy.email
+          createdBy: createdProject.createdBy
         },
       },
       { status: 201 }
@@ -666,4 +527,8 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+// Requires CREATE_CONTENT capability for PROJECTS collection
+export const POST = withCollectionPermission(Collection.PROJECTS, Action.ADD)(handler);

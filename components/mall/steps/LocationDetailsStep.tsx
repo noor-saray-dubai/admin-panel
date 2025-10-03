@@ -88,6 +88,7 @@ export function LocationDetailsStep({ formData, errors, setErrors, onInputChange
             field="locationDetails.description"
             value={formData.locationDetails?.description ?? ""}
             onChange={(value) => onInputChange("locationDetails.description", value)}
+            formData={formData}
             placeholder="Describe the location, surroundings, and key landmarks..."
             maxLength={1000}
             rows={4}

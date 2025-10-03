@@ -8,8 +8,8 @@ export enum InvitationStatus {
   CANCELLED = 'cancelled'
 }
 
-export interface IInvitation {
-  _id?: mongoose.Types.ObjectId;
+export interface IInvitation extends mongoose.Document {
+  _id: mongoose.Types.ObjectId;
   email: string;
   role: FullRole;
   department?: string;
@@ -26,6 +26,10 @@ export interface IInvitation {
   
   createdAt: Date;
   updatedAt: Date;
+
+  // Methods
+  isExpired(): boolean;
+  isValid(): boolean;
 }
 
 const InvitationSchema = new mongoose.Schema<IInvitation>({

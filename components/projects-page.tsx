@@ -18,7 +18,7 @@ export function ProjectsPage() {
  
 
       {/* Project Tabs */}
-      <ProjectTabs initialModalOpen={action === "new"} />
+      <ProjectTabs />
     </div>
   )
 }

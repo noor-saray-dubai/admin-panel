@@ -30,8 +30,10 @@ interface MallViewModalProps {
 export function MallViewModal({ isOpen, onClose, mall }: MallViewModalProps) {
   if (!mall) return null
 
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+  const formatDateTime = (dateString: string | Date | undefined) => {
+    if (!dateString) return '';
+    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+    return date.toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",

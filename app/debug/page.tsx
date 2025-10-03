@@ -1,9 +1,9 @@
 "use client";
 
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function DebugPage() {
-  const auth = useEnhancedAuth();
+  const auth = useAuth();
 
   return (
     <div className="p-8">
@@ -32,17 +32,17 @@ export default function DebugPage() {
         <div>
           <h2 className="text-lg font-semibold">Permission Checks:</h2>
           <ul className="space-y-2">
-            <li>Is Admin: {auth.isAdmin() ? "✅ Yes" : "❌ No"}</li>
+            <li>Is System Admin: {auth.isSystemAdmin() ? "✅ Yes" : "❌ No"}</li>
             <li>Is Super Admin: {auth.isSuperAdmin() ? "✅ Yes" : "❌ No"}</li>
-            <li>Can Create Users: {auth.canCreateUsers() ? "✅ Yes" : "❌ No"}</li>
             <li>Can Manage Users: {auth.canManageUsers() ? "✅ Yes" : "❌ No"}</li>
+            <li>Can Manage Roles: {auth.canManageRoles() ? "✅ Yes" : "❌ No"}</li>
           </ul>
         </div>
 
         <div>
           <h2 className="text-lg font-semibold">Accessible Collections:</h2>
           <pre className="bg-gray-100 p-4 rounded overflow-auto">
-            {JSON.stringify(auth.getAccessibleCollections(), null, 2)}
+            {JSON.stringify(auth.getUserAccessibleCollections(), null, 2)}
           </pre>
         </div>
 

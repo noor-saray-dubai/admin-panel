@@ -4,7 +4,7 @@ import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useState, useEffect, useCallback } from "react"
-import { useEnhancedAuth } from "@/hooks/useEnhancedAuth"
+import { useAuth } from "@/hooks/useAuth"
 
 import {
   DropdownMenu,
@@ -16,7 +16,7 @@ import {
 import { LogoutButton } from "./logout-button"
 
 export function LuxuryHeader() {
-  const { user } = useEnhancedAuth()
+  const { user } = useAuth()
 
   const [notificationCount, setNotificationCount] = useState(3)
   const [bellShaking, setBellShaking] = useState(false)

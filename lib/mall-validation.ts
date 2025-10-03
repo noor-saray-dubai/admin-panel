@@ -329,23 +329,6 @@ export function validateMallData(data: Partial<MallFormData>, isUpdate = false):
         }
       }
 
-      // Optional mortgage fields validation (if provided)
-      if (mortgageDetails.loanAmount !== undefined && 
-          (typeof mortgageDetails.loanAmount !== "number" || mortgageDetails.loanAmount < 0)) {
-        addFieldError('legalDetails.mortgageDetails.loanAmount', "Loan amount must be a non-negative number.");
-      }
-      if (mortgageDetails.interestRate !== undefined && 
-          (typeof mortgageDetails.interestRate !== "number" || mortgageDetails.interestRate < 0 || mortgageDetails.interestRate > 100)) {
-        addFieldError('legalDetails.mortgageDetails.interestRate', "Interest rate must be between 0 and 100.");
-      }
-      if (mortgageDetails.loanTerm !== undefined && 
-          (typeof mortgageDetails.loanTerm !== "number" || mortgageDetails.loanTerm < 1)) {
-        addFieldError('legalDetails.mortgageDetails.loanTerm', "Loan term must be at least 1 year.");
-      }
-      if (mortgageDetails.monthlyPayment !== undefined && 
-          (typeof mortgageDetails.monthlyPayment !== "number" || mortgageDetails.monthlyPayment < 0)) {
-        addFieldError('legalDetails.mortgageDetails.monthlyPayment', "Monthly payment must be a non-negative number.");
-      }
     }
   }
 

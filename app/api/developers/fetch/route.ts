@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { connectToDatabase } from "@/lib/db"
-import { withCollectionAccess } from "@/lib/auth/authChecker"
-import { Collection } from "@/types/user"
-import Developer from "../../../../models/developers"
+import { withCollectionPermission } from "@/lib/auth/server"
+import { Action, Collection } from "@/types/user"
+import Developer from "@/models/developers"
 
 async function handler(request: NextRequest) {
   try {
@@ -68,8 +68,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-// Export with collection access protection
-// export const GET = withCollectionAccess(Collection.DEVELOPERS)(handler).
-export async function GET(request: NextRequest) {
-  return handler(request);
-}
+// Export with collection access protection + debug logging
+export const GET = withCollectionPermission(Collection.DEVELOPERS, Action.VIEW)(handler);

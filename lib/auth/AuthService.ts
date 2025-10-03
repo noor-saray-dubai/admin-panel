@@ -344,11 +344,11 @@ export class AuthService {
     userId: string,
     newStatus: UserStatus,
     updatedBy: string
-  ): Promise<IUser> {
+  ): Promise<IEnhancedUser> {
     try {
       await connectToDatabase();
 
-      const user = await User.findById(userId);
+      const user = await EnhancedUser.findById(userId);
       if (!user) {
         throw new Error('User not found');
       }
@@ -403,7 +403,7 @@ export class AuthService {
       await connectToDatabase();
 
       // Check if user exists and is active
-      const user = await User.findOne({ 
+      const user = await EnhancedUser.findOne({ 
         email, 
         status: UserStatus.ACTIVE 
       });
@@ -440,20 +440,20 @@ export class AuthService {
    * Get all users (admin only)
    */
   async getAllUsers(filters?: {
-    role?: UserRole;
+    role?: FullRole;
     status?: UserStatus;
     department?: string;
-  }): Promise<IUser[]> {
+  }): Promise<IEnhancedUser[]> {
     try {
       await connectToDatabase();
 
       const query: any = {};
       
-      if (filters?.role) query.role = filters.role;
+      if (filters?.role) query.fullRole = filters.role;
       if (filters?.status) query.status = filters.status;
       if (filters?.department) query.department = filters.department;
 
-      return await User.find(query)
+      return await EnhancedUser.find(query)
         .populate('createdBy', 'displayName email')
         .populate('updatedBy', 'displayName email')
         .sort({ createdAt: -1 });
@@ -470,29 +470,29 @@ export class AuthService {
     active: number;
     invited: number;
     suspended: number;
-    byRole: Record<UserRole, number>;
+    byRole: Record<FullRole, number>;
   }> {
     try {
       await connectToDatabase();
 
       const [total, active, invited, suspended, roleStats] = await Promise.all([
-        User.countDocuments(),
-        User.countDocuments({ status: UserStatus.ACTIVE }),
-        User.countDocuments({ status: UserStatus.INVITED }),
-        User.countDocuments({ status: UserStatus.SUSPENDED }),
-        User.aggregate([
-          { $group: { _id: '$role', count: { $sum: 1 } } }
+        EnhancedUser.countDocuments(),
+        EnhancedUser.countDocuments({ status: UserStatus.ACTIVE }),
+        EnhancedUser.countDocuments({ status: UserStatus.INVITED }),
+        EnhancedUser.countDocuments({ status: UserStatus.SUSPENDED }),
+        EnhancedUser.aggregate([
+          { $group: { _id: '$fullRole', count: { $sum: 1 } } }
         ]),
       ]);
 
-      const byRole: Record<UserRole, number> = Object.values(UserRole).reduce((acc, role) => {
+      const byRole: Record<FullRole, number> = Object.values(FullRole).reduce((acc, role) => {
         acc[role] = 0;
         return acc;
-      }, {} as Record<UserRole, number>);
+      }, {} as Record<FullRole, number>);
 
       roleStats.forEach((stat: any) => {
         if (stat._id) {
-          byRole[stat._id as UserRole] = stat.count;
+          byRole[stat._id as FullRole] = stat.count;
         }
       });
 

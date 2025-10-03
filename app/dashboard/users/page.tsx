@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   Collection, 
   Action, 
   FullRole, 
   SubRole, 
   UserStatus,
-  CollectionPermission 
+  CollectionPermission
 } from '@/types/user';
 import {
   Card,
@@ -110,10 +110,10 @@ export default function UserManagementPage() {
   const { 
     user, 
     loading, 
-    isAdmin, 
+    isSystemAdmin, 
     isSuperAdmin, 
-    hasCollectionPermission 
-  } = useEnhancedAuth();
+    hasCollectionCapability 
+  } = useAuth();
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -159,11 +159,11 @@ export default function UserManagementPage() {
 
   // Check admin access and redirect if needed
   useEffect(() => {
-    if (!loading && user && !isAdmin()) {
-      // User is logged in but not an admin - show forbidden page
+    if (!loading && user && !isSystemAdmin()) {
+      // User is logged in but not a system admin - show forbidden page
       router.push('/forbidden?reason=insufficient_role');
     }
-  }, [user, loading, isAdmin, router]);
+  }, [user, loading, isSystemAdmin, router]);
   
   // Enhanced keyboard navigation
   useEffect(() => {
@@ -288,11 +288,11 @@ export default function UserManagementPage() {
 
   // Fetch form data on mount
   useEffect(() => {
-    if (user && isAdmin()) {
+    if (user && isSystemAdmin()) {
       fetchFormData();
       fetchUsers();
     }
-  }, [user, isAdmin]);
+  }, [user, isSystemAdmin]);
 
   // Get available roles based on current user's role
   const getAvailableRoles = (): FullRole[] => {
@@ -578,7 +578,7 @@ export default function UserManagementPage() {
   }
 
   // Check if user is admin/super admin
-  if (!user || !isAdmin()) {
+  if (!user || !isSystemAdmin()) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
@@ -1021,7 +1021,7 @@ export default function UserManagementPage() {
                             View
                           </Button>
                           
-                          {isAdmin() && (
+                          {isSystemAdmin() && (
                             <Button 
                               variant="ghost" 
                               size="sm" 

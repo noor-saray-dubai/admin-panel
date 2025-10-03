@@ -374,7 +374,7 @@ EnhancedUserSchema.methods.hasPermissionForCollection = function(collection: Col
   // Check role-based permissions first
   const rolePerms = this.collectionPermissions.find((p: CollectionPermission) => p.collection === collection);
   if (rolePerms) {
-    const subRoleActions = SUB_ROLE_ACTIONS[rolePerms.subRole] || [];
+    const subRoleActions = SUB_ROLE_ACTIONS[rolePerms.subRole as SubRole] || [];
     if (subRoleActions.includes(action)) {
       return true;
     }
@@ -383,7 +383,7 @@ EnhancedUserSchema.methods.hasPermissionForCollection = function(collection: Col
   // Check permission overrides (these take precedence)
   const overrides = this.permissionOverrides.find((p: CollectionPermission) => p.collection === collection);
   if (overrides) {
-    const subRoleActions = SUB_ROLE_ACTIONS[overrides.subRole] || [];
+    const subRoleActions = SUB_ROLE_ACTIONS[overrides.subRole as SubRole] || [];
     if (subRoleActions.includes(action)) {
       return true;
     }
@@ -396,13 +396,13 @@ EnhancedUserSchema.methods.getAllPermissionsForCollection = function(collection:
   // Check if user has override permissions for this collection
   const overrides = this.permissionOverrides.find((p: CollectionPermission) => p.collection === collection);
   if (overrides) {
-    return SUB_ROLE_ACTIONS[overrides.subRole] || [];
+    return SUB_ROLE_ACTIONS[overrides.subRole as SubRole] || [];
   }
   
   // Otherwise use role-based permissions
   const rolePerms = this.collectionPermissions.find((p: CollectionPermission) => p.collection === collection);
   if (rolePerms) {
-    return SUB_ROLE_ACTIONS[rolePerms.subRole] || [];
+    return SUB_ROLE_ACTIONS[rolePerms.subRole as SubRole] || [];
   }
   
   return [];

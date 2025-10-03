@@ -1,11 +1,8 @@
 import React from 'react'
+import { HotelTabs } from '@/components/hotel-tabs'
 
-const page = () => {
-  return (
-    <div>
-      
-    </div>
-  )
+const HotelsPage = () => {
+  return <HotelTabs />
 }
 
-export default page
+export default HotelsPage

@@ -6,34 +6,48 @@ const STORAGE_TIMESTAMP_KEY = 'building_form_draft_timestamp';
 const DRAFT_EXPIRY_DAYS = 7; // Expire drafts after 7 days
 
 /**
- * Save building form data to local storage
+ * Save building form data to local storage (only if it has meaningful data)
  */
 export function saveBuildingFormDraft(formData: BuildingFormData): void {
   try {
+    // Check for meaningful form data (not just default/empty values)
+    const hasMeaningfulData = !!(
+      (formData.name && formData.name.trim().length > 0) ||
+      (formData.location && formData.location.trim().length > 0) ||
+      (formData.description && formData.description.trim().length > 0) ||
+      formData.category ||
+      (formData.type && formData.type.trim().length > 0) ||
+      (formData.status && formData.status.trim().length > 0) ||
+      (formData.mainImage && formData.mainImage.trim().length > 0) ||
+      (formData.units && formData.units.length > 0) ||
+      (formData.features && formData.features.length > 0) ||
+      (formData.highlights && formData.highlights.length > 0) ||
+      (formData.gallery && formData.gallery.length > 0) ||
+      (formData.price && formData.price.valueNumeric > 0) ||
+      (formData.totalUnits > 0) ||
+      (formData.dimensions && formData.dimensions.floors > 1)
+    );
+
+    if (!hasMeaningfulData) {
+      // Don't save empty/default data as draft
+      console.log('⏭️ Skipping empty building draft save');
+      return;
+    }
+
     // Create a clean draft data object
     const draftData = {
       ...formData,
     };
 
     // Debug logging to confirm data is being saved
-    const hasData = !!(
-      draftData.name || 
-      draftData.location || 
-      draftData.description || 
-      draftData.units?.length || 
-      draftData.features?.length
-    );
-    
-    if (hasData) {
-      console.log('💾 Building draft saved:', {
-        name: draftData.name ? 'yes' : 'no',
-        location: draftData.location ? 'yes' : 'no',
-        category: draftData.category ? 'yes' : 'no',
-        units: draftData.units?.length || 0,
-        features: draftData.features?.length || 0,
-        highlights: draftData.highlights?.length || 0
-      });
-    }
+    console.log('💾 Building draft saved:', {
+      name: draftData.name ? 'yes' : 'no',
+      location: draftData.location ? 'yes' : 'no',
+      category: draftData.category ? 'yes' : 'no',
+      units: draftData.units?.length || 0,
+      features: draftData.features?.length || 0,
+      highlights: draftData.highlights?.length || 0
+    });
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(draftData));
     localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString());
@@ -107,7 +121,7 @@ export function clearBuildingFormDraft(): void {
 }
 
 /**
- * Check if there's a saved building draft
+ * Check if there's a saved building draft with meaningful data
  */
 export function hasSavedBuildingDraft(): boolean {
   try {
@@ -128,9 +142,39 @@ export function hasSavedBuildingDraft(): boolean {
       return false;
     }
 
+    // Parse the draft and check if it has meaningful data
+    const draftData = JSON.parse(draftString) as BuildingFormData;
+    
+    // Check for meaningful form data (not just default/empty values)
+    const hasMeaningfulData = !!(
+      (draftData.name && draftData.name.trim().length > 0) ||
+      (draftData.location && draftData.location.trim().length > 0) ||
+      (draftData.description && draftData.description.trim().length > 0) ||
+      (draftData.category && draftData.category.trim().length > 0) ||
+      (draftData.type && draftData.type.trim().length > 0) ||
+      (draftData.status && draftData.status.trim().length > 0) ||
+      (draftData.mainImage && draftData.mainImage.trim().length > 0) ||
+      (draftData.units && draftData.units.length > 0) ||
+      (draftData.features && draftData.features.length > 0) ||
+      (draftData.highlights && draftData.highlights.length > 0) ||
+      (draftData.gallery && draftData.gallery.length > 0) ||
+      (draftData.price && draftData.price.valueNumeric > 0) ||
+      (draftData.totalUnits > 0) ||
+      (draftData.dimensions && draftData.dimensions.floors > 1)
+    );
+
+    if (!hasMeaningfulData) {
+      // Clean up empty draft
+      console.log('🗑️ Clearing empty building draft');
+      clearBuildingFormDraft();
+      return false;
+    }
+
     return true;
   } catch (error) {
     console.warn('Failed to check for saved building draft:', error);
+    // Clear corrupted draft
+    clearBuildingFormDraft();
     return false;
   }
 }
@@ -180,4 +224,20 @@ export function createDebouncedBuildingSave(delay: number = 1500) {
       saveBuildingFormDraft(formData);
     }, delay);
   };
+}
+
+/**
+ * Clean up any empty or meaningless drafts from localStorage
+ * Call this on app initialization to remove stale empty drafts
+ */
+export function cleanupEmptyBuildingDrafts(): void {
+  try {
+    const hasValidDraft = hasSavedBuildingDraft(); // This already checks and cleans empty drafts
+    if (!hasValidDraft) {
+      console.log('🧹 Empty building drafts cleaned up');
+    }
+  } catch (error) {
+    console.warn('Failed to cleanup empty building drafts:', error);
+    clearBuildingFormDraft(); // Clear any corrupted data
+  }
 }

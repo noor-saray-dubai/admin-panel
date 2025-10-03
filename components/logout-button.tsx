@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 import { auth } from "@/firebase"
 import { useToast } from "@/components/ui/toast-system"
-import { useEnhancedAuth } from "@/hooks/useEnhancedAuth"
+import { useAuth } from "@/hooks/useAuth"
 import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
@@ -22,7 +22,7 @@ const MAX_RETRY_ATTEMPTS = 2
 export function LogoutButton({ onLogoutStart, onLogoutComplete, className }: LogoutButtonProps) {
   const router = useRouter()
   const { info, success, error: showError } = useToast()
-  const { user } = useEnhancedAuth()
+  const { user } = useAuth()
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

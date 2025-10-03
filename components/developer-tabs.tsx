@@ -28,8 +28,9 @@ import { DataPageLayout } from "@/components/ui/data-page-layout"
 import type { StatCard, FilterConfig } from "@/components/ui/data-page-layout"
 
 import type { IDeveloper, PaginationInfo, FiltersData, DeveloperTabsProps } from "@/types/developer"
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth'
-import { Collection, Action } from '@/types/user'
+import { useAuth } from '@/hooks/useAuth'
+import { Collection } from '@/types/user'
+import { CollectionCapability } from '@/lib/auth'
 
 export function DeveloperTabs({ initialModalOpen = false, onModalClose }: DeveloperTabsProps) {
   const searchParams = useSearchParams()
@@ -39,9 +40,9 @@ export function DeveloperTabs({ initialModalOpen = false, onModalClose }: Develo
   
   // ALL HOOKS AT THE TOP - BEFORE ANY CONDITIONAL RETURNS
   const { 
-    hasCollectionPermission, 
+    hasCollectionCapability, 
     loading: authLoading
-  } = useEnhancedAuth()
+  } = useAuth()
 
   // URL-based state - read from URL parameters
   const activeTab = searchParams.get("tab") || "all"
@@ -153,10 +154,10 @@ export function DeveloperTabs({ initialModalOpen = false, onModalClose }: Develo
   }, [activeTab, currentPage, searchTerm, selectedLocation, selectedSpecialization, selectedStatus, selectedYear])
 
   // Permission checks
-  const canView = hasCollectionPermission(Collection.DEVELOPERS, Action.VIEW)
-  const canAdd = hasCollectionPermission(Collection.DEVELOPERS, Action.ADD)
-  const canEdit = hasCollectionPermission(Collection.DEVELOPERS, Action.EDIT)
-  const canDelete = hasCollectionPermission(Collection.DEVELOPERS, Action.DELETE)
+  const canView = hasCollectionCapability(Collection.DEVELOPERS, CollectionCapability.VIEW_COLLECTION)
+  const canAdd = hasCollectionCapability(Collection.DEVELOPERS, CollectionCapability.CREATE_CONTENT)
+  const canEdit = hasCollectionCapability(Collection.DEVELOPERS, CollectionCapability.EDIT_CONTENT)
+  const canDelete = hasCollectionCapability(Collection.DEVELOPERS, CollectionCapability.DELETE_CONTENT)
 
   // Update URL with new parameters
   const updateURL = (newParams: Record<string, string | number>) => {
@@ -320,21 +321,29 @@ export function DeveloperTabs({ initialModalOpen = false, onModalClose }: Develo
   const handleViewDeveloper = (developer: IDeveloper) => {
     const currentUrl = new URL(window.location.href)
     currentUrl.searchParams.set("action", "view")
-    currentUrl.searchParams.set("slug", developer.slug)
+    
+      if (developer.slug) {
+        currentUrl.searchParams.set("slug", developer.slug)
+      }
+    
     router.push(currentUrl.toString())
   }
 
   const handleEditDeveloper = (developer: IDeveloper) => {
     const currentUrl = new URL(window.location.href)
     currentUrl.searchParams.set("action", "edit")
-    currentUrl.searchParams.set("slug", developer.slug)
+    if (developer.slug) {
+        currentUrl.searchParams.set("slug", developer.slug)
+      }
     router.push(currentUrl.toString())
   }
 
   const handleDeleteDeveloper = (developer: IDeveloper) => {
     const currentUrl = new URL(window.location.href)
     currentUrl.searchParams.set("action", "delete")
-    currentUrl.searchParams.set("slug", developer.slug)
+     if (developer.slug) {
+        currentUrl.searchParams.set("slug", developer.slug)
+      }
     router.push(currentUrl.toString())
   }
 

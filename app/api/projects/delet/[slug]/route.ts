@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { connectToDatabase } from "@/lib/db"
 import Project from "@/models/project"
+import { withCollectionPermission } from "@/lib/auth/server"
+import { Collection, Action } from "@/types/user"
 import { v2 as cloudinary } from "cloudinary"
 
 cloudinary.config({
@@ -9,7 +11,9 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 })
 
-export async function DELETE(req: NextRequest, { params }: { params: { slug: string } }) {
+async function handler(req: NextRequest, { params }: { params: { slug: string } }) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (req as any).user;
   try {
     await connectToDatabase()
 
@@ -35,15 +39,52 @@ export async function DELETE(req: NextRequest, { params }: { params: { slug: str
     // Optional: delete the folder (Cloudinary doesn't fully delete folders unless empty)
     await cloudinary.api.delete_resources_by_prefix(slug)
 
-    // Delete project from DB
-    await Project.deleteOne({ slug })
+    // Soft delete project with audit trail
+    const deletedProject = await Project.findOneAndUpdate(
+      { slug },
+      { 
+        $set: {
+          isActive: false,
+          deletedAt: new Date(),
+          deletedBy: user.firebaseUid,
+          // Rich audit foundation for future
+          // deletedByEmail: user.email,
+          // deletedByRole: user.fullRole,
+          updatedAt: new Date(),
+          updatedBy: user.firebaseUid
+        },
+        $inc: { version: 1 }
+      },
+      { new: true }
+    )
+
+    if (!deletedProject) {
+      return NextResponse.json({ 
+        success: false,
+        error: "Project not found" 
+      }, { status: 404 })
+    }
 
     return NextResponse.json({
       success: true,
       message: "Project deleted successfully",
+      project: {
+        id: deletedProject._id,
+        slug: deletedProject.slug,
+        name: deletedProject.name,
+        deletedAt: deletedProject.deletedAt,
+        deletedBy: deletedProject.deletedBy
+      }
     })
-  } catch (error) {
-    console.error("Error deleting project:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  } catch (error: any) {
+    return NextResponse.json({ 
+      success: false,
+      error: "INTERNAL_ERROR",
+      message: "Failed to delete project" 
+    }, { status: 500 })
   }
 }
+
+// Export with ZeroTrust collection permission validation
+// Requires DELETE_CONTENT capability for PROJECTS collection (COLLECTION_ADMIN only)
+export const DELETE = withCollectionPermission(Collection.PROJECTS, Action.DELETE)(handler);

@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   Shield, 
   Plus, 
@@ -74,7 +74,7 @@ interface PermissionRequest {
 }
 
 export default function PermissionRequestPage() {
-  const { user, loading, isSuperAdmin, getAccessibleCollections, getUserSubRoleForCollection } = useEnhancedAuth();
+  const { user, loading, isSuperAdmin, getUserAccessibleCollections, getUserSubRoleForCollection } = useAuth();
   const router = useRouter();
   
   // Form state for new request
@@ -150,7 +150,7 @@ export default function PermissionRequestPage() {
   // Get available collections that user doesn't have access to
   const getAvailableCollections = () => {
     return Object.values(Collection).filter(collection => 
-      !getAccessibleCollections().includes(collection)
+      !getUserAccessibleCollections().includes(collection)
     );
   };
 
@@ -420,7 +420,7 @@ export default function PermissionRequestPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {Object.values(Collection).map((collection) => {
-                                    const hasAccess = getAccessibleCollections().includes(collection);
+                                    const hasAccess = getUserAccessibleCollections().includes(collection);
                                     return (
                                       <SelectItem key={collection} value={collection}>
                                         <div className="flex items-center justify-between w-full">
@@ -625,8 +625,8 @@ export default function PermissionRequestPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                  {getAccessibleCollections().length > 0 ? (
-                    getAccessibleCollections().map((collection) => {
+                  {getUserAccessibleCollections().length > 0 ? (
+                    getUserAccessibleCollections().map((collection: Collection) => {
                       const subRole = getUserSubRoleForCollection(collection);
                       return (
                         <div key={collection} className="flex justify-between items-center py-1">

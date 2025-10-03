@@ -50,8 +50,8 @@ export enum AuditLevel {
   CRITICAL = 'critical'
 }
 
-export interface IAuditLog {
-  _id?: mongoose.Types.ObjectId;
+export interface IAuditLog extends mongoose.Document {
+  _id: mongoose.Types.ObjectId;
   action: AuditAction;
   level: AuditLevel;
   
@@ -201,4 +201,11 @@ AuditLogSchema.statics.getSecurityEvents = function(limit = 100) {
   .limit(limit);
 };
 
-export const AuditLog = mongoose.models.AuditLog || mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);
+// Interface for static methods
+export interface IAuditLogModel extends mongoose.Model<IAuditLog> {
+  createLog(logData: Partial<IAuditLog>): IAuditLog;
+  getUserLogs(userId: string, limit?: number): mongoose.Query<IAuditLog[], IAuditLog>;
+  getSecurityEvents(limit?: number): mongoose.Query<IAuditLog[], IAuditLog>;
+}
+
+export const AuditLog = (mongoose.models.AuditLog || mongoose.model<IAuditLog, IAuditLogModel>('AuditLog', AuditLogSchema)) as IAuditLogModel;

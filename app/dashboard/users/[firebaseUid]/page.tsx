@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   Collection, 
   Action, 
   FullRole, 
   SubRole, 
   UserStatus,
-  CollectionPermission 
+  CollectionPermission
 } from '@/types/user';
 import {
   Card,
@@ -145,7 +145,7 @@ interface AuditSummary {
 }
 
 export default function UserDetailPage() {
-  const { user, loading, isAdmin, isSuperAdmin } = useEnhancedAuth();
+  const { user, loading, isSystemAdmin, isSuperAdmin } = useAuth();
   const router = useRouter();
   const params = useParams();
   const firebaseUid = params.firebaseUid as string;
@@ -180,10 +180,10 @@ export default function UserDetailPage() {
 
   // Check access and redirect if needed
   useEffect(() => {
-    if (!loading && user && !isAdmin()) {
+    if (!loading && user && !isSystemAdmin()) {
       router.push('/forbidden?reason=insufficient_role');
     }
-  }, [user, loading, isAdmin, router]);
+  }, [user, loading, isSystemAdmin, router]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -300,10 +300,10 @@ export default function UserDetailPage() {
   }, [firebaseUid, router]);
 
   useEffect(() => {
-    if (user && isAdmin()) {
+    if (user && isSystemAdmin()) {
       fetchUserData();
     }
-  }, [user, isAdmin, fetchUserData]);
+  }, [user, isSystemAdmin, fetchUserData]);
 
   // Edit handlers
   const handleEditToggle = () => {

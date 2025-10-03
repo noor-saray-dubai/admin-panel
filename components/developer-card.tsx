@@ -29,8 +29,8 @@ import type { IDeveloper } from "@/types/developer"
 interface DeveloperCardProps {
   developer: IDeveloper;
   onView: (developer: IDeveloper) => void;
-  onEdit: (developer: IDeveloper) => void;
-  onDelete: (developer: IDeveloper) => void;
+  onEdit?: (developer: IDeveloper) => void;
+  onDelete?: (developer: IDeveloper) => void;
   isDeleting?: boolean;
 }
 
@@ -132,18 +132,22 @@ export function DeveloperCard({ developer, onView, onEdit, onDelete, isDeleting 
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onEdit(developer)} disabled={isDeleting}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Developer
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                onClick={() => onDelete(developer)} 
-                className="text-red-600"
-                disabled={isDeleting}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                {isDeleting ? 'Deleting...' : 'Delete Developer'}
-              </DropdownMenuItem>
+              {onEdit && (
+                <DropdownMenuItem onClick={() => onEdit(developer)} disabled={isDeleting}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit Developer
+                </DropdownMenuItem>
+              )}
+              {onDelete && (
+                <DropdownMenuItem 
+                  onClick={() => onDelete(developer)} 
+                  className="text-red-600"
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {isDeleting ? 'Deleting...' : 'Delete Developer'}
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

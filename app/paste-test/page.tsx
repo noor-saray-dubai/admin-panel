@@ -190,7 +190,7 @@ export default function PasteTestPage() {
               <ul className="space-y-1 text-muted-foreground">
                 <li>1. Paste a non-image URL (like https://example.com)</li>
                 <li>2. Paste a 404 URL (like https://httpstat.us/404.jpg)</li>
-                <li>3. Upload a very large image (>10MB)</li>
+                <li>3. Upload a very large image (&gt;10MB)</li>
                 <li>4. Upload a non-image file</li>
                 <li>5. Try to upload more than the maximum allowed files</li>
               </ul>

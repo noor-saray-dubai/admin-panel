@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { 
   FileText, 
@@ -50,7 +50,7 @@ interface AuditLog {
 }
 
 export default function AuditTrailPage() {
-  const { user, loading, isSuperAdmin } = useEnhancedAuth();
+  const { user, loading, isSuperAdmin } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();

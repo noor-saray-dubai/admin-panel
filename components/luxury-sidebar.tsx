@@ -1,11 +1,11 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { Users, Settings, Home, FileText, MessageSquare, Shield, Briefcase, Building, ShoppingCart, ChevronLeft, Menu, User, Newspaper } from "lucide-react"
+import { Users, Settings, Home, FileText, MessageSquare, Shield, Briefcase, Building, Building2, ShoppingCart, ChevronLeft, Menu, User, Newspaper } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState, useMemo, useTransition } from "react"
-import { useEnhancedAuth } from "@/hooks/useEnhancedAuth"
+import { useAuth } from "@/hooks/useAuth"
 import { Button } from "@/components/ui/button"
 import { Collection } from "@/types/user"
 
@@ -19,6 +19,7 @@ const navigationMap = {
   [Collection.DEVELOPERS]: { name: "Developers", href: "/dashboard/developers?tab=all&page=1", icon: Shield, collection: Collection.DEVELOPERS },
   [Collection.CAREERS]: { name: "Careers", href: "/dashboard/careers", icon: Briefcase, collection: Collection.CAREERS },
   [Collection.PLOTS]: { name: "Plots", href: "/dashboard/plots?tab=all&page=1", icon: Building, collection: Collection.PLOTS },
+  [Collection.BUILDINGS]: { name: "Buildings", href: "/dashboard/buildings?tab=all&page=1", icon: Building2, collection: Collection.BUILDINGS },
   [Collection.MALLS]: { name: "Malls", href: "/dashboard/malls?tab=all&page=1", icon: ShoppingCart, collection: Collection.MALLS },
   [Collection.USERS]: { name: "Users", href: "/dashboard/users", icon: Users, collection: Collection.USERS },
   [Collection.SYSTEM]: { name: "Settings", href: "/dashboard/settings", icon: Settings, collection: Collection.SYSTEM },
@@ -52,12 +53,12 @@ export function LuxurySidebar({
   const { 
     user, 
     loading, 
-    getAccessibleCollections,
+    getUserAccessibleCollections,
     getUserSubRoleForCollection,
     isActive: isUserActive,
-    isAdmin,
+    isSystemAdmin,
     isSuperAdmin 
-  } = useEnhancedAuth()
+  } = useAuth()
 
   const isActive = (href: string) => {
     if (href === "/") {
@@ -72,7 +73,7 @@ export function LuxurySidebar({
   const accessibleNavItems = useMemo(() => {
     if (!user || loading) return []
     
-    const accessibleCollections = getAccessibleCollections()
+    const accessibleCollections = getUserAccessibleCollections()
     const navItems = []
     
     // Always add dashboard
@@ -86,7 +87,7 @@ export function LuxurySidebar({
     })
     
     // Add admin-specific navigation items
-    if (isAdmin() || isSuperAdmin()) {
+    if (isSystemAdmin() || isSuperAdmin()) {
       navItems.push({
         name: "Permission Requests",
         href: "/dashboard/admin/permission-requests",
@@ -98,7 +99,7 @@ export function LuxurySidebar({
     }
     
     return navItems
-  }, [user, loading, getAccessibleCollections, isAdmin, isSuperAdmin])
+  }, [user, loading, getUserAccessibleCollections, isSystemAdmin, isSuperAdmin])
 
   // Optimized click handler with prefetch and immediate UI feedback
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
@@ -253,7 +254,7 @@ export function LuxurySidebar({
                 </div>
                 {isCollapsed && user && (
                   <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {getAccessibleCollections().length}
+                    {getUserAccessibleCollections().length}
                   </div>
                 )}
               </div>

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   User, 
   Key, 
@@ -32,7 +32,7 @@ interface SettingItem {
 }
 
 export default function SettingsPage() {
-  const { user, loading, isAdmin, isSuperAdmin } = useEnhancedAuth();
+  const { user, loading, isSystemAdmin, isSuperAdmin } = useAuth();
 
   // Define all settings with conditional availability
   const settingItems: SettingItem[] = [
@@ -80,8 +80,8 @@ export default function SettingsPage() {
       title: "System Settings",
       description: "Manage system-wide configurations and preferences",
       href: "/dashboard/settings/system",
-      available: isAdmin(), // Only for admins
-      badge: isAdmin() ? "Admin" : undefined
+      available: isSystemAdmin(), // Only for system admins
+      badge: isSystemAdmin() ? "Admin" : undefined
     },
     {
       icon: FileText,

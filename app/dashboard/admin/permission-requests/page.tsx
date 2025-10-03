@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useEnhancedAuth } from '@/hooks/useEnhancedAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/toast-system';
 import { 
   Shield, 
@@ -96,7 +96,7 @@ interface RequestStats {
 }
 
 export default function AdminPermissionRequestsPage() {
-  const { user, loading, isAdmin, isSuperAdmin } = useEnhancedAuth();
+  const { user, loading, isSystemAdmin, isSuperAdmin } = useAuth();
   const { success, error: showError, info } = useToast();
   const router = useRouter();
   
@@ -121,19 +121,19 @@ export default function AdminPermissionRequestsPage() {
 
   // Check admin access
   useEffect(() => {
-    if (!loading && user && !isAdmin() && !isSuperAdmin()) {
-      showError('Access Denied', 'Admin privileges required to access this page.');
+    if (!loading && user && !isSystemAdmin() && !isSuperAdmin()) {
+      showError('Access Denied', 'System admin privileges required to access this page.');
       router.push('/dashboard');
       return;
     }
-  }, [user, loading, isAdmin, isSuperAdmin, router, showError]);
+  }, [user, loading, isSystemAdmin, isSuperAdmin, router, showError]);
 
   // Load requests
   useEffect(() => {
-    if (user && (isAdmin() || isSuperAdmin())) {
+    if (user && (isSystemAdmin() || isSuperAdmin())) {
       fetchRequests();
     }
-  }, [user, isAdmin, isSuperAdmin, statusFilter]);
+  }, [user, isSystemAdmin, isSuperAdmin, statusFilter]);
 
   const fetchRequests = async () => {
     try {
@@ -281,7 +281,7 @@ export default function AdminPermissionRequestsPage() {
     );
   }
 
-  if (!user || (!isAdmin() && !isSuperAdmin())) {
+  if (!user || (!isSystemAdmin() && !isSuperAdmin())) {
     return null; // Will redirect via useEffect
   }
 
