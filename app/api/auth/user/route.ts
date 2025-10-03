@@ -1,3 +1,5 @@
+// app/api/auth/user/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createAuthService } from '@/lib/auth/AuthService';
 import { redis, CACHE_KEYS, CACHE_TTL } from '@/lib/redis/redisClient';

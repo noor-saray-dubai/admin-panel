@@ -1,6 +1,6 @@
 // app/api/auth/verify/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth } from "@/lib/firebaseAdmin";
+import { SessionValidationService, SessionValidationError } from "@/lib/auth/sessionValidationService";
 
 /**
  * Session verification endpoint
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     if (!sessionCookie) {
       console.log('❌ [AUTH VERIFY] No session cookie found');
       return NextResponse.json(
-        { valid: false, error: "No session cookie" },
+        { valid: false, error: "No session cookie", cached: false },
         { 
           status: 401,
           headers: {
@@ -25,21 +25,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify the session cookie with checkRevoked = true
-    // This ensures revoked sessions (from logout) are rejected
-    const decodedClaims = await adminAuth.verifySessionCookie(
-      sessionCookie,
-      true // 🔥 CRITICAL: checkRevoked = true ensures logout works
-    );
+    // Use SessionValidationService with caching
+    const validationResult = await SessionValidationService.validateSession(sessionCookie);
 
-    console.log('✅ [AUTH VERIFY] Session valid for user:', decodedClaims.uid);
+    if (!validationResult.valid) {
+      // Type assertion since we know validationResult is SessionValidationError when valid is false
+      const errorResult = validationResult as SessionValidationError;
+      console.log('❌ [AUTH VERIFY] Session validation failed:', errorResult.error);
+      return NextResponse.json(
+        {
+          valid: false,
+          error: errorResult.error,
+          code: errorResult.code,
+          cached: errorResult.cached || false
+        },
+        { 
+          status: 401,
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+          }
+        }
+      );
+    }
+
+    const cacheStatus = validationResult.cached ? 'CACHE HIT' : 'CACHE MISS';
+    console.log(`✅ [AUTH VERIFY] Session valid for user: ${validationResult.uid} (${cacheStatus})`);
 
     return NextResponse.json(
       {
         valid: true,
-        uid: decodedClaims.uid,
-        email: decodedClaims.email,
-        role: decodedClaims.role || null,
+        uid: validationResult.uid,
+        email: validationResult.email,
+        role: validationResult.role,
+        cached: validationResult.cached || false
       },
       { 
         status: 200,
@@ -49,21 +67,13 @@ export async function POST(request: NextRequest) {
       }
     );
   } catch (error: any) {
-    console.error('❌ [AUTH VERIFY] Verification failed:', error.code || error.message);
+    console.error('❌ [AUTH VERIFY] Verification failed:', error.message || error);
     
-    // Specific error messages for debugging
-    let errorMessage = "Invalid or expired session";
-    if (error.code === 'auth/session-cookie-revoked') {
-      errorMessage = "Session has been revoked (logged out)";
-    } else if (error.code === 'auth/session-cookie-expired') {
-      errorMessage = "Session has expired";
-    }
-
     return NextResponse.json(
       { 
         valid: false, 
-        error: errorMessage,
-        code: error.code 
+        error: "Session verification failed",
+        cached: false
       },
       { 
         status: 401,

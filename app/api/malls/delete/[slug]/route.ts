@@ -1,19 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectToDatabase } from '../../../../../lib/db'
 import Mall from '../../../../../models/malls'
-import { withAuth } from '@/lib/auth-utils'
+import { withCollectionPermission } from '@/lib/auth/server'
+import { Collection, Action } from '@/types/user'
 
 // Force Node.js runtime
 export const runtime = "nodejs"
 
 /**
- * DELETE handler with authentication
+ * DELETE handler with ZeroTrust authentication
  */
-export const DELETE = withAuth(async (
+async function handler(
   req: NextRequest,
-  { user, audit },
   { params }: { params: { slug: string } }
-) => {
+) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (req as any).user;
+  
+  // Create audit context for logging
+  const audit = {
+    email: user.email || 'unknown',
+    ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+    userAgent: req.headers.get('user-agent') || 'unknown'
+  };
   try {
     await connectToDatabase()
 
@@ -67,7 +76,8 @@ export const DELETE = withAuth(async (
         name: mall.name,
         mallId: mall.mallId,
         location: mall.location,
-        deletedBy: audit.email,
+        deletedBy: user.firebaseUid,
+        deletedByEmail: user.email,
         deletedAt: new Date().toISOString()
       }
     }, { status: 200 })
@@ -100,4 +110,7 @@ export const DELETE = withAuth(async (
       error: error.message || 'UNKNOWN_ERROR'
     }, { status: 500 })
   }
-})
+}
+
+// Export with ZeroTrust collection permission validation
+export const DELETE = withCollectionPermission(Collection.MALLS, Action.DELETE)(handler);

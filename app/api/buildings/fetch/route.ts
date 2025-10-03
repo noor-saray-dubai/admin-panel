@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Building from "@/models/buildings";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 
 // Force Node.js runtime
@@ -25,9 +26,11 @@ interface BuildingFilters {
 }
 
 /**
- * Main GET handler with authentication
+ * Main GET handler with ZeroTrust authentication
  */
-export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -49,7 +52,8 @@ export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
     // Parse query parameters
     const url = new URL(request.url);
     // Ensure page is at least 1 to prevent negative or zero skip values
-   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1"));    const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 100); // Max 100 per page
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1"));
+    const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 100); // Max 100 per page
     const tab = url.searchParams.get("tab") || "all";
     const sortBy = url.searchParams.get("sortBy") || "updatedAt";
     const sortOrder = url.searchParams.get("sortOrder") === "asc" ? 1 : -1;
@@ -238,20 +242,18 @@ export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
       Building.countDocuments({ isActive: true })
     ]);
 
-    // Log successful fetch
-    console.log(`Buildings fetched successfully by ${user.email}:`, {
-      tab,
-      page,
-      limit,
-      totalCount,
-      filters: Object.keys(filters).filter(key => filters[key as keyof BuildingFilters] !== undefined)
-    });
+    // Get distinct filter values for dropdowns
+    const filterOptions = await Promise.all([
+      Building.distinct("location", { isActive: true }),
+      Building.distinct("category", { isActive: true }),
+      Building.distinct("type", { isActive: true }),
+      Building.distinct("status", { isActive: true })
+    ]);
 
-    // Return success response
+    // Return success response with audit metadata
     return NextResponse.json(
       {
         success: true,
-        message: "Buildings fetched successfully",
         data: {
           buildings,
           pagination: {
@@ -260,20 +262,32 @@ export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
             totalCount,
             limit,
             hasNextPage,
-            hasPrevPage,
-          },
-          filters: {
-            applied: filters,
-            tab,
-            sortBy,
-            sortOrder: sortOrder === 1 ? "asc" : "desc"
+            hasPrevPage
           },
           statistics: {
             avgPrice: Math.round(avgPrice),
             maxPrice,
             totalActiveBuildings: totalBuildings
+          },
+          filters: {
+            tab,
+            sortBy,
+            sortOrder: sortOrder === 1 ? "asc" : "desc",
+            appliedFilters: filters,
+            filterOptions: {
+              locations: (filterOptions[0] as string[]).sort(),
+              categories: (filterOptions[1] as string[]).sort(),
+              types: (filterOptions[2] as string[]).sort(),
+              statuses: (filterOptions[3] as string[]).sort()
+            }
           }
         },
+        meta: {
+          accessedBy: user.firebaseUid,
+          accessedAt: new Date().toISOString(),
+          userRole: user.fullRole,
+          permissions: user.collectionPermissions?.find((p: { collection: string; }) => p.collection === 'buildings')?.subRole || 'default'
+        }
       },
       { status: 200 }
     );
@@ -291,4 +305,8 @@ export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+
+export const GET = withCollectionPermission(Collection.BUILDINGS, Action.VIEW)(handler);

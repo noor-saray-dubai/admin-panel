@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Building from "@/models/buildings";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 import { validateBuildingFormData, sanitizeBuildingData } from "@/lib/building-validation";
 import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
@@ -64,9 +65,18 @@ async function updateBuildingSlugs(buildingData: any, buildingId: string) {
 }
 
 /**
- * Main POST handler with authentication
+ * Main POST handler with ZeroTrust authentication
  */
-export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
+  
+  // Create audit context for logging
+  const audit = {
+    email: user.email || 'unknown',
+    ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+    userAgent: request.headers.get('user-agent') || 'unknown'
+  };
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -156,8 +166,17 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       mainImage: mainImageUrl,
       gallery: galleryUrls,
       floorPlans: floorPlanUrls,
-      createdBy: audit.email,
-      updatedBy: audit.email,
+      // Simple audit data (current requirement)
+      createdBy: user.firebaseUid,
+      updatedBy: user.firebaseUid,
+      // Rich audit data foundation (for future enhancement)
+      // createdByEmail: user.email,
+      // createdByRole: user.fullRole,
+      // permissions: { collection: 'buildings', action: 'add', subRole: getUserSubRoleForCollection(user, 'buildings') },
+      version: 1,
+      isActive: sanitizedData.isActive !== undefined ? sanitizedData.isActive : true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
     // Save to database
@@ -167,9 +186,9 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
     AuditLog.createLog({
       action: AuditAction.CONTENT_CREATED,
       level: AuditLevel.INFO,
-      userId: user.uid,
+      userId: user.firebaseUid,
       userEmail: user.email,
-      ip: audit.ipAddress || 'unknown',
+      ip: audit.ipAddress,
       userAgent: audit.userAgent,
       resource: 'building',
       resourceId: savedBuilding.buildingId,
@@ -251,7 +270,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
           isFeatured: savedBuilding.isFeatured,
           createdAt: savedBuilding.createdAt,
           createdBy: savedBuilding.createdBy
-        },
+        }
       },
       { status: 201 }
     );
@@ -300,4 +319,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const POST = withCollectionPermission(Collection.BUILDINGS, Action.ADD)(handler);

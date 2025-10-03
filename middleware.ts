@@ -17,7 +17,7 @@ export async function middleware(request: NextRequest) {
   ];
   
   if (bypassPaths.some(path => pathname.startsWith(path))) {
-    console.log('⚡ [MIDDLEWARE] BYPASS:', pathname);
+    // console.log('⚡ [MIDDLEWARE] BYPASS:', pathname);
     return NextResponse.next();
   }
 
@@ -33,7 +33,7 @@ export async function middleware(request: NextRequest) {
   const isLoggingOut = logoutCookie || logoutParam || logoutHeader || isLogoutAPI;
   
   if (isLoggingOut) {
-    console.log('🚫 [MIDDLEWARE] LOGOUT DETECTED');
+    // console.log('🚫 [MIDDLEWARE] LOGOUT DETECTED');
     
     const targetUrl = new URL('/login?logout=true', request.url);
     const response = NextResponse.redirect(targetUrl);
@@ -84,12 +84,12 @@ export async function middleware(request: NextRequest) {
   if (isPublicRoute) {
     // If already logged in, redirect to dashboard
     if (hasSessionCookie) {
-      console.log('✅ [MIDDLEWARE] Already logged in, redirecting /login → /dashboard');
+      // console.log('✅ [MIDDLEWARE] Already logged in, redirecting /login → /dashboard');
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
     
     // Not logged in, allow access to login/register
-    console.log('🌐 [MIDDLEWARE] Public route allowed:', pathname);
+    // console.log('🌐 [MIDDLEWARE] Public route allowed:', pathname);
     return NextResponse.next();
   }
 
@@ -100,11 +100,11 @@ export async function middleware(request: NextRequest) {
   if (pathname === "/") {
     if (hasSessionCookie) {
       // Logged in: redirect / → /dashboard
-      console.log('✅ [MIDDLEWARE] Root with session, redirecting / → /dashboard');
+      // console.log('✅ [MIDDLEWARE] Root with session, redirecting / → /dashboard');
       return NextResponse.redirect(new URL("/dashboard", request.url));
     } else {
       // Not logged in: redirect / → /login
-      console.log('🔒 [MIDDLEWARE] Root without session, redirecting / → /login');
+      // console.log('🔒 [MIDDLEWARE] Root without session, redirecting / → /login');
       return NextResponse.redirect(new URL("/login", request.url));
     }
   }
@@ -118,22 +118,23 @@ export async function middleware(request: NextRequest) {
   
   // If not protected, allow through
   if (!isProtected) {
-    console.log('🌐 [MIDDLEWARE] Non-protected path, allowing:', pathname);
+    // console.log('🌐 [MIDDLEWARE] Non-protected path, allowing:', pathname);
     return NextResponse.next();
   }
 
   // Protected route - need valid session
   if (!hasSessionCookie) {
-    console.log('❌ [MIDDLEWARE] No session cookie, redirecting to login');
+    // console.log('❌ [MIDDLEWARE] No session cookie, redirecting to login');
     return NextResponse.redirect(new URL("/login", request.url));
   }
   
-  // Verify session with Firebase
+  // Verify session with lightweight cache check
   let isValidSession = false;
   
   try {
-    console.log('🔍 [MIDDLEWARE] Verifying session...');
+    // console.log('🔍 [MIDDLEWARE] Verifying session with cache...');
     
+    // Use the /api/auth/verify endpoint which now uses SessionValidationService internally
     const verifyUrl = new URL('/api/auth/verify', request.url);
     const verifyResponse = await fetch(verifyUrl, {
       method: 'POST',
@@ -147,15 +148,22 @@ export async function middleware(request: NextRequest) {
     if (verifyResponse.ok) {
       const data = await verifyResponse.json();
       isValidSession = data.valid === true;
+      
+      // Log cache performance
+      if (data.cached) {
+        // console.log('⚡ [MIDDLEWARE] Session validated from cache');
+      } else {
+        // console.log('🔥 [MIDDLEWARE] Session validated from Firebase (cache miss)');
+      }
     }
   } catch (error) {
-    console.error('⚠️ [MIDDLEWARE] Session verification failed:', error);
+    // console.error('⚠️ [MIDDLEWARE] Session verification failed:', error);
     isValidSession = false;
   }
 
   // Invalid session? Clear cookie and redirect
   if (!isValidSession) {
-    console.log('🔒 [MIDDLEWARE] Invalid session, redirecting to login');
+    // console.log('🔒 [MIDDLEWARE] Invalid session, redirecting to login');
     
     const response = NextResponse.redirect(new URL("/login", request.url));
     response.cookies.set({
@@ -172,7 +180,7 @@ export async function middleware(request: NextRequest) {
   // VALID SESSION - ALLOW ACCESS
   // ═══════════════════════════════════════════════════════════
   
-  console.log('✅ [MIDDLEWARE] Valid session, allowing access to:', pathname);
+  // console.log('✅ [MIDDLEWARE] Valid session, allowing access to:', pathname);
   
   const response = NextResponse.next();
   response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');

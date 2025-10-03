@@ -13,6 +13,7 @@ import { connectToDatabase } from '@/lib/db';
 import { EnhancedUser } from '@/models/enhancedUser';
 import { ClientUser as IEnhancedUser, FullRole, Collection, Action, SubRole } from '@/types/user';
 import { ZeroTrustChecker, CollectionCapability } from './zeroTrust';
+import { SessionValidationService, SessionValidationError } from './sessionValidationService';
 
 // Re-export everything from AuthService (our business logic)
 export * from './AuthService';
@@ -37,13 +38,24 @@ export class UnifiedServerAuth {
         return { error: 'No authentication token found', status: 401 };
       }
 
-      // Verify Firebase token based on type
+      // Verify Firebase token based on type (with caching for session cookies)
       let decodedToken;
       if (isSessionCookie) {
-        // Use verifySessionCookie for session cookies
-        decodedToken = await adminAuth.verifySessionCookie(token, true);
+        // Use SessionValidationService for session cookies (cached)
+        const validationResult = await SessionValidationService.validateSession(token);
+        if (!validationResult.valid) {
+          // Type assertion since we know validationResult is SessionValidationError when valid is false
+          const errorResult = validationResult as SessionValidationError;
+          return { error: errorResult.error || 'Invalid session', status: 401 };
+        }
+        // Create a mock decodedToken structure for compatibility
+        decodedToken = {
+          uid: validationResult.uid!,
+          email: validationResult.email,
+          role: validationResult.role
+        };
       } else {
-        // Use verifyIdToken for regular ID tokens
+        // Use verifyIdToken for regular ID tokens (no caching as these are short-lived)
         decodedToken = await adminAuth.verifyIdToken(token);
       }
       
@@ -93,9 +105,12 @@ export class UnifiedServerAuth {
         return { user: null, error: 'no_session' };
       }
 
-      // Verify session with Firebase Admin
-      const decodedToken = await adminAuth.verifySessionCookie(sessionCookie, true);
-      const firebaseUid = decodedToken.uid;
+      // Verify session with SessionValidationService (cached)
+      const validationResult = await SessionValidationService.validateSession(sessionCookie);
+      if (!validationResult.valid) {
+        return { user: null, error: 'session_invalid' };
+      }
+      const firebaseUid = validationResult.uid!;
 
       // Connect to database and get user
       await connectToDatabase();

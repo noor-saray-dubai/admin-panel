@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Mall from "@/models/malls";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 
 // Force Node.js runtime
@@ -24,9 +25,11 @@ interface MallFilters {
 }
 
 /**
- * Main GET handler with authentication
+ * Main GET handler with ZeroTrust authentication
  */
-export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -252,16 +255,15 @@ export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
       avgCapRate: 0
     };
 
-    // Log successful fetch
-    console.log(`Malls fetched successfully by ${user.email}:`, {
-      page,
-      limit,
-      tab,
-      totalCount,
-      filters: Object.keys(filters).filter(key => filters[key as keyof MallFilters] !== undefined)
-    });
+    // Get distinct filter values for dropdowns
+    const filterOptions = await Promise.all([
+      Mall.distinct("location", { isActive: true }),
+      Mall.distinct("status", { isActive: true }),
+      Mall.distinct("ownership", { isActive: true }),
+      Mall.distinct("saleInformation.saleStatus", { isActive: true })
+    ]);
 
-    // Return success response
+    // Return success response with audit metadata
     return NextResponse.json(
       {
         success: true,
@@ -280,8 +282,20 @@ export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
             tab,
             sortBy,
             sortOrder: sortOrder === 1 ? "asc" : "desc",
-            appliedFilters: filters
+            appliedFilters: filters,
+            filterOptions: {
+              locations: (filterOptions[0] as string[]).sort(),
+              statuses: (filterOptions[1] as string[]).sort(),
+              ownerships: (filterOptions[2] as string[]).sort(),
+              saleStatuses: (filterOptions[3] as string[]).sort()
+            }
           }
+        },
+        meta: {
+          accessedBy: user.firebaseUid,
+          accessedAt: new Date().toISOString(),
+          userRole: user.fullRole,
+          permissions: user.collectionPermissions?.find((p: { collection: string; }) => p.collection === 'malls')?.subRole || 'default'
         }
       },
       { status: 200 }
@@ -300,4 +314,7 @@ export const GET = withAuth(async (request: NextRequest, { user, audit }) => {
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const GET = withCollectionPermission(Collection.MALLS, Action.VIEW)(handler);

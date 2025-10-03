@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Building from "@/models/buildings";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 import { validateBuildingFormData, sanitizeBuildingData } from "@/lib/building-validation";
 import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
@@ -74,13 +75,21 @@ interface RouteParams {
 }
 
 /**
- * Main PUT handler with authentication
+ * Main PUT handler with ZeroTrust authentication
  */
-export const PUT = withAuth(async (
-  request: NextRequest, 
-  { user, audit }, 
+async function handler(
+  request: NextRequest,
   { params }: { params: { slug: string } }
-) => {
+) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
+  
+  // Create audit context for logging
+  const audit = {
+    email: user.email || 'unknown',
+    ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+    userAgent: request.headers.get('user-agent') || 'unknown'
+  };
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -184,7 +193,7 @@ export const PUT = withAuth(async (
       mainImage: mainImageUrl,
       gallery: galleryUrls,
       floorPlans: floorPlanUrls,
-      updatedBy: audit.email,
+      updatedBy: user.firebaseUid,
       updatedAt: new Date(),
     };
 
@@ -226,9 +235,9 @@ export const PUT = withAuth(async (
     AuditLog.createLog({
       action: AuditAction.CONTENT_UPDATED,
       level: AuditLevel.INFO,
-      userId: user.uid,
+      userId: user.firebaseUid,
       userEmail: user.email,
-      ip: audit.ipAddress || 'unknown',
+      ip: audit.ipAddress,
       userAgent: audit.userAgent,
       resource: 'building',
       resourceId: updatedBuilding.buildingId,
@@ -311,7 +320,7 @@ export const PUT = withAuth(async (
           isFeatured: updatedBuilding.isFeatured,
           updatedAt: updatedBuilding.updatedAt,
           updatedBy: updatedBuilding.updatedBy
-        },
+        }
       },
       { status: 200 }
     );
@@ -353,4 +362,7 @@ export const PUT = withAuth(async (
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const PUT = withCollectionPermission(Collection.BUILDINGS, Action.EDIT)(handler);

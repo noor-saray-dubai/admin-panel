@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Mall from "@/models/malls";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 import { validateMallData, sanitizeMallData } from "@/lib/mall-validation";
 import type { MallFormData } from "@/types/mall";
@@ -63,9 +64,18 @@ async function updateMallSlugs(mallData: any, mallId: string) {
 }
 
 /**
- * Main POST handler with authentication
+ * Main POST handler with ZeroTrust authentication
  */
-export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
+  
+  // Create audit context for logging
+  const audit = {
+    email: user.email || 'unknown',
+    ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+    userAgent: request.headers.get('user-agent') || 'unknown'
+  };
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -159,8 +169,17 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       image: coverImageUrl,
       gallery: galleryUrls,
       floorPlan: floorPlanUrl,
-      createdBy: audit.email,
-      updatedBy: audit.email,
+      // Simple audit data (current requirement)
+      createdBy: user.firebaseUid,
+      updatedBy: user.firebaseUid,
+      // Rich audit data foundation (for future enhancement)
+      // createdByEmail: user.email,
+      // createdByRole: user.fullRole,
+      // permissions: { collection: 'malls', action: 'add', subRole: getUserSubRoleForCollection(user, 'malls') },
+      version: 1,
+      isActive: sanitizedData.isActive !== undefined ? sanitizedData.isActive : true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
     // Save to database
@@ -205,7 +224,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
           isOperational: savedMall.isOperational,
           createdAt: savedMall.createdAt,
           createdBy: savedMall.createdBy
-        },
+        }
       },
       { status: 201 }
     );
@@ -254,4 +273,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const POST = withCollectionPermission(Collection.MALLS, Action.ADD)(handler);

@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Mall from "@/models/malls";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 import { validateMallData, sanitizeMallData } from "@/lib/mall-validation";
 import type { MallUpdateData } from "@/types/mall";
@@ -73,13 +74,21 @@ interface RouteParams {
 }
 
 /**
- * Main PUT handler with authentication
+ * Main PUT handler with ZeroTrust authentication
  */
-export const PUT = withAuth(async (
-  request: NextRequest, 
-  { user, audit }, 
+async function handler(
+  request: NextRequest,
   { params }: { params: { slug: string } }
-) => {
+) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
+  
+  // Create audit context for logging
+  const audit = {
+    email: user.email || 'unknown',
+    ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+    userAgent: request.headers.get('user-agent') || 'unknown'
+  };
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -194,7 +203,7 @@ export const PUT = withAuth(async (
       image: coverImageUrl,
       gallery: galleryUrls,
       floorPlan: floorPlanUrl,
-      updatedBy: audit.email,
+      updatedBy: user.firebaseUid,
       updatedAt: new Date(),
     };
 
@@ -286,7 +295,7 @@ export const PUT = withAuth(async (
           isOperational: updatedMall.isOperational,
           updatedAt: updatedMall.updatedAt,
           updatedBy: updatedMall.updatedBy
-        },
+        }
       },
       { status: 200 }
     );
@@ -328,4 +337,7 @@ export const PUT = withAuth(async (
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const PUT = withCollectionPermission(Collection.MALLS, Action.EDIT)(handler);

@@ -1,6 +1,7 @@
 // app/api/logout/route.ts - ENHANCED VERSION
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth } from "@/lib/firebaseAdmin";
+import { SessionValidationService } from "@/lib/auth/sessionValidationService";
 
 // All possible cookie names that could contain auth data
 const AUTH_COOKIES = [
@@ -46,6 +47,10 @@ export async function POST(request: NextRequest) {
         
         // Clear custom claims
         await adminAuth.setCustomUserClaims(decodedToken.uid, {});
+        
+        // 🗑️ PERFORMANCE: Invalidate cached session
+        const cacheInvalidated = await SessionValidationService.invalidateSession(sessionCookie);
+        console.log(`🗑️ [LOGOUT] Session cache invalidated: ${cacheInvalidated}`);
         
         console.log(`✅ [LOGOUT] Firebase session revoked for user: ${decodedToken.uid}`);
       } catch (firebaseErr: any) {

@@ -2,8 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectToDatabase } from '@/lib/db'
 import Mall from '@/models/malls'
+import { withCollectionPermission } from '@/lib/auth/server'
+import { Collection, Action } from '@/types/user'
 
-export async function GET(request: NextRequest) {
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     await connectToDatabase()
 
@@ -89,3 +93,6 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
+// Export with ZeroTrust collection permission validation
+export const GET = withCollectionPermission(Collection.MALLS, Action.VIEW)(handler);

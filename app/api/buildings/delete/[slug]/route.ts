@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Building from "@/models/buildings";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
 
@@ -11,13 +12,21 @@ import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
 export const runtime = "nodejs";
 
 /**
- * Main DELETE handler with authentication and audit trail
+ * Main DELETE handler with ZeroTrust authentication and audit trail
  */
-export const DELETE = withAuth(async (
+async function handler(
   request: NextRequest,
-  { user, audit },
   { params }: { params: { slug: string } }
-) => {
+) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
+  
+  // Create audit context for logging
+  const audit = {
+    email: user.email || 'unknown',
+    ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+    userAgent: request.headers.get('user-agent') || 'unknown'
+  };
   let buildingInfo: any = null;
   
   try {
@@ -28,14 +37,14 @@ export const DELETE = withAuth(async (
       AuditLog.createLog({
         action: AuditAction.SUSPICIOUS_ACTIVITY,
         level: AuditLevel.WARNING,
-        userId: user.uid,
+        userId: user.firebaseUid,
         userEmail: user.email,
-        ip: audit.ipAddress || 'unknown',
+        ip: audit.ipAddress,
         userAgent: audit.userAgent,
         resource: 'building',
         details: {
           reason: 'Rate limit exceeded on delete operation',
-          slug: params.slug,
+          slug: await params.slug,
           retryAfter: rateLimitResult.retryAfter
         },
         success: false,
@@ -54,7 +63,7 @@ export const DELETE = withAuth(async (
     }
 
     // Extract slug from params
-    const { slug } = params;
+    const { slug } = await params;
 
     if (!slug || typeof slug !== 'string') {
       return NextResponse.json(
@@ -78,9 +87,9 @@ export const DELETE = withAuth(async (
       AuditLog.createLog({
         action: AuditAction.CONTENT_DELETED,
         level: AuditLevel.WARNING,
-        userId: user.uid,
+        userId: user.firebaseUid,
         userEmail: user.email,
-        ip: audit.ipAddress || 'unknown',
+        ip: audit.ipAddress,
         userAgent: audit.userAgent,
         resource: 'building',
         resourceId: slug,
@@ -125,9 +134,9 @@ export const DELETE = withAuth(async (
       AuditLog.createLog({
         action: AuditAction.CONTENT_DELETED,
         level: AuditLevel.ERROR,
-        userId: user.uid,
+        userId: user.firebaseUid,
         userEmail: user.email,
-        ip: audit.ipAddress || 'unknown',
+        ip: audit.ipAddress,
         userAgent: audit.userAgent,
         resource: 'building',
         resourceId: buildingInfo.buildingId,
@@ -155,9 +164,9 @@ export const DELETE = withAuth(async (
     AuditLog.createLog({
       action: AuditAction.CONTENT_DELETED,
       level: AuditLevel.INFO,
-      userId: user.uid,
+      userId: user.firebaseUid,
       userEmail: user.email,
-      ip: audit.ipAddress || 'unknown',
+      ip: audit.ipAddress,
       userAgent: audit.userAgent,
       resource: 'building',
       resourceId: buildingInfo.buildingId,
@@ -197,7 +206,8 @@ export const DELETE = withAuth(async (
         slug: slug,
         location: buildingInfo.location,
         deletedAt: new Date().toISOString(),
-        deletedBy: user.email
+        deletedBy: user.firebaseUid,
+        deletedByEmail: user.email
       }
     });
 
@@ -208,14 +218,14 @@ export const DELETE = withAuth(async (
     AuditLog.createLog({
       action: AuditAction.CONTENT_DELETED,
       level: AuditLevel.ERROR,
-      userId: user.uid,
+      userId: user.firebaseUid,
       userEmail: user.email,
-      ip: audit.ipAddress || 'unknown',
+      ip: audit.ipAddress,
       userAgent: audit.userAgent,
       resource: 'building',
-      resourceId: buildingInfo?.buildingId || params.slug,
+      resourceId: buildingInfo?.buildingId || (await params).slug,
       details: {
-        slug: params.slug,
+        slug: (await params).slug,
         buildingName: buildingInfo?.name || 'Unknown',
         errorName: error.name,
         errorMessage: error.message,
@@ -259,4 +269,7 @@ export const DELETE = withAuth(async (
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const DELETE = withCollectionPermission(Collection.BUILDINGS, Action.DELETE)(handler);
