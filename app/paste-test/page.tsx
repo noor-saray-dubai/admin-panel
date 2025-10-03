@@ -23,7 +23,7 @@ export default function PasteTestPage() {
         </p>
       </div>
 
-      {/* Instructions */}
+    
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
