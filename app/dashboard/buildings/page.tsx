@@ -1,11 +1,14 @@
 import { BuildingTabs } from '@/components/buildings.tabs'
-import React from 'react'
+import React, { Suspense } from 'react'
 
 const page = () => {
   return (
-    <div>
-      <BuildingTabs />
-    </div>
+ 
+       <div>
+          <Suspense fallback={<></>}>
+             <BuildingTabs />
+          </Suspense>
+        </div>
   )
 }
 

@@ -1,11 +1,11 @@
 // app/dashboard/plots/page.tsx
 import { PlotTabs } from '@/components/plot-tabs'
-import React from 'react'
+import React, { Suspense } from 'react'
 
 const page = () => {
   return (
     <div>
-      <PlotTabs />
+     <Suspense fallback={<></>}> <PlotTabs /></Suspense>
     </div>
   )
 }

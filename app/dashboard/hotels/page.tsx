@@ -1,8 +1,8 @@
-import React from 'react'
+import React, { Suspense } from 'react'
 import { HotelTabs } from '@/components/hotel-tabs'
 
 const HotelsPage = () => {
-  return <HotelTabs />
+  return <Suspense fallback={<></>}><HotelTabs /></Suspense>
 }
 
 export default HotelsPage
