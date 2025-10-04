@@ -18,7 +18,8 @@ import {
   Eye,
   EyeOff,
   Key,
-  Shield
+  Shield,
+  Clock
 } from 'lucide-react';
 import {
   Card,
@@ -66,6 +67,8 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetSuccessAt, setResetSuccessAt] = useState<number>(0);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
 
   // Populate form with user data
   useEffect(() => {
@@ -80,6 +83,31 @@ export default function ProfilePage() {
       });
     }
   }, [user]);
+
+  // Countdown timer for password reset cooldown
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (resetSuccessAt > 0) {
+      interval = setInterval(() => {
+        const now = Date.now();
+        const elapsed = now - resetSuccessAt;
+        const cooldownDuration = 60 * 1000; // 60 seconds
+        const remaining = Math.max(0, Math.ceil((cooldownDuration - elapsed) / 1000));
+        
+        setCooldownSeconds(remaining);
+        
+        if (remaining === 0) {
+          setResetSuccessAt(0);
+          clearInterval(interval);
+        }
+      }, 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [resetSuccessAt]);
 
   const handleInputChange = (field: keyof ProfileFormData, value: string) => {
     setFormData(prev => ({
@@ -125,10 +153,27 @@ export default function ProfilePage() {
       return;
     }
     
+    // Prevent double-clicking during request
+    if (isResettingPassword) {
+      console.log('🚫 [Profile] Password reset already in progress, ignoring click');
+      return;
+    }
+    
+    // Check if still in cooldown from previous successful reset
+    if (cooldownSeconds > 0) {
+      toast.info(`Please wait ${cooldownSeconds} seconds before requesting another password reset.`);
+      return;
+    }
+    
+    console.log('🔄 [Profile] Starting password reset, setting loading to TRUE');
     setIsResettingPassword(true);
     
     try {
       console.log('🔐 [Profile] Attempting password reset for:', user.email);
+      
+      // Add minimum loading time to ensure user sees the loading state
+      const minLoadingTime = 1500; // 1.5 seconds minimum
+      const startTime = Date.now();
       
       const response = await fetch('/api/auth/password-reset', {
         method: 'POST',
@@ -139,10 +184,22 @@ export default function ProfilePage() {
       });
       
       console.log('🔐 [Profile] Password reset API response:', response.status, response.statusText);
+      
+      // Ensure minimum loading time has passed
+      const elapsedTime = Date.now() - startTime;
+      if (elapsedTime < minLoadingTime) {
+        console.log(`⏱️ [Profile] Waiting additional ${minLoadingTime - elapsedTime}ms to show loading state`);
+        await new Promise(resolve => setTimeout(resolve, minLoadingTime - elapsedTime));
+      }
 
       if (response.ok) {
         const result = await response.json();
         console.log('✅ [Profile] Password reset successful:', result);
+        
+        // Start 60-second cooldown after successful reset
+        setResetSuccessAt(Date.now());
+        setCooldownSeconds(60);
+        
         toast.success(
           `Password reset email sent to ${user.email}! Check your inbox and spam folder.`, 
           { duration: 5000 }
@@ -156,6 +213,7 @@ export default function ProfilePage() {
       console.error('❌ [Profile] Password reset error:', error);
       toast.error('Network error: Unable to send password reset email. Please try again.');
     } finally {
+      console.log('✅ [Profile] Password reset finished, setting loading to FALSE');
       setIsResettingPassword(false);
     }
   };
@@ -389,13 +447,18 @@ export default function ProfilePage() {
             <Button 
               variant="outline"
               onClick={handlePasswordReset}
-              disabled={isResettingPassword}
+              disabled={isResettingPassword || cooldownSeconds > 0}
               className="flex items-center space-x-2 min-w-[140px]"
             >
               {isResettingPassword ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Sending...</span>
+                </>
+              ) : cooldownSeconds > 0 ? (
+                <>
+                  <Clock className="w-4 h-4" />
+                  <span>Wait {cooldownSeconds}s</span>
                 </>
               ) : (
                 <>
