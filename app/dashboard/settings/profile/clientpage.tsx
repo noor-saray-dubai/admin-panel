@@ -65,6 +65,7 @@ export default function ProfilePage() {
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Populate form with user data
   useEffect(() => {
@@ -119,7 +120,12 @@ export default function ProfilePage() {
   };
 
   const handlePasswordReset = async () => {
-    if (!user?.email) return;
+    if (!user?.email) {
+      toast.error('No email address found. Please contact support.');
+      return;
+    }
+    
+    setIsResettingPassword(true);
     
     try {
       console.log('🔐 [Profile] Attempting password reset for:', user.email);
@@ -137,7 +143,10 @@ export default function ProfilePage() {
       if (response.ok) {
         const result = await response.json();
         console.log('✅ [Profile] Password reset successful:', result);
-        toast.success(`Password reset email sent to ${user.email}! Check your inbox.`);
+        toast.success(
+          `Password reset email sent to ${user.email}! Check your inbox and spam folder.`, 
+          { duration: 5000 }
+        );
       } else {
         const error = await response.json();
         console.error('❌ [Profile] Password reset failed:', error);
@@ -145,7 +154,9 @@ export default function ProfilePage() {
       }
     } catch (error) {
       console.error('❌ [Profile] Password reset error:', error);
-      toast.error('Network error: Unable to send password reset email');
+      toast.error('Network error: Unable to send password reset email. Please try again.');
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -378,10 +389,20 @@ export default function ProfilePage() {
             <Button 
               variant="outline"
               onClick={handlePasswordReset}
-              className="flex items-center space-x-2"
+              disabled={isResettingPassword}
+              className="flex items-center space-x-2 min-w-[140px]"
             >
-              <Key className="w-4 h-4" />
-              <span>Reset Password</span>
+              {isResettingPassword ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Sending...</span>
+                </>
+              ) : (
+                <>
+                  <Key className="w-4 h-4" />
+                  <span>Reset Password</span>
+                </>
+              )}
             </Button>
           </div>
 

@@ -70,16 +70,66 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Generate password reset link using Firebase Admin
+    // Generate direct password reset link to our custom page
     try {
-      // Get the app URL, fallback to localhost for development
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL || 'http://localhost:3000';
-      
-      const resetLink = await FirebaseAdminService.generatePasswordResetLink(email, {
-        // Custom action code settings to redirect to our app
-        url: `${appUrl}/auth/reset-password`, // Redirect to our custom reset page
-        handleCodeInApp: true, // Handle in our app, not Firebase's default UI
+      // Get the app URL - FORCE production URL for Noorsaray
+      const host = request.headers.get('host');
+      console.log('🌐 Request host:', host);
+      console.log('📝 Environment check:', {
+        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+        NODE_ENV: process.env.NODE_ENV,
+        VERCEL_URL: process.env.VERCEL_URL
       });
+      
+      let appUrl;
+      
+      // Priority order for URL detection
+      if (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')) {
+        appUrl = process.env.NEXT_PUBLIC_APP_URL;
+        console.log('✅ Using NEXT_PUBLIC_APP_URL:', appUrl);
+      } else if (host && host.includes('noorsaray.com')) {
+        appUrl = `https://${host}`;
+        console.log('✅ Detected Noorsaray domain:', appUrl);
+      } else if (host && host.includes('.vercel.app')) {
+        appUrl = `https://${host}`;
+        console.log('✅ Detected Vercel domain:', appUrl);
+      } else if (process.env.VERCEL_URL) {
+        appUrl = `https://${process.env.VERCEL_URL}`;
+        console.log('✅ Using VERCEL_URL:', appUrl);
+      } else {
+        // For local development, use localhost; for production, use your domain
+        if (host === 'localhost:3000' || host?.includes('localhost')) {
+          appUrl = 'http://localhost:3000'; // Development only
+          console.log('🛠️ Using localhost for development:', appUrl);
+        } else {
+          // Production - always use your configured domain
+          appUrl = 'https://admin.noorsaray.com';
+          console.log('✅ Using production domain:', appUrl);
+        }
+      }
+      
+      // Ensure URL has proper protocol
+      if (!appUrl.startsWith('http')) {
+        appUrl = `https://${appUrl}`;
+      }
+      
+      console.log('🔗 Final app URL for password reset:', appUrl);
+      
+      // Generate Firebase reset link that goes DIRECTLY to our reset page
+      const actionCodeSettings = {
+        url: `${appUrl}/login`, // After successful reset, redirect to login
+        handleCodeInApp: true, // This tells Firebase to use YOUR custom page
+      };
+      
+      // Note: You also need to set the Action URL in Firebase Console to:
+      // https://admin.noorsaray.com/auth/reset-password
+      // This will make the link go directly to your page instead of Firebase's handler
+      
+      console.log('⚙️ Action code settings:', actionCodeSettings);
+      
+      const resetLink = await FirebaseAdminService.generatePasswordResetLink(email, actionCodeSettings);
+      
+      console.log('✅ Generated reset link:', resetLink);
 
       console.log('✅ Password reset link generated');
 

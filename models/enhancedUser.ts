@@ -233,6 +233,7 @@ const PermissionRequestSchema = new mongoose.Schema<PermissionRequest>({
   expiresAt: Date,
 }, {
   timestamps: true,
+  suppressReservedKeysWarning: true, // Allow 'collection' field name
 });
 
 // Enhanced User Schema
@@ -361,6 +362,7 @@ const EnhancedUserSchema = new mongoose.Schema<IEnhancedUser>({
   },
 }, {
   timestamps: true,
+  suppressReservedKeysWarning: true, // Allow 'collection' field name
 });
 
 // Indexes for performance

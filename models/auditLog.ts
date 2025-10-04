@@ -146,7 +146,7 @@ const AuditLogSchema = new mongoose.Schema<IAuditLog>({
     type: Date,
     default: Date.now,
     required: true,
-    index: true,
+    // index: true, // Removed - duplicate with TTL index below
   },
   sessionId: String,
 }, {

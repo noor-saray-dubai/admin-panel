@@ -139,6 +139,7 @@ const PermissionRequestSchema = new mongoose.Schema<IPermissionRequest>({
   }
 }, {
   timestamps: true,
+  suppressReservedKeysWarning: true, // Allow 'collection' field name
 });
 
 // Indexes for efficient querying
