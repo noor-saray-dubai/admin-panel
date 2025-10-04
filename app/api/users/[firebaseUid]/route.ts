@@ -210,7 +210,7 @@ export async function GET(
     // Determine if user is viewing their own profile
     const isViewingSelf = targetUser.firebaseUid === currentUserFirebaseUid;
     
-    console.log('🔍 Role hierarchy check:', {k
+    console.log('🔍 Role hierarchy check:', {
       currentUser: {
         email: currentUser.email,
         role: currentUser.fullRole,
