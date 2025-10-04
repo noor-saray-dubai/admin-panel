@@ -45,7 +45,7 @@ export function LogoutButton({ onLogoutStart, onLogoutComplete, className }: Log
       console.log("🧹 Clearing client-side data...");
 
       // 1️⃣ Set logout flag (middleware will see this immediately)
-      document.cookie = "__logout=true; path=/; max-age=5"; // 5 second TTL
+      document.cookie = "__logout=true; path=/; max-age=3"; // 3 second TTL (shorter to prevent loops)
       
       // 2️⃣ Clear session cookie IMMEDIATELY
       const clearCookie = (name: string) => {
@@ -110,17 +110,17 @@ export function LogoutButton({ onLogoutStart, onLogoutComplete, className }: Log
     // Clear one more time for safety
     clearClientData();
 
-    // Immediate redirect (multiple methods for reliability)
+    // Clean redirect to login page
     if (typeof window !== 'undefined') {
-      // Method 1: Replace (preferred - no history entry)
-      window.location.replace('/login?logout=true');
+      // Use replace to avoid back button issues
+      window.location.replace('/login');
       
-      // Method 2: Fallback after 100ms
+      // Fallback after reasonable time if somehow replace fails
       setTimeout(() => {
         if (window.location.pathname !== '/login') {
-          window.location.href = '/login?logout=true';
+          window.location.href = '/login';
         }
-      }, 100);
+      }, 1000);
     }
   }, [clearClientData]);
 
@@ -172,8 +172,9 @@ export function LogoutButton({ onLogoutStart, onLogoutComplete, className }: Log
       
       onLogoutComplete?.();
 
-      // ⚡ PHASE 4: INSTANT REDIRECT
-      setTimeout(forceRedirect, 300); // Small delay to show success toast
+      // ⚡ PHASE 4: REDIRECT WITH REASONABLE DELAY
+      // Allow user to see the "Signed Out" message briefly
+      setTimeout(forceRedirect, 500); // Half second delay for better UX
 
     } catch (err) {
       console.error("❌ Logout error:", err);

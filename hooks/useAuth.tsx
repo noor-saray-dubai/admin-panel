@@ -122,6 +122,8 @@ export function useAuth(): UseAuthReturn {
     }
   };
 
+  // Remove aggressive logout detection - let normal Firebase auth handle it
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
       if (firebaseUser) {

@@ -24,7 +24,18 @@ export default function AuthWrapper({
     setIsAuthenticated(authenticated)
     setIsLoading(false)
 
-    // Redirect logic
+    // Check for logout state - if logging out, clear auth and don't redirect
+    const isLoggingOut = new URLSearchParams(window.location.search).get('logout') === 'true';
+    const hasLogoutCookie = document.cookie.includes('__logout=true');
+    
+    if (isLoggingOut || hasLogoutCookie) {
+      // Clear auth state during logout
+      localStorage.removeItem("isAuthenticated");
+      setIsAuthenticated(false);
+      return; // Don't do any redirects during logout process
+    }
+
+    // Normal redirect logic (only when not logging out)
     if (!authenticated && pathname !== "/login") {
       router.push("/login")
     } else if (authenticated && pathname === "/login") {

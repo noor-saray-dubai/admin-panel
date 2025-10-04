@@ -35,6 +35,38 @@ export async function middleware(request: NextRequest) {
   if (isLoggingOut) {
     // console.log('🚫 [MIDDLEWARE] LOGOUT DETECTED');
     
+    // PREVENT REDIRECT LOOP: If already on login page, just clear cookies and continue
+    if (pathname === '/login') {
+      const response = NextResponse.next();
+      
+      // Clear all auth cookies
+      const authCookies = [
+        "__session", "__logout", "auth-token", "firebase-token",
+        "refresh-token", "session-id", "user-session"
+      ];
+      
+      const isProduction = process.env.NODE_ENV === "production";
+      
+      authCookies.forEach(cookieName => {
+        response.cookies.set({
+          name: cookieName,
+          value: "",
+          path: "/",
+          expires: new Date(0),
+          maxAge: 0,
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: "lax",
+        });
+      });
+      
+      response.headers.set('Clear-Site-Data', '"cache", "cookies", "storage"');
+      response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      
+      return response;
+    }
+    
+    // Redirect to login page only if not already there
     const targetUrl = new URL('/login?logout=true', request.url);
     const response = NextResponse.redirect(targetUrl);
     
