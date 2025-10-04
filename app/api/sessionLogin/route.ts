@@ -10,6 +10,11 @@ export async function POST(req: Request) {
   const startTime = Date.now();
   console.log('🔐 Login attempt started');
   
+  // Set a timeout for the entire login process
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Login timeout after 25 seconds')), 25000)
+  );
+  
   // Get client info for audit logging
   const clientInfo = {
     ip: req.headers.get('x-forwarded-for') || 
@@ -19,8 +24,9 @@ export async function POST(req: Request) {
     origin: req.headers.get('origin') || 'unknown'
   };
   
-  try {
+  const loginProcess = async () => {
     const { firebaseUid, email, rememberMe } = await req.json();
+    console.log('🕰️ [LOGIN] Processing login for:', email);
     
     // Get the Authorization header with the ID token
     const authHeader = req.headers.get('authorization');
@@ -63,8 +69,11 @@ export async function POST(req: Request) {
       });
     }
 
-    // Connect to database for user checks
+    // Connect to database for user checks (with timeout logging)
+    console.log('🚀 [LOGIN] Connecting to database...');
+    const dbStart = Date.now();
     await connectToDatabase();
+    console.log(`✅ [LOGIN] Database connected in ${Date.now() - dbStart}ms`);
     
     // Check if user exists in MongoDB using Firebase UID
     const user = await EnhancedUser.findOne({ firebaseUid });
@@ -123,8 +132,11 @@ export async function POST(req: Request) {
       ? 60 * 60 * 24 * 5 * 1000 // 5 days in ms
       : 60 * 60 * 24 * 1 * 1000; // 1 day in ms
 
-    // Create session cookie from ID token
+    // Create session cookie from ID token (with timing)
+    console.log('🍪 [LOGIN] Creating Firebase session cookie...');
+    const sessionStart = Date.now();
     const sessionCookie = await adminAuth.createSessionCookie(idToken, { expiresIn });
+    console.log(`✅ [LOGIN] Session cookie created in ${Date.now() - sessionStart}ms`);
 
     // Update user login information
     const loginTime = new Date();
@@ -247,10 +259,27 @@ export async function POST(req: Request) {
         "Cache-Control": "no-cache, no-store, must-revalidate"
       },
     });
-    
+  };
+  
+  // Race between login process and timeout
+  try {
+    return await Promise.race([loginProcess(), timeoutPromise]);
   } catch (error: any) {
-    console.error("❌ Session login error:", error);
+    console.error('❌ [LOGIN] Process failed:', error.message);
     
+    // Handle timeout specifically
+    if (error.message.includes('timeout')) {
+      return new Response(JSON.stringify({ 
+        error: "Login is taking longer than expected. Please try again.",
+        code: "TIMEOUT"
+      }), { 
+        status: 408, // Request Timeout
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
+    // Original error handling for non-timeout errors
+    console.error("❌ Session login error:", error);
     try {
       await AuditLog.create({
         action: AuditAction.USER_LOGIN,

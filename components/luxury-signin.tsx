@@ -159,6 +159,11 @@ export function LuxurySignIn() {
       
       // Step 3: Create server session (more secure than the previous approach)
       console.log('🍪 Creating server session...')
+      
+      // Add longer timeout for production
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
       const res = await fetch("/api/sessionLogin", {
         method: "POST",
         headers: {
@@ -170,7 +175,10 @@ export function LuxurySignIn() {
           email: firebaseUser.email,
           rememberMe,
         }),
+        signal: controller.signal
       })
+      
+      clearTimeout(timeoutId);
 
       if (!res.ok) {
         throw new Error("Session creation failed")
@@ -213,6 +221,10 @@ export function LuxurySignIn() {
         errorMessage = "Network error. Please check your connection"
       } else if (error.message === "Session creation failed") {
         errorMessage = "Server error. Please try again"
+      } else if (error.name === 'AbortError') {
+        errorMessage = "Login is taking too long. Please check your connection and try again"
+      } else if (error.message?.includes('timeout') || error.message?.includes('TIMEOUT')) {
+        errorMessage = "Login timeout. Please try again with a stable connection"
       }
       
       // Show error toast
