@@ -1021,18 +1021,56 @@ export default function UserManagementPage() {
                             View
                           </Button>
                           
-                          {isSystemAdmin() && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(userData);
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          )}
+                          {(() => {
+                            // Role hierarchy check - only show edit for lower role users
+                            // Note: Using lowercase with underscores to match database values
+                            const roleHierarchy: Record<string, number> = {
+                              'user': 1,
+                              'agent': 2,
+                              'marketing': 2,
+                              'sales': 2,
+                              'hr': 2,
+                              'community_manager': 2,
+                              'admin': 3,
+                              'super_admin': 4
+                            };
+                            
+                            const currentUserRole = user?.fullRole || 'user';
+                            const targetUserRole = userData.fullRole || 'user';
+                            const currentUserRoleLevel = roleHierarchy[currentUserRole];
+                            const targetUserRoleLevel = roleHierarchy[targetUserRole];
+                            const isEditingSelf = userData.firebaseUid === user?.uid;
+                            
+                            // Debug logging (remove in production)
+                            console.log('🔍 Edit button check:', {
+                              currentUserRole,
+                              targetUserRole,
+                              currentUserRoleLevel,
+                              targetUserRoleLevel,
+                              isEditingSelf,
+                              isSystemAdmin: isSystemAdmin(),
+                              targetEmail: userData.email
+                            });
+                            
+                            // Only allow editing users with LOWER roles (not self, not equal/higher)
+                            const canEditUser = isSystemAdmin() && 
+                                              targetUserRoleLevel < currentUserRoleLevel && 
+                                              !isEditingSelf;
+                            
+                            return canEditUser ? (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditModal(userData);
+                                }}
+                                title={`Edit ${userData.displayName} (${targetUserRole})`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            ) : null;
+                          })()}
                           
                           {isSuperAdmin() && userData.firebaseUid !== user?.uid && (
                             <Button 

@@ -206,6 +206,24 @@ export async function GET(
 
     const currentUserRoleLevel = roleHierarchy[currentUser.fullRole as FullRole];
     const targetUserRoleLevel = roleHierarchy[targetUser.fullRole as FullRole];
+    
+    // Determine if user is viewing their own profile
+    const isViewingSelf = targetUser.firebaseUid === currentUserFirebaseUid;
+    
+    console.log('🔍 Role hierarchy check:', {
+      currentUser: {
+        email: currentUser.email,
+        role: currentUser.fullRole,
+        level: currentUserRoleLevel
+      },
+      targetUser: {
+        email: targetUser.email,
+        role: targetUser.fullRole,
+        level: targetUserRoleLevel
+      },
+      isViewingSelf,
+      canManageTarget: targetUserRoleLevel < currentUserRoleLevel
+    });
 
     // Additional safety check for invalid roles
     if (currentUserRoleLevel === undefined || targetUserRoleLevel === undefined) {
@@ -220,17 +238,46 @@ export async function GET(
     }
 
     // 6. Determine available actions based on role hierarchy
-    // Special case: allow viewing own profile regardless of role level
-    const isViewingSelf = targetUser.firebaseUid === currentUserFirebaseUid;
+    // ADMIN MANAGEMENT INTERFACE: Strict role hierarchy - no self-editing allowed
+    // For self-editing, users should use the dedicated Profile Settings page
+    
+    console.log('👤 Self-check:', {
+      targetUserFirebaseUid: targetUser.firebaseUid,
+      currentUserFirebaseUid: currentUserFirebaseUid,
+      isViewingSelf,
+      targetEmail: targetUser.email,
+      currentEmail: currentUser.email
+    });
 
-    const canEdit = isViewingSelf || targetUserRoleLevel < currentUserRoleLevel;
+    // STRICT HIERARCHY: Users can only manage users with LOWER role levels
+    // Self-editing is blocked in admin interface - use Profile Settings instead
+    const canEdit = targetUserRoleLevel < currentUserRoleLevel; // Removed self-editing allowance
     const canDelete = isSuperAdmin && targetUserRoleLevel < currentUserRoleLevel && !isViewingSelf; // Can't delete self
-    const canChangeRole = !isViewingSelf && targetUserRoleLevel < currentUserRoleLevel; // Can't change own role
-    const canChangeStatus = !isViewingSelf && targetUserRoleLevel < currentUserRoleLevel; // Can't change own status
-    const canManagePermissions = !isViewingSelf && targetUserRoleLevel < currentUserRoleLevel; // Can't change own permissions
+    const canChangeRole = targetUserRoleLevel < currentUserRoleLevel; // No self role changes
+    const canChangeStatus = targetUserRoleLevel < currentUserRoleLevel; // No self status changes
+    const canManagePermissions = targetUserRoleLevel < currentUserRoleLevel; // No self permission changes
     const canViewSensitiveInfo = isSuperAdmin || isViewingSelf || targetUserRoleLevel < currentUserRoleLevel;
-    const canResetPassword = targetUserRoleLevel <= currentUserRoleLevel;
-    const canUnlock = targetUserRoleLevel <= currentUserRoleLevel;
+    const canResetPassword = targetUserRoleLevel < currentUserRoleLevel || isViewingSelf; // Can still reset own password
+    const canUnlock = targetUserRoleLevel < currentUserRoleLevel; // Can only unlock lower role users
+    
+    console.log('⚙️ Calculated permissions:', {
+      canEdit,
+      canDelete,
+      canChangeRole,
+      canChangeStatus,
+      canManagePermissions,
+      canViewSensitiveInfo,
+      canResetPassword,
+      canUnlock,
+      reasoning: {
+        isViewingSelf,
+        targetLowerThanCurrent: targetUserRoleLevel < currentUserRoleLevel,
+        isSuperAdmin,
+        targetUserLevel: targetUserRoleLevel,
+        currentUserLevel: currentUserRoleLevel,
+        note: 'Admin interface blocks self-editing - use Profile Settings for self-edits'
+      }
+    });
 
     // 7. Get available roles user can assign
     const getAvailableRoles = (): FullRole[] => {

@@ -268,6 +268,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     }
 
     // Role hierarchy check - can't edit users with equal or higher roles
+    // STRICT ENFORCEMENT: No self-editing allowed in admin management interface
     const roleHierarchy: RoleHierarchy = {
       [FullRole.USER]: 1,
       [FullRole.AGENT]: 2,
@@ -281,10 +282,12 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     const currentUserRoleLevel = roleHierarchy[currentUser.fullRole as FullRole];
     const targetUserRoleLevel = roleHierarchy[targetUser.fullRole as FullRole];
 
+    // Admin management interface: strict role hierarchy - no self-editing allowed
+    // For self-editing, users should use the dedicated profile settings page
     if (targetUserRoleLevel >= currentUserRoleLevel) {
       return NextResponse.json({
         success: false,
-        error: "Cannot edit user with equal or higher role than your own"
+        error: "Cannot edit user with equal or higher role than your own. Use Profile Settings to edit your own profile."
       }, { status: 403 });
     }
 
