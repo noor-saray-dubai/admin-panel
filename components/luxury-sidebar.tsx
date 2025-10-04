@@ -79,11 +79,20 @@ export function LuxurySidebar({
     // Always add dashboard
     navItems.push({ ...navigationMap.dashboard, key: 'dashboard' })
     
-    // Add navigation items for collections user has access to
+    // Add navigation items for collections user has access to (excluding Settings)
     Object.entries(navigationMap).forEach(([key, item]) => {
+      // Skip Settings here as we'll add it separately
+      if (key === Collection.SYSTEM) return
+      
       if (item.collection && accessibleCollections.includes(item.collection)) {
         navItems.push({ ...item, key })
       }
+    })
+    
+    // Always add Settings - available to all users for profile management
+    navItems.push({ 
+      ...navigationMap[Collection.SYSTEM], 
+      key: Collection.SYSTEM 
     })
     
     // Add admin-specific navigation items

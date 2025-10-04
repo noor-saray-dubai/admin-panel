@@ -665,9 +665,14 @@ export default function UserDetailPage() {
                     <CardTitle>Profile Information</CardTitle>
                     <CardDescription>
                       Basic user information and contact details
+                      {roleHierarchy && roleHierarchy.currentUserLevel <= roleHierarchy.targetUserLevel && (
+                        <span className="block text-amber-600 mt-1">
+                          ⚠️ Editing restricted due to role hierarchy
+                        </span>
+                      )}
                     </CardDescription>
                   </div>
-                  {availableActions?.canEdit && (
+                  {availableActions?.canEdit ? (
                     <Button 
                       onClick={handleEditToggle}
                       variant={isEditing ? "outline" : "default"}
@@ -684,6 +689,17 @@ export default function UserDetailPage() {
                           Edit
                         </>
                       )}
+                    </Button>
+                  ) : (
+                    <Button 
+                      disabled
+                      variant="outline"
+                      size="sm"
+                      className="opacity-50 cursor-not-allowed"
+                      title="You cannot edit this user due to role restrictions"
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit (Restricted)
                     </Button>
                   )}
                 </CardHeader>
@@ -849,14 +865,30 @@ export default function UserDetailPage() {
                     <CardTitle>Permissions Management</CardTitle>
                     <CardDescription>
                       Manage user permissions and collection access
+                      {roleHierarchy && roleHierarchy.currentUserLevel <= roleHierarchy.targetUserLevel && (
+                        <span className="block text-amber-600 mt-1">
+                          ⚠️ Permission management restricted due to role hierarchy
+                        </span>
+                      )}
                     </CardDescription>
                   </div>
-                  {availableActions?.canManagePermissions && !editingPermissions && (
+                  {availableActions?.canManagePermissions && !editingPermissions ? (
                     <Button onClick={handleEditPermissions} size="sm">
                       <Edit className="h-4 w-4 mr-2" />
                       Edit Permissions
                     </Button>
-                  )}
+                  ) : !editingPermissions ? (
+                    <Button 
+                      disabled
+                      variant="outline"
+                      size="sm"
+                      className="opacity-50 cursor-not-allowed"
+                      title="You cannot manage this user's permissions due to role restrictions"
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit Permissions (Restricted)
+                    </Button>
+                  ) : null}
                   
                   {/* Debug info - remove in production */}
                   {process.env.NODE_ENV === 'development' && (
@@ -1273,9 +1305,15 @@ export default function UserDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>Quick Actions</CardTitle>
+              {roleHierarchy && roleHierarchy.currentUserLevel <= roleHierarchy.targetUserLevel && (
+                <CardDescription className="text-amber-600">
+                  ⚠️ Limited access: This user has equal or higher privileges than you
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="space-y-2">
-              {availableActions?.canEdit && (
+              {/* Edit Profile Action */}
+              {availableActions?.canEdit ? (
                 <Button 
                   onClick={handleEditToggle} 
                   variant="outline" 
@@ -1285,9 +1323,24 @@ export default function UserDetailPage() {
                   <Edit className="h-4 w-4 mr-2" />
                   Edit Profile
                 </Button>
+              ) : (
+                <div className="w-full">
+                  <Button 
+                    disabled
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start opacity-50 cursor-not-allowed"
+                    title="You cannot edit this user due to role restrictions"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Profile
+                  </Button>
+                  <p className="text-xs text-gray-500 mt-1">Restricted by role hierarchy</p>
+                </div>
               )}
               
-              {availableActions?.canManagePermissions && (
+              {/* Manage Permissions Action */}
+              {availableActions?.canManagePermissions ? (
                 <Button 
                   onClick={handleEditPermissions} 
                   variant="outline" 
@@ -1297,9 +1350,24 @@ export default function UserDetailPage() {
                   <Shield className="h-4 w-4 mr-2" />
                   Manage Permissions
                 </Button>
+              ) : (
+                <div className="w-full">
+                  <Button 
+                    disabled
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start opacity-50 cursor-not-allowed"
+                    title="You cannot manage this user's permissions due to role restrictions"
+                  >
+                    <Shield className="h-4 w-4 mr-2" />
+                    Manage Permissions
+                  </Button>
+                  <p className="text-xs text-gray-500 mt-1">Restricted by role hierarchy</p>
+                </div>
               )}
               
-              {availableActions?.canResetPassword && (
+              {/* Reset Password Action */}
+              {availableActions?.canResetPassword ? (
                 <Button 
                   onClick={() => setShowResetPasswordDialog(true)} 
                   variant="outline" 
@@ -1309,9 +1377,24 @@ export default function UserDetailPage() {
                   <Key className="h-4 w-4 mr-2" />
                   Reset Password
                 </Button>
+              ) : (
+                <div className="w-full">
+                  <Button 
+                    disabled
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start opacity-50 cursor-not-allowed"
+                    title="You cannot reset this user's password due to role restrictions"
+                  >
+                    <Key className="h-4 w-4 mr-2" />
+                    Reset Password
+                  </Button>
+                  <p className="text-xs text-gray-500 mt-1">Restricted by role hierarchy</p>
+                </div>
               )}
               
-              {availableActions?.canDelete && (
+              {/* Delete User Action */}
+              {availableActions?.canDelete ? (
                 <Button 
                   onClick={() => setShowDeleteDialog(true)} 
                   variant="destructive" 
@@ -1321,6 +1404,32 @@ export default function UserDetailPage() {
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete User
                 </Button>
+              ) : (
+                <div className="w-full">
+                  <Button 
+                    disabled
+                    variant="destructive" 
+                    size="sm" 
+                    className="w-full justify-start opacity-50 cursor-not-allowed"
+                    title="You cannot delete this user due to role restrictions"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete User
+                  </Button>
+                  <p className="text-xs text-gray-500 mt-1">Restricted by role hierarchy</p>
+                </div>
+              )}
+              
+              {/* Show message if no actions are available */}
+              {!availableActions?.canEdit && !availableActions?.canManagePermissions && 
+               !availableActions?.canResetPassword && !availableActions?.canDelete && (
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <AlertCircle className="h-6 w-6 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">No management actions available</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    You can only view this user's information
+                  </p>
+                </div>
               )}
             </CardContent>
           </Card>

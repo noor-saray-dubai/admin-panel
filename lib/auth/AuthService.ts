@@ -195,11 +195,19 @@ export class AuthService {
 
       const user = await EnhancedUser.findOne({ 
         firebaseUid, 
-        status: { $in: [UserStatus.ACTIVE] }
+        status: { $in: [UserStatus.ACTIVE, UserStatus.INVITED] } // Allow both ACTIVE and INVITED users
       });
 
       if (!user) {
         return null;
+      }
+      
+      // 🎆 AUTO-ACTIVATE INVITED USERS (backup for cases where sessionLogin wasn't used)
+      if (user.status === UserStatus.INVITED) {
+        console.log(`🚀 [AuthService] Auto-activating invited user: ${user.email}`);
+        user.status = UserStatus.ACTIVE;
+        await user.save();
+        console.log(`✅ [AuthService] User status updated to ACTIVE for ${user.email}`);
       }
 
       // Check if account is locked

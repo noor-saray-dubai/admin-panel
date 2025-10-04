@@ -68,8 +68,16 @@ export class UnifiedServerAuth {
       
       const user = await EnhancedUser.findOne({ 
         firebaseUid: decodedToken.uid,
-        status: { $in: ['active', 'ACTIVE'] } // Support both lowercase and uppercase
+        status: { $in: ['active', 'ACTIVE', 'invited', 'INVITED'] } // Support INVITED users too
       });
+      
+      // 🎆 AUTO-ACTIVATE INVITED USERS (backup for server-side auth flows)
+      if (user && (user.status === 'invited' || user.status === 'INVITED')) {
+        console.log(`🚀 [ServerAuth] Auto-activating invited user: ${user.email}`);
+        user.status = 'ACTIVE';
+        await user.save();
+        console.log(`✅ [ServerAuth] User status updated to ACTIVE for ${user.email}`);
+      }
 
       if (!user) {
         return { error: 'User not found or inactive', status: 404 };

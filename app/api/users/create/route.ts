@@ -333,9 +333,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateUse
         console.log('✅ Invitation email sent via SMTP successfully!');
       } catch (error) {
         console.error('❌ DETAILED EMAIL ERROR:', {
-          message: error.message,
-          code: error.code,
-          stack: error.stack,
+          message: error instanceof Error ? error.message : 'Unknown error',
+          code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
+          stack: error instanceof Error ? error.stack : undefined,
           email: email,
           displayName: displayName,
           passwordResetLink: passwordResetLink ? 'Generated' : 'Not generated'

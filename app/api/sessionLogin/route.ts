@@ -94,6 +94,19 @@ export async function POST(req: Request) {
       });
     }
     
+    // 🎆 AUTO-ACTIVATE INVITED USERS ON FIRST LOGIN
+    let statusChanged = false;
+    if (user.status === UserStatus.INVITED) {
+      console.log(`🚀 First login detected for invited user: ${email}`);
+      console.log(`🔄 Changing status from INVITED to ACTIVE`);
+      
+      user.status = UserStatus.ACTIVE;
+      await user.save();
+      statusChanged = true;
+      
+      console.log(`✅ User status updated to ACTIVE for ${email}`);
+    }
+    
     // Check if user is locked due to too many failed attempts
     if (user.isLocked && user.isLocked()) {
       await logFailedLogin(user.firebaseUid, email, 'Account temporarily locked', clientInfo);
@@ -136,7 +149,7 @@ export async function POST(req: Request) {
       displayName: user.displayName,
       fullRole: user.fullRole,
       department: user.department,
-      status: user.status,
+      status: user.status, // This will be ACTIVE if statusChanged occurred
       collectionPermissions: user.collectionPermissions,
       permissionOverrides: user.permissionOverrides,
       profileImage: user.profileImage,
@@ -183,6 +196,9 @@ export async function POST(req: Request) {
         sessionDuration: rememberMe ? '5 days' : '1 day',
         userRole: user.fullRole,
         userStatus: user.status,
+        statusChanged: statusChanged,
+        statusChangeType: statusChanged ? 'INVITED → ACTIVE' : null,
+        firstLogin: statusChanged,
         rememberMe,
         origin: clientInfo.origin,
         processingTime: Date.now() - startTime,
@@ -190,13 +206,35 @@ export async function POST(req: Request) {
       },
       timestamp: loginTime
     });
+    
+    // 📝 Create additional audit log for status change if it occurred
+    if (statusChanged) {
+      await AuditLog.create({
+        action: AuditAction.USER_UPDATED,
+        success: true,
+        level: AuditLevel.INFO,
+        userId: user.firebaseUid,
+        userEmail: email,
+        ip: clientInfo.ip,
+        userAgent: clientInfo.userAgent,
+        resource: 'user_status',
+        details: {
+          statusChange: 'INVITED → ACTIVE',
+          reason: 'Automatic activation on first login',
+          triggeredBy: 'system',
+          loginTime: loginTime.toISOString()
+        },
+        timestamp: loginTime
+      });
+    }
 
     // Create Set-Cookie header
     const cookieValue = `__session=${sessionCookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${
       expiresIn / 1000
     };${process.env.NODE_ENV === "production" ? " Secure;" : ""}`;
 
-    console.log(`✅ Login successful for ${email} in ${Date.now() - startTime}ms (cached: ${cachePreWarmed})`);
+    const statusMessage = statusChanged ? ' | Status: INVITED → ACTIVE' : '';
+    console.log(`✅ Login successful for ${email} in ${Date.now() - startTime}ms (cached: ${cachePreWarmed})${statusMessage}`);
     
     return new Response(JSON.stringify({ 
       success: true,
