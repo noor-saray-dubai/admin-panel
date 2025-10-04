@@ -310,23 +310,40 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateUse
     let invitationSent = false;
     let passwordResetLink = '';
     
+    console.log(`🔍 DEBUG: sendInvitation parameter = ${sendInvitation}`);
+    
     if (sendInvitation) {
+      console.log('📧 Starting invitation email process...');
       try {
+        console.log('🔗 Generating Firebase password reset link...');
         // Generate Firebase password reset link
         passwordResetLink = await FirebaseAdminService.sendPasswordResetEmail(email);
+        console.log(`✅ Password reset link generated: ${passwordResetLink ? 'SUCCESS' : 'FAILED'}`);
         
+        console.log('📦 Importing EmailService...');
         // Import EmailService dynamically to avoid import issues
         const { default: EmailService } = await import('@/lib/emailService');
+        console.log('✅ EmailService imported successfully');
         
+        console.log(`📤 Sending email to: ${email} with display name: ${displayName}`);
         // Send the actual email with the reset link
         await EmailService.sendPasswordReset(email, displayName, passwordResetLink);
         
         invitationSent = true;
-        console.log('✅ Invitation email sent via SMTP');
+        console.log('✅ Invitation email sent via SMTP successfully!');
       } catch (error) {
-        console.warn('⚠️ Failed to send invitation email:', error);
+        console.error('❌ DETAILED EMAIL ERROR:', {
+          message: error.message,
+          code: error.code,
+          stack: error.stack,
+          email: email,
+          displayName: displayName,
+          passwordResetLink: passwordResetLink ? 'Generated' : 'Not generated'
+        });
         // Don't fail the user creation if email fails
       }
+    } else {
+      console.log('📧 Invitation email SKIPPED - sendInvitation is false');
     }
     
     // 11. Create audit log

@@ -1,3 +1,4 @@
+//app/dashboard/settings/profile/clientpage.tsx
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -121,6 +122,8 @@ export default function ProfilePage() {
     if (!user?.email) return;
     
     try {
+      console.log('🔐 [Profile] Attempting password reset for:', user.email);
+      
       const response = await fetch('/api/auth/password-reset', {
         method: 'POST',
         headers: {
@@ -128,14 +131,21 @@ export default function ProfilePage() {
         },
         body: JSON.stringify({ email: user.email }),
       });
+      
+      console.log('🔐 [Profile] Password reset API response:', response.status, response.statusText);
 
       if (response.ok) {
-        toast.success('Password reset email sent! Check your inbox.');
+        const result = await response.json();
+        console.log('✅ [Profile] Password reset successful:', result);
+        toast.success(`Password reset email sent to ${user.email}! Check your inbox.`);
       } else {
-        toast.error('Failed to send password reset email');
+        const error = await response.json();
+        console.error('❌ [Profile] Password reset failed:', error);
+        toast.error(error.error || 'Failed to send password reset email');
       }
     } catch (error) {
-      toast.error('Network error occurred');
+      console.error('❌ [Profile] Password reset error:', error);
+      toast.error('Network error: Unable to send password reset email');
     }
   };
 

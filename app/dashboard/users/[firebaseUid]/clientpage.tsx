@@ -1,3 +1,4 @@
+//app/dashboard/users/[firebaseUid]/clientpage.tsx
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -394,10 +395,32 @@ export default function UserDetailPage() {
     if (!userData || !availableActions?.canResetPassword) return;
     
     try {
-      // Implement password reset logic here
-      toast.success('Password reset email sent');
+      console.log('🔐 Attempting to reset password for user:', userData.email);
+      
+      const response = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: userData.email
+        })
+      });
+      
+      console.log('🔐 Password reset API response:', response.status, response.statusText);
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Password reset successful:', result);
+        toast.success(`Password reset email sent to ${userData.email}`);
+      } else {
+        const error = await response.json();
+        console.error('❌ Password reset failed:', error);
+        toast.error(error.error || 'Failed to send password reset email');
+      }
     } catch (error) {
-      toast.error('Error sending password reset');
+      console.error('❌ Password reset error:', error);
+      toast.error('Network error: Unable to send password reset email');
     } finally {
       setShowResetPasswordDialog(false);
     }
