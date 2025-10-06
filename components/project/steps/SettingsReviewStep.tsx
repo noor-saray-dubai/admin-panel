@@ -59,7 +59,27 @@ export function SettingsReviewStep({
       'flags.exclusive': 'Exclusive Flag',
       'flags.featured': 'Featured Flag',
       'flags.highValue': 'High Value Flag',
-      'registrationOpen': 'Registration Status'
+      'registrationOpen': 'Registration Status',
+      // MongoDB-specific field names
+      'id': 'Project ID',
+      'slug': 'Project Slug',
+      'locationSlug': 'Location Slug',
+      'statusSlug': 'Status Slug',
+      'developerSlug': 'Developer Slug',
+      'createdBy': 'Created By',
+      'updatedBy': 'Updated By',
+      'version': 'Version',
+      'isActive': 'Active Status',
+      'tags': 'Tags',
+      // Nested paths that MongoDB might return
+      'paymentPlan.booking': 'Booking Payment Plan',
+      'paymentPlan.construction.0.milestone': 'First Construction Milestone',
+      'paymentPlan.construction.0.percentage': 'First Construction Percentage',
+      'locationDetails.coordinates.latitude': 'Latitude',
+      'locationDetails.coordinates.longitude': 'Longitude',
+      'flags.elite': 'Elite Flag',
+      'flags.exclusive': 'Exclusive Flag',
+      'flags.highValue': 'High Value Flag'
     }
     
     return fieldMap[fieldName] || fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
@@ -460,6 +480,69 @@ export function SettingsReviewStep({
         </CardContent>
       </Card>
 
+      {/* Debug Panel - Only in development */}
+      {process.env.NODE_ENV === 'development' && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2 text-blue-800">
+              <FileText className="h-5 w-5" />
+              Debug: Submit Data Preview
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div>
+                <Label className="text-sm font-medium text-blue-700 mb-2 block">Data that will be sent to API:</Label>
+                <div className="p-3 bg-white border border-blue-200 rounded-lg overflow-x-auto">
+                  <pre className="text-xs text-gray-700">
+                    {JSON.stringify({
+                      ...formData,
+                      price: formData.price.total,
+                      priceNumeric: formData.price.totalNumeric,
+                      slug: formData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+                      locationSlug: formData.location.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+                      statusSlug: formData.status.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+                      developerSlug: formData.developer.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+                    }, null, 2)}
+                  </pre>
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-sm font-medium text-blue-700 mb-2 block">Quick Validation Check:</Label>
+                <div className="space-y-1 text-xs">
+                  <div className={`flex items-center gap-1 ${formData.name ? 'text-green-600' : 'text-red-600'}`}>
+                    {formData.name ? '✓' : '✗'} Name: {formData.name || 'Missing'}
+                  </div>
+                  <div className={`flex items-center gap-1 ${formData.image ? 'text-green-600' : 'text-red-600'}`}>
+                    {formData.image ? '✓' : '✗'} Cover Image: {formData.image ? 'Present' : 'Missing'}
+                  </div>
+                  <div className={`flex items-center gap-1 ${formData.gallery.length > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formData.gallery.length > 0 ? '✓' : '✗'} Gallery: {formData.gallery.length} images
+                  </div>
+                  <div className={`flex items-center gap-1 ${formData.amenities.length > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formData.amenities.length > 0 ? '✓' : '✗'} Amenities: {formData.amenities.length} categories
+                  </div>
+                  <div className={`flex items-center gap-1 ${formData.unitTypes.length > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formData.unitTypes.length > 0 ? '✓' : '✗'} Unit Types: {formData.unitTypes.length} types
+                  </div>
+                  <div className={`flex items-center gap-1 ${formData.categories.length > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formData.categories.length > 0 ? '✓' : '✗'} Categories: {formData.categories.length} items
+                  </div>
+                  <div className={`flex items-center gap-1 ${formData.locationDetails.nearby.length > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formData.locationDetails.nearby.length > 0 ? '✓' : '✗'} Nearby Places: {formData.locationDetails.nearby.length} places
+                  </div>
+                </div>
+              </div>
+              
+              <div className="text-xs text-blue-600">
+                <strong>💡 Debug Tip:</strong> Check the browser console for detailed request/response logs when submitting.
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       {/* Project Settings */}
       <Card>
         <CardHeader>

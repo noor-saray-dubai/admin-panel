@@ -1,7 +1,7 @@
 // components/project/ProjectFormModal.tsx
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -125,6 +125,15 @@ const initialFormData: ProjectFormData = {
 }
 
 export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: ProjectFormModalProps) {
+  // Debug notification
+  React.useEffect(() => {
+    if (isOpen && process.env.NODE_ENV === 'development') {
+      console.log('🚪 Project Form Modal opened in DEBUG mode')
+      console.log('💡 Watch this console for detailed submission logs and error parsing')
+      console.log('🔍 Form mode:', mode, '| Project:', project?.name || 'New Project')
+    }
+  }, [isOpen, mode, project])
+  
   // Use custom hooks for form logic and validation
   const {
     formData,
@@ -255,6 +264,13 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
       const endpoint = mode === 'edit' ? `/api/projects/update/${project?.slug}` : '/api/projects/add'
       const method = mode === 'edit' ? 'PUT' : 'POST'
 
+      console.log('🚀 Submitting project data:', {
+        endpoint,
+        method,
+        dataKeys: Object.keys(submitData),
+        submitData: JSON.stringify(submitData, null, 2)
+      })
+
       const response = await fetch(endpoint, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -262,47 +278,105 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
       })
 
       if (!response.ok) {
+        console.log('❌ Response not OK:', {
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries())
+        })
+        
         const errorData = await response.json()
+        console.log('📝 Full error response:', errorData)
         
         // Handle validation errors from backend
-        if (errorData.error === 'VALIDATION_ERROR' && errorData.errors) {
+        if ((errorData.error === 'VALIDATION_ERROR' || errorData.error === 'DB_VALIDATION_ERROR') && errorData.errors) {
           const backendErrors: Record<string, string> = {}
+          
+          console.log('🔍 Backend validation error details:', {
+            errorType: errorData.error,
+            errors: errorData.errors,
+            message: errorData.message
+          })
           
           // If errors is an array, convert to field-specific errors
           if (Array.isArray(errorData.errors)) {
-            errorData.errors.forEach((errorMsg: string) => {
-              // Parse field-specific errors from error messages
-              // Pattern 1: "fieldName is required and must be a string."
-              const fieldMatch1 = errorMsg.match(/^([a-zA-Z.\[\]0-9]+)\s+(.*)/)
-              // Pattern 2: "name is required and must be a string."
-              const fieldMatch2 = errorMsg.match(/^(\w+)\s+(.+)$/)
+            errorData.errors.forEach((errorMsg: string, index: number) => {
+              console.log(`📝 Processing error ${index + 1}:`, errorMsg)
               
-              if (fieldMatch1 && fieldMatch1[1].includes('.')) {
+              // Multiple parsing patterns for different error formats
+              // Pattern 1: "fieldName is required and must be a string."
+              const fieldMatch1 = errorMsg.match(/^([a-zA-Z.\[\]0-9_]+)\s+(.*)/)
+              // Pattern 2: "Path `fieldName` is required."
+              const pathMatch = errorMsg.match(/Path `([^`]+)` (.+)/)
+              // Pattern 3: "Cast to Number failed for value ..."
+              const castMatch = errorMsg.match(/Cast to (\w+) failed for value .* at path "([^"]+)"/)
+              // Pattern 4: "ValidationError: fieldName: message"
+              const validationMatch = errorMsg.match(/ValidationError: ([^:]+): (.+)/)
+              
+              if (pathMatch) {
+                const fieldName = pathMatch[1]
+                const message = pathMatch[2]
+                backendErrors[fieldName] = message
+                console.log(`✅ Mapped path error: ${fieldName} -> ${message}`)
+              } else if (castMatch) {
+                const fieldName = castMatch[2]
+                const message = `Invalid ${castMatch[1].toLowerCase()} value`
+                backendErrors[fieldName] = message
+                console.log(`✅ Mapped cast error: ${fieldName} -> ${message}`)
+              } else if (validationMatch) {
+                const fieldName = validationMatch[1]
+                const message = validationMatch[2]
+                backendErrors[fieldName] = message
+                console.log(`✅ Mapped validation error: ${fieldName} -> ${message}`)
+              } else if (fieldMatch1 && fieldMatch1[1].includes('.')) {
                 // Nested field like "locationDetails.description"
                 const fieldName = fieldMatch1[1]
                 const message = fieldMatch1[2]
                 backendErrors[fieldName] = message
-              } else if (fieldMatch2) {
-                // Simple field name
-                const fieldName = fieldMatch2[1]
-                const message = fieldMatch2[2]
-                backendErrors[fieldName] = message
+                console.log(`✅ Mapped nested field: ${fieldName} -> ${message}`)
               } else {
-                // Generic error or couldn't parse field
-                if (backendErrors.submit) {
-                  backendErrors.submit += '; ' + errorMsg
-                } else {
-                  backendErrors.submit = errorMsg
+                // Try to extract field name from common error patterns
+                const commonPatterns = [
+                  /^(\w+)\s+(.+)$/, // "fieldName error message"
+                  /(\w+):\s*(.+)/, // "fieldName: error message"
+                  /"([^"]+)".*?(.+)/, // "fieldName" in quotes
+                ]
+                
+                let matched = false
+                for (const pattern of commonPatterns) {
+                  const match = errorMsg.match(pattern)
+                  if (match) {
+                    const fieldName = match[1]
+                    const message = match[2]
+                    backendErrors[fieldName] = message
+                    console.log(`✅ Mapped with pattern: ${fieldName} -> ${message}`)
+                    matched = true
+                    break
+                  }
+                }
+                
+                if (!matched) {
+                  // Generic error - add to submit errors
+                  console.log(`⚠️ Could not parse field from error: ${errorMsg}`)
+                  if (backendErrors.submit) {
+                    backendErrors.submit += '; ' + errorMsg
+                  } else {
+                    backendErrors.submit = errorMsg
+                  }
                 }
               }
             })
           } else if (typeof errorData.errors === 'object') {
             // Errors already in field format
+            console.log('📊 Using object format errors:', errorData.errors)
             Object.assign(backendErrors, errorData.errors)
           }
           
           // Add general submit error
-          backendErrors.submit = errorData.message || 'Validation failed'
+          if (!backendErrors.submit) {
+            backendErrors.submit = errorData.message || 'Validation failed'
+          }
+          
+          console.log('🎯 Final mapped errors:', backendErrors)
           
           setErrors(backendErrors)
           return // Don't throw, just set errors and return
