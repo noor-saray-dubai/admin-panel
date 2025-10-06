@@ -29,6 +29,42 @@ export function SettingsReviewStep({
   validationStatus 
 }: SettingsReviewStepProps) {
   
+  // Helper function to make field names more user-friendly
+  const formatFieldName = (fieldName: string): string => {
+    const fieldMap: Record<string, string> = {
+      'name': 'Project Name',
+      'location': 'Location',
+      'developer': 'Developer',
+      'description': 'Description',
+      'overview': 'Overview',
+      'price': 'Price',
+      'priceNumeric': 'Price (Numeric)',
+      'image': 'Cover Image',
+      'gallery': 'Gallery Images',
+      'totalUnits': 'Total Units',
+      'completionDate': 'Completion Date',
+      'launchDate': 'Launch Date',
+      'type': 'Project Type',
+      'status': 'Project Status',
+      'amenities': 'Amenities',
+      'unitTypes': 'Unit Types',
+      'categories': 'Categories',
+      'locationDetails.description': 'Location Description',
+      'locationDetails.nearby': 'Nearby Places',
+      'locationDetails.coordinates': 'Coordinates',
+      'paymentPlan.booking': 'Booking Payment',
+      'paymentPlan.handover': 'Handover Payment',
+      'paymentPlan.construction': 'Construction Milestones',
+      'flags.elite': 'Elite Project Flag',
+      'flags.exclusive': 'Exclusive Flag',
+      'flags.featured': 'Featured Flag',
+      'flags.highValue': 'High Value Flag',
+      'registrationOpen': 'Registration Status'
+    }
+    
+    return fieldMap[fieldName] || fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
+  }
+  
   const steps = [
     { id: 'basic', title: 'Basic Information', icon: Building },
     { id: 'pricing', title: 'Pricing & Payment', icon: DollarSign },
@@ -76,6 +112,55 @@ export function SettingsReviewStep({
         <h2 className="text-xl font-semibold">Settings & Review</h2>
       </div>
 
+      {/* Error Summary */}
+      {(errors.submit || Object.keys(errors).filter(key => key !== 'submit').length > 0) && (
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2 text-red-800">
+              <AlertCircle className="h-5 w-5" />
+              Validation Errors
+              <Badge variant="destructive" className="ml-auto">
+                {Object.keys(errors).filter(key => key !== 'submit').length} Field Errors
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {errors.submit && (
+              <div className="p-3 bg-red-100 border border-red-200 rounded-lg">
+                <div className="font-medium text-red-800">General Error:</div>
+                <div className="text-sm text-red-700 mt-1">{errors.submit}</div>
+              </div>
+            )}
+            
+            {Object.keys(errors).filter(key => key !== 'submit').length > 0 && (
+              <div>
+                <div className="font-medium text-red-800 mb-3">Field-Specific Errors:</div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {Object.entries(errors)
+                    .filter(([key]) => key !== 'submit')
+                    .map(([field, error]) => (
+                      <div key={field} className="flex items-start gap-2 p-2 bg-red-100 border border-red-200 rounded">
+                        <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-red-800 text-sm">{formatFieldName(field)}</div>
+                          <div className="text-xs text-red-700">{error}</div>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+            )}
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="text-sm text-blue-800">
+                <strong>💡 Tip:</strong> Navigate back to the relevant steps to fix these errors, then return here to submit.
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       {/* Form Progress Review */}
       <Card>
         <CardHeader>
@@ -477,7 +562,21 @@ export function SettingsReviewStep({
       </Card>
 
       {/* Final Submission */}
-      {completionPercentage === 100 ? (
+      {Object.keys(errors).filter(key => key !== 'submit').length > 0 ? (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-6 w-6 text-red-600" />
+              <div>
+                <h3 className="font-semibold text-red-800">Fix Validation Errors</h3>
+                <p className="text-sm text-red-700">
+                  Please fix the validation errors shown above before submitting.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : completionPercentage === 100 ? (
         <Card className="border-green-200 bg-green-50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">

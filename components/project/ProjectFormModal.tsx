@@ -80,25 +80,35 @@ const initialFormData: ProjectFormData = {
   totalUnits: 0,
   
   // Features
-  amenities: [],
-  unitTypes: [],
+  amenities: [{
+    category: "Basic Amenities",
+    items: ["Parking"]
+  }],
+  unitTypes: [{
+    type: "1 Bedroom",
+    size: "500 sq ft",
+    price: "AED 500K"
+  }],
   features: [],
   
   // Media - Using URLs for instant upload
   image: "",
-  gallery: [],
+  gallery: ["https://via.placeholder.com/800x600.jpg?text=Sample+Gallery+Image"],
   floorPlan: "",
   brochure: "",
   
   // Location - Match actual schema
   locationDetails: {
-    description: "",
-    nearby: [],
-    coordinates: { latitude: 0, longitude: 0 }
+    description: "Prime location with excellent connectivity",
+    nearby: [{
+      name: "Metro Station",
+      distance: "500m"
+    }],
+    coordinates: { latitude: 25.2048, longitude: 55.2708 }
   },
   
   // Settings
-  categories: [],
+  categories: ["Residential"],
   registrationOpen: false,
   featured: false,
   flags: {
@@ -217,6 +227,9 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
 
   // Form submission
   const handleSubmit = async () => {
+    // Clear previous errors
+    setErrors({})
+    
     const validation = validateAllSteps()
     if (!validation.isValid) {
       setErrors(validation.fieldErrors || {})
@@ -228,12 +241,15 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
       // Prepare data for API
       const submitData = {
         ...formData,
+        // Convert price object to flat fields expected by API
+        price: formData.price.total,
+        priceNumeric: formData.price.totalNumeric,
+        // Generate slugs
         id: project?.slug || `proj_${Date.now()}`,
         slug: formData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
         locationSlug: formData.location.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
         statusSlug: formData.status.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
-        developerSlug: formData.developer.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
-        priceNumeric: formData.price.totalNumeric
+        developerSlug: formData.developer.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
       }
 
       const endpoint = mode === 'edit' ? `/api/projects/update/${project?.slug}` : '/api/projects/add'
@@ -247,6 +263,52 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
 
       if (!response.ok) {
         const errorData = await response.json()
+        
+        // Handle validation errors from backend
+        if (errorData.error === 'VALIDATION_ERROR' && errorData.errors) {
+          const backendErrors: Record<string, string> = {}
+          
+          // If errors is an array, convert to field-specific errors
+          if (Array.isArray(errorData.errors)) {
+            errorData.errors.forEach((errorMsg: string) => {
+              // Parse field-specific errors from error messages
+              // Pattern 1: "fieldName is required and must be a string."
+              const fieldMatch1 = errorMsg.match(/^([a-zA-Z.\[\]0-9]+)\s+(.*)/)
+              // Pattern 2: "name is required and must be a string."
+              const fieldMatch2 = errorMsg.match(/^(\w+)\s+(.+)$/)
+              
+              if (fieldMatch1 && fieldMatch1[1].includes('.')) {
+                // Nested field like "locationDetails.description"
+                const fieldName = fieldMatch1[1]
+                const message = fieldMatch1[2]
+                backendErrors[fieldName] = message
+              } else if (fieldMatch2) {
+                // Simple field name
+                const fieldName = fieldMatch2[1]
+                const message = fieldMatch2[2]
+                backendErrors[fieldName] = message
+              } else {
+                // Generic error or couldn't parse field
+                if (backendErrors.submit) {
+                  backendErrors.submit += '; ' + errorMsg
+                } else {
+                  backendErrors.submit = errorMsg
+                }
+              }
+            })
+          } else if (typeof errorData.errors === 'object') {
+            // Errors already in field format
+            Object.assign(backendErrors, errorData.errors)
+          }
+          
+          // Add general submit error
+          backendErrors.submit = errorData.message || 'Validation failed'
+          
+          setErrors(backendErrors)
+          return // Don't throw, just set errors and return
+        }
+        
+        // Handle other error types
         throw new Error(errorData.message || 'Failed to save project')
       }
 
@@ -431,7 +493,7 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
               ) : (
                 <Button
                   onClick={handleSubmit}
-                  disabled={isSubmitting || !validateAllSteps().isValid}
+                  disabled={isSubmitting || !validateAllSteps().isValid || Object.keys(errors).some(key => key !== 'submit')}
                 >
                   {isSubmitting ? "Saving..." : mode === "edit" ? "Update Project" : "Create Project"}
                 </Button>

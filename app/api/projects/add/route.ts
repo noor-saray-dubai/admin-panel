@@ -337,16 +337,16 @@ function sanitizeProjectData(data: ProjectData): ProjectData {
         percentage: sanitizeString(milestone.percentage)
       }))
     },
-    amenities: data.amenities.map(amenity => ({
+    amenities: data.amenities && data.amenities.length > 0 ? data.amenities.map(amenity => ({
       category: sanitizeString(amenity.category),
       items: amenity.items.map(item => sanitizeString(item)).filter(item => item.length > 0)
-    })).filter(amenity => amenity.category.length > 0 && amenity.items.length > 0),
-    unitTypes: data.unitTypes.map(unit => ({
+    })).filter(amenity => amenity.category.length > 0 && amenity.items.length > 0) : [],
+    unitTypes: data.unitTypes && data.unitTypes.length > 0 ? data.unitTypes.map(unit => ({
       type: sanitizeString(unit.type),
       size: sanitizeString(unit.size),
       price: sanitizeString(unit.price)
-    })).filter(unit => unit.type.length > 0 && unit.size.length > 0 && unit.price.length > 0),
-    categories: data.categories.map(cat => sanitizeString(cat)).filter(cat => cat.length > 0),
+    })).filter(unit => unit.type.length > 0 && unit.size.length > 0 && unit.price.length > 0) : [],
+    categories: data.categories && data.categories.length > 0 ? data.categories.map(cat => sanitizeString(cat)).filter(cat => cat.length > 0) : [],
     tags: data.tags?.map(tag => sanitizeString(tag)).filter(tag => tag.length > 0) || []
   };
 }
