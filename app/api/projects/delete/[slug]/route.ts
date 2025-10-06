@@ -21,23 +21,39 @@ async function handler(req: NextRequest, { params }: { params: { slug: string } 
     const project = await Project.findOne({ slug })
 
     if (!project) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 })
+      return NextResponse.json({ 
+        success: false,
+        error: "NOT_FOUND",
+        message: "Project not found" 
+      }, { status: 404 })
     }
 
     // Delete cover image from Cloudinary
-    const coverPublicId = `${slug}/cover`
-    await cloudinary.uploader.destroy(coverPublicId, { resource_type: "image" })
+    try {
+      const coverPublicId = `${slug}/cover`
+      await cloudinary.uploader.destroy(coverPublicId, { resource_type: "image" })
+    } catch (cloudinaryError) {
+      console.warn("Failed to delete cover image from Cloudinary:", cloudinaryError)
+    }
 
     // Delete gallery images
     if (Array.isArray(project.gallery)) {
-      const galleryDestroyPromises = project.gallery.map((_:any, index:any) =>
-        cloudinary.uploader.destroy(`${slug}/gallery-${index}`, { resource_type: "image" })
-      )
-      await Promise.all(galleryDestroyPromises)
+      try {
+        const galleryDestroyPromises = project.gallery.map((_:any, index:any) =>
+          cloudinary.uploader.destroy(`${slug}/gallery-${index}`, { resource_type: "image" })
+        )
+        await Promise.all(galleryDestroyPromises)
+      } catch (cloudinaryError) {
+        console.warn("Failed to delete gallery images from Cloudinary:", cloudinaryError)
+      }
     }
 
     // Optional: delete the folder (Cloudinary doesn't fully delete folders unless empty)
-    await cloudinary.api.delete_resources_by_prefix(slug)
+    try {
+      await cloudinary.api.delete_resources_by_prefix(slug)
+    } catch (cloudinaryError) {
+      console.warn("Failed to delete Cloudinary folder:", cloudinaryError)
+    }
 
     // Soft delete project with audit trail
     const deletedProject = await Project.findOneAndUpdate(
@@ -46,12 +62,19 @@ async function handler(req: NextRequest, { params }: { params: { slug: string } 
         $set: {
           isActive: false,
           deletedAt: new Date(),
-          deletedBy: user.firebaseUid,
-          // Rich audit foundation for future
-          // deletedByEmail: user.email,
-          // deletedByRole: user.fullRole,
+          deletedBy: {
+            email: user.email,
+            timestamp: new Date(),
+            ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+            userAgent: req.headers.get('user-agent') || 'unknown'
+          },
           updatedAt: new Date(),
-          updatedBy: user.firebaseUid
+          updatedBy: {
+            email: user.email,
+            timestamp: new Date(),
+            ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+            userAgent: req.headers.get('user-agent') || 'unknown'
+          }
         },
         $inc: { version: 1 }
       },
@@ -61,7 +84,8 @@ async function handler(req: NextRequest, { params }: { params: { slug: string } 
     if (!deletedProject) {
       return NextResponse.json({ 
         success: false,
-        error: "Project not found" 
+        error: "NOT_FOUND",
+        message: "Project not found" 
       }, { status: 404 })
     }
 
@@ -73,10 +97,11 @@ async function handler(req: NextRequest, { params }: { params: { slug: string } 
         slug: deletedProject.slug,
         name: deletedProject.name,
         deletedAt: deletedProject.deletedAt,
-        deletedBy: deletedProject.deletedBy
+        deletedBy: deletedProject.deletedBy?.email || 'Unknown'
       }
     })
   } catch (error: any) {
+    console.error("Error deleting project:", error)
     return NextResponse.json({ 
       success: false,
       error: "INTERNAL_ERROR",

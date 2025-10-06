@@ -2,7 +2,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useSearchParams, useRouter, usePathname } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useToast } from "@/components/ui/toast-system"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -51,8 +52,9 @@ interface ProjectFiltersData {
 }
 
 export function ProjectTabs() {
-  const searchParams = useSearchParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { success, error } = useToast()
   const pathname = usePathname()
   const action = searchParams.get("action")
 
@@ -496,11 +498,14 @@ export function ProjectTabs() {
   }
 
   const deleteProject = async (slug: string): Promise<void> => {
+    console.log('🗑️ Deleting project with slug:', slug)
+    
     const response = await fetch(`/api/projects/delete/${slug}`, {
       method: 'DELETE',
     })
 
     const result = await response.json()
+    console.log('📝 Delete response:', result)
     
     if (!response.ok) {
       let errorMessage = result.message || `Failed to delete project: ${response.status}`
@@ -528,12 +533,14 @@ export function ProjectTabs() {
       // Refresh the projects list to show new data
       await fetchProjects(pagination.currentPage, activeTab)
       // Show success message
+      success('Project Created', `"${newProject.name}" has been created successfully`)
       console.log('✅ Project created successfully:', newProject.name)
       // Close the modal
       closeModal()
-    } catch (error: any) {
-      console.error('Error creating project:', error)
-      throw error // Re-throw so the form can handle it
+    } catch (createError: any) {
+      console.error('Error creating project:', createError)
+      error('Create Failed', `Failed to create project: ${createError.message}`)
+      throw createError // Re-throw so the form can handle it
     }
   }
 
@@ -548,12 +555,14 @@ export function ProjectTabs() {
       // Refresh the projects list to show updated data
       await fetchProjects(pagination.currentPage, activeTab)
       // Show success message
+      success('Project Updated', `"${updatedProject.name}" has been updated successfully`)
       console.log('✅ Project updated successfully:', updatedProject.name)
       // Close the modal
       closeEditModal()
-    } catch (error: any) {
-      console.error('Error updating project:', error)
-      throw error // Re-throw so the form can handle it
+    } catch (updateError: any) {
+      console.error('Error updating project:', updateError)
+      error('Update Failed', `Failed to update project: ${updateError.message}`)
+      throw updateError // Re-throw so the form can handle it
     }
   }
 
@@ -570,15 +579,15 @@ export function ProjectTabs() {
       // Refresh the projects list to show updated data
       await fetchProjects(pagination.currentPage, activeTab)
       // Show success message
+      success('Project Deleted', `"${selectedProject.name}" has been deleted successfully`)
       console.log('✅ Project deleted successfully:', selectedProject.name)
       
       // Close the modal after successful deletion
       setIsDeleteModalOpen(false)
       setSelectedProject(null)
-    } catch (error: any) {
-      console.error('Error deleting project:', error)
-      // You can add toast notification here if you have a toast system
-      alert(`Failed to delete project: ${error.message}`)
+    } catch (deleteError: any) {
+      console.error('Error deleting project:', deleteError)
+      error('Delete Failed', `Failed to delete project: ${deleteError.message}`)
     } finally {
       setIsDeleting(false)
     }
