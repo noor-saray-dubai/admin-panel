@@ -71,18 +71,12 @@ export function SettingsReviewStep({
       'version': 'Version',
       'isActive': 'Active Status',
       'tags': 'Tags',
-      // Nested paths that MongoDB might return
-      'paymentPlan.booking': 'Booking Payment Plan',
+      // Nested MongoDB paths (more specific versions)
       'paymentPlan.construction.0.milestone': 'First Construction Milestone',
       'paymentPlan.construction.0.percentage': 'First Construction Percentage',
       'locationDetails.coordinates.latitude': 'Latitude',
       'locationDetails.coordinates.longitude': 'Longitude',
-      'flags.elite': 'Elite Flag',
-      'flags.exclusive': 'Exclusive Flag',
-      'flags.highValue': 'High Value Flag',
-      // Audit fields
-      'createdBy': 'Created By (User Info)',
-      'updatedBy': 'Updated By (User Info)',
+      // Audit field details (more specific versions)
       'createdBy.email': 'Creator Email',
       'updatedBy.email': 'Updater Email',
       'createdBy.timestamp': 'Creation Time',

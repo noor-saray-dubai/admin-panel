@@ -2,7 +2,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import { useToast } from "@/components/ui/toast-system"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -54,7 +54,7 @@ interface ProjectFiltersData {
 export function ProjectTabs() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { success, error } = useToast()
+  const { success, error: showError } = useToast()
   const pathname = usePathname()
   const action = searchParams.get("action")
 
@@ -73,7 +73,7 @@ export function ProjectTabs() {
   // Component state (non-URL)
   const [projects, setProjects] = useState<IProject[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [pagination, setPagination] = useState<ProjectPaginationInfo>({
     currentPage: currentPage,
     totalPages: 1,
@@ -206,7 +206,7 @@ export function ProjectTabs() {
   // Fetch projects with filters and pagination
   const fetchProjects = async (page: number = 1, tab: string = activeTab) => {
     setLoading(true)
-    setError(null)
+    setErrorMessage(null)
     try {
       const queryParams = buildQueryParams(page, tab)
       const response = await fetch(`/api/projects/fetch?${queryParams}`)
@@ -222,7 +222,7 @@ export function ProjectTabs() {
             hasNextPage: false,
             hasPrevPage: false,
           })
-          setError('API endpoint not implemented yet')
+          setErrorMessage('API endpoint not implemented yet')
           return
         }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -251,12 +251,12 @@ export function ProjectTabs() {
         }
       } else {
         setProjects([])
-        setError(result.message || 'No projects found')
+        setErrorMessage(result.message || 'No projects found')
       }
     } catch (err: any) {
       console.warn('Projects API not available:', err.message)
       setProjects([])
-      setError(`Unable to fetch projects: ${err.message}`)
+      setErrorMessage(`Unable to fetch projects: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -389,113 +389,6 @@ export function ProjectTabs() {
   }
 
   // API functions for project operations
-  const createProject = async (projectData: ProjectFormData): Promise<IProject> => {
-    const response = await fetch('/api/projects/add', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(projectData)
-    })
-
-    const result = await response.json()
-    
-    if (!response.ok) {
-      // Create detailed error message based on error type
-      let errorMessage = result.message || `Failed to create project: ${response.status}`
-      
-      // Handle specific error types with detailed messages
-      if (result.error === 'VALIDATION_ERROR' && result.errors) {
-        if (typeof result.errors === 'object' && !Array.isArray(result.errors)) {
-          const fieldErrors = Object.entries(result.errors)
-            .map(([field, error]) => `${field}: ${error}`)
-            .join(', ')
-          errorMessage = `Validation Error: ${fieldErrors}`
-        } else {
-          errorMessage = `Validation Error: ${Array.isArray(result.errors) ? result.errors.join(', ') : result.errors}`
-        }
-      } else if (result.error === 'DB_VALIDATION_ERROR' && result.errors) {
-        const dbErrors = Array.isArray(result.errors) 
-          ? result.errors.join(', ') 
-          : result.errors
-        errorMessage = `Database Validation Error: ${dbErrors}`
-      } else if (result.error === 'DUPLICATE_ENTRY') {
-        errorMessage = result.message || 'A project with this name already exists'
-      } else if (result.error === 'RATE_LIMITED') {
-        errorMessage = 'Too many requests. Please try again later.'
-      } else if (result.error === 'EMPTY_DATA') {
-        errorMessage = 'No project data provided. Please fill out the form.'
-      }
-      
-      const error = new Error(errorMessage)
-      // Attach additional error details for form handling
-      if (result.errors) {
-        (error as any).fieldErrors = result.errors
-      }
-      (error as any).errorType = result.error
-      throw error
-    }
-    
-    if (!result.success) {
-      throw new Error(result.message || 'Failed to create project')
-    }
-    
-    return result.project
-  }
-
-  const updateProject = async (slug: string, projectData: Partial<ProjectFormData>): Promise<IProject> => {
-    const response = await fetch(`/api/projects/update/${slug}`, {
-      method: 'PUT', 
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(projectData)
-    })
-
-    const result = await response.json()
-    
-    if (!response.ok) {
-      // Create detailed error message based on error type
-      let errorMessage = result.message || `Failed to update project: ${response.status}`
-      
-      // Handle specific error types with detailed messages
-      if (result.error === 'VALIDATION_ERROR' && result.errors) {
-        if (typeof result.errors === 'object' && !Array.isArray(result.errors)) {
-          const fieldErrors = Object.entries(result.errors)
-            .map(([field, error]) => `${field}: ${error}`)
-            .join(', ')
-          errorMessage = `Validation Error: ${fieldErrors}`
-        } else {
-          errorMessage = `Validation Error: ${Array.isArray(result.errors) ? result.errors.join(', ') : result.errors}`
-        }
-      } else if (result.error === 'DB_VALIDATION_ERROR' && result.errors) {
-        const dbErrors = Array.isArray(result.errors) 
-          ? result.errors.join(', ') 
-          : result.errors
-        errorMessage = `Database Validation Error: ${dbErrors}`
-      } else if (result.error === 'DUPLICATE_ENTRY') {
-        errorMessage = result.message || 'A project with this name already exists'
-      } else if (result.error === 'NOT_FOUND') {
-        errorMessage = 'Project not found or has been deleted'
-      } else if (result.error === 'RATE_LIMITED') {
-        errorMessage = 'Too many requests. Please try again later.'
-      }
-      
-      const error = new Error(errorMessage)
-      // Attach additional error details for form handling
-      if (result.errors) {
-        (error as any).fieldErrors = result.errors
-      }
-      (error as any).errorType = result.error
-      throw error
-    }
-    
-    if (!result.success) {
-      throw new Error(result.message || 'Failed to update project')
-    }
-    
-    return result.project
-  }
 
   const deleteProject = async (slug: string): Promise<void> => {
     console.log('🗑️ Deleting project with slug:', slug)
@@ -526,44 +419,20 @@ export function ProjectTabs() {
     }
   }
 
-  // Handle add modal success
-  const handleAddProjectSuccess = async (projectData: ProjectFormData): Promise<void> => {
-    try {
-      const newProject = await createProject(projectData)
-      // Refresh the projects list to show new data
-      await fetchProjects(pagination.currentPage, activeTab)
-      // Show success message
-      success('Project Created', `"${newProject.name}" has been created successfully`)
-      console.log('✅ Project created successfully:', newProject.name)
-      // Close the modal
-      closeModal()
-    } catch (createError: any) {
-      console.error('Error creating project:', createError)
-      error('Create Failed', `Failed to create project: ${createError.message}`)
-      throw createError // Re-throw so the form can handle it
-    }
+  // Handle modal success - just refresh data and close modal
+  const handleAddProjectSuccess = async (): Promise<void> => {
+    // Refresh the projects list to show new data
+    await fetchProjects(pagination.currentPage, activeTab)
+    // Close the modal
+    closeModal()
   }
 
-  // Handle edit modal success  
-  const handleEditProjectSuccess = async (projectData: ProjectFormData): Promise<void> => {
-    if (!selectedProject) {
-      throw new Error('No project selected for editing')
-    }
-    
-    try {
-      const updatedProject = await updateProject(selectedProject.slug, projectData)
-      // Refresh the projects list to show updated data
-      await fetchProjects(pagination.currentPage, activeTab)
-      // Show success message
-      success('Project Updated', `"${updatedProject.name}" has been updated successfully`)
-      console.log('✅ Project updated successfully:', updatedProject.name)
-      // Close the modal
-      closeEditModal()
-    } catch (updateError: any) {
-      console.error('Error updating project:', updateError)
-      error('Update Failed', `Failed to update project: ${updateError.message}`)
-      throw updateError // Re-throw so the form can handle it
-    }
+  // Handle edit modal success
+  const handleEditProjectSuccess = async (): Promise<void> => {
+    // Refresh the projects list to show updated data
+    await fetchProjects(pagination.currentPage, activeTab)
+    // Close the modal
+    closeEditModal()
   }
 
   // Handle confirm delete
@@ -587,7 +456,7 @@ export function ProjectTabs() {
       setSelectedProject(null)
     } catch (deleteError: any) {
       console.error('Error deleting project:', deleteError)
-      error('Delete Failed', `Failed to delete project: ${deleteError.message}`)
+      showError('Delete Failed', `Failed to delete project: ${deleteError.message}`)
     } finally {
       setIsDeleting(false)
     }
@@ -727,9 +596,9 @@ export function ProjectTabs() {
                 <Loader2 className="h-8 w-8 animate-spin" />
                 <span className="ml-2">Loading projects...</span>
               </div>
-            ) : error ? (
+            ) : errorMessage ? (
               <div className="text-center py-12">
-                <p className="text-muted-foreground">{error}</p>
+                <p className="text-muted-foreground">{errorMessage}</p>
                 <Button 
                   variant="outline" 
                   className="mt-4"
