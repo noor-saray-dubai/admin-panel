@@ -7,7 +7,6 @@ export interface IPrice {
   total: string; // Display format like "AED 2.5M"
   totalNumeric: number; // Actual number for calculations
   currency: string;
-  pricePerSqft?: number;
 }
 
 export interface IPaymentMilestone {

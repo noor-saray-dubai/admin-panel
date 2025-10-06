@@ -251,8 +251,7 @@ export function projectToFormData(project: any): ProjectFormData {
     price: {
       total: project.price || "",
       totalNumeric: project.priceNumeric || 0,
-      currency: "AED",
-      pricePerSqft: 0
+      currency: "AED"
     },
     
     // Payment Plan - Ensure proper structure

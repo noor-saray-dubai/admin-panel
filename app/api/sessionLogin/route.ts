@@ -263,7 +263,8 @@ export async function POST(req: Request) {
   
   // Race between login process and timeout
   try {
-    return await Promise.race([loginProcess(), timeoutPromise]);
+    const result = await Promise.race([loginProcess(), timeoutPromise]);
+    return result as Response;
   } catch (error: any) {
     console.error('❌ [LOGIN] Process failed:', error.message);
     

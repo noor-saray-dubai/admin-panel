@@ -57,28 +57,28 @@ export function useProjectFormLogic(
   }, [errors])
 
 
-  // Calculate total price based on price per sqft and total units
-  const calculateTotalPrice = useCallback(() => {
-    const pricePerSqft = formData.price.pricePerSqft || 0
-    const totalUnits = formData.totalUnits || 0
+  // Generate display price from numeric price
+  const generateDisplayPrice = useCallback((numericPrice: number) => {
+    if (numericPrice <= 0) return ''
     
-    if (pricePerSqft > 0 && totalUnits > 0) {
-      // Estimate average unit size (can be made configurable)
-      const avgUnitSize = 1000 // sqft
-      const totalPrice = pricePerSqft * avgUnitSize
-      const formattedPrice = `AED ${totalPrice.toLocaleString()}`
-      
-      handleInputChange('price.totalNumeric', totalPrice)
-      handleInputChange('price.total', formattedPrice)
+    if (numericPrice >= 1000000) {
+      const millions = (numericPrice / 1000000).toFixed(1).replace('.0', '')
+      return `AED ${millions}M`
+    } else if (numericPrice >= 1000) {
+      const thousands = (numericPrice / 1000).toFixed(0)
+      return `AED ${thousands}K`
+    } else {
+      return `AED ${numericPrice.toLocaleString()}`
     }
-  }, [formData.price.pricePerSqft, formData.totalUnits, handleInputChange])
+  }, [])
 
-  // Auto-calculate price when relevant fields change
+  // Auto-update display price when numeric price changes
   useEffect(() => {
-    if (formData.price.pricePerSqft && formData.totalUnits) {
-      calculateTotalPrice()
+    const displayPrice = generateDisplayPrice(formData.price.totalNumeric)
+    if (displayPrice !== formData.price.total) {
+      handleInputChange('price.total', displayPrice)
     }
-  }, [formData.price.pricePerSqft, formData.totalUnits, calculateTotalPrice])
+  }, [formData.price.totalNumeric, generateDisplayPrice, handleInputChange])
 
   // Reset form to initial state
   const resetForm = useCallback(() => {
@@ -184,7 +184,7 @@ export function useProjectFormLogic(
     
     // Handlers
     handleInputChange,
-    calculateTotalPrice,
+    generateDisplayPrice,
     resetForm,
     
     // Helper functions for complex operations

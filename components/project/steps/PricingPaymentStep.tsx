@@ -75,17 +75,17 @@ export function PricingPaymentStep({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
               <ValidatedInput
-                label="Price Display Text"
+                label="Price Display Text (Auto-Generated)"
                 field="price.total"
                 value={formData.price.total}
-                onChange={(value) => onInputChange('price.total', value)}
+                onChange={() => {}} // No-op since it's auto-generated
                 formData={formData}
                 errors={errors}
                 setErrors={setErrors}
                 required={true}
-                maxLength={100}
-                minLength={5}
-                placeholder="e.g., Starting from AED 1.2M"
+                disabled={true}
+                placeholder="Will be auto-generated from numeric price"
+                description="This field is automatically generated when you enter the numeric price below."
               />
             </div>
             
@@ -109,12 +109,31 @@ export function PricingPaymentStep({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <ValidatedInput
               label="Total Numeric Price"
               field="price.totalNumeric"
               value={formData.price.totalNumeric?.toString() || ''}
-              onChange={(value) => onInputChange('price.totalNumeric', Number(value) || 0)}
+                onChange={(value) => {
+                const numericValue = Number(value) || 0
+                onInputChange('price.totalNumeric', numericValue)
+                // Auto-generate display price
+                let displayPrice = ''
+                
+                if (numericValue > 0) {
+                  if (numericValue >= 1000000) {
+                    const millions = (numericValue / 1000000).toFixed(1).replace('.0', '')
+                    displayPrice = `AED ${millions}M`
+                  } else if (numericValue >= 1000) {
+                    const thousands = (numericValue / 1000).toFixed(0)
+                    displayPrice = `AED ${thousands}K`
+                  } else {
+                    displayPrice = `AED ${numericValue.toLocaleString()}`
+                  }
+                }
+                
+                onInputChange('price.total', displayPrice)
+              }}
               formData={formData}
               errors={errors}
               setErrors={setErrors}
@@ -122,19 +141,7 @@ export function PricingPaymentStep({
               min={0}
               type="number"
               placeholder="1200000"
-            />
-            
-            <ValidatedInput
-              label="Price per Sq Ft"
-              field="price.pricePerSqft"
-              value={formData.price.pricePerSqft?.toString() || ''}
-              onChange={(value) => onInputChange('price.pricePerSqft', Number(value) || 0)}
-              formData={formData}
-              errors={errors}
-              setErrors={setErrors}
-              min={0}
-              type="number"
-              placeholder="1500"
+              description="Enter the numeric price value. Display text will be auto-generated."
             />
           </div>
         </CardContent>

@@ -5,7 +5,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
-import { toast } from 'sonner'
+import { useToast } from '@/components/ui/toast-system'
 import { 
   Upload, 
   X, 
@@ -82,6 +82,9 @@ export function InstantImageUpload({
   const [deletingImages, setDeletingImages] = useState<Set<number>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
+  
+  // Use custom toast system
+  const { success, error, warning, info } = useToast()
 
   // Initialize existing images with better edit mode handling
   useEffect(() => {
@@ -179,7 +182,7 @@ export function InstantImageUpload({
 
   // Convert URL to File object by downloading and processing
   const convertUrlToFile = async (url: string): Promise<void> => {
-    const loadingToast = toast.loading('Converting image URL...')
+    info('Converting image URL...', undefined, 3000)
     
     try {
       // Validate URL format first
@@ -240,26 +243,23 @@ export function InstantImageUpload({
       // Create File object
       const file = new File([blob], filename, { type: blob.type })
       
-      toast.dismiss(loadingToast)
-      toast.success('✅ Image URL converted successfully!')
+      success('✅ Image URL converted successfully!')
       
       // Process the file like any other upload
       await processFiles([file])
       
-    } catch (error: any) {
-      toast.dismiss(loadingToast)
-      
-      if (error.name === 'AbortError') {
-        toast.error('⏱️ Request timed out. Please try a different image URL.')
-      } else if (error.message.includes('CORS')) {
-        toast.error('🚫 Cannot access image due to CORS restrictions. Try downloading the image and uploading it directly.')
-      } else if (error.message.includes('Failed to fetch')) {
-        toast.error('🌐 Network error. Please check your connection and try again.')
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        error('⏱️ Request timed out. Please try a different image URL.', undefined, 7000)
+      } else if (err.message.includes('CORS')) {
+        error('🚫 Cannot access image due to CORS restrictions. Try downloading the image and uploading it directly.', undefined, 7000)
+      } else if (err.message.includes('Failed to fetch')) {
+        error('🌐 Network error. Please check your connection and try again.', undefined, 7000)
       } else {
-        toast.error(`❌ Failed to process image URL: ${error.message}`)
+        error(`❌ Failed to process image URL: ${err.message}`, undefined, 7000)
       }
       
-      console.error('Failed to convert URL to image:', error)
+      console.error('Failed to convert URL to image:', err)
     }
   }
 
@@ -515,20 +515,12 @@ export function InstantImageUpload({
       const availableSlots = maxFiles - uploadedImages.length
       
       if (availableSlots === 0) {
-        toast.error(`You've reached the maximum limit of ${maxFiles} images. Please remove some images to add new ones.`, {
-          duration: 5000,
-          action: {
-            label: 'Got it',
-            onClick: () => {}
-          }
-        })
+        error(`You've reached the maximum limit of ${maxFiles} images. Please remove some images to add new ones.`, undefined, 5000)
         return
       }
       
       if (fileArray.length > availableSlots) {
-        toast.warning(`You can only add ${availableSlots} more image(s). Currently have ${uploadedImages.length}/${maxFiles}. Only the first ${availableSlots} file(s) will be uploaded.`, {
-          duration: 6000
-        })
+        warning(`You can only add ${availableSlots} more image(s). Currently have ${uploadedImages.length}/${maxFiles}. Only the first ${availableSlots} file(s) will be uploaded.`, undefined, 6000)
         // Truncate files to available slots
         fileArray.splice(availableSlots)
       }
@@ -537,11 +529,11 @@ export function InstantImageUpload({
     // For single mode, handle replacement gracefully
     if (mode === 'single') {
       if (uploadedImages.length > 0 && fileArray.length > 0) {
-        toast.info('Replacing existing image with new upload...', { duration: 3000 })
+        info('Replacing existing image with new upload...', undefined, 3000)
       }
       
       if (fileArray.length > 1) {
-        toast.info('Single mode: Only the first file will be uploaded.')
+        info('Single mode: Only the first file will be uploaded.', undefined, 3000)
       }
     }
     
@@ -561,20 +553,12 @@ export function InstantImageUpload({
     if (validationErrors.length > 0) {
       // Show a summary toast first if multiple errors
       if (validationErrors.length > 1) {
-        toast.error(`${validationErrors.length} files couldn't be uploaded due to validation errors. Check details below.`, {
-          duration: 4000
-        })
+        error(`${validationErrors.length} files couldn't be uploaded due to validation errors. Check details below.`, undefined, 4000)
       }
       
       // Show detailed errors for each file
-      validationErrors.forEach(({ error, index, file }) => {
-        toast.error(error!, {
-          duration: 7000, // Longer duration for reading
-          action: {
-            label: 'Dismiss',
-            onClick: () => {}
-          }
-        })
+      validationErrors.forEach(({ error: validationError, index, file }) => {
+        error(validationError!, undefined, 7000) // Longer duration for reading
       })
       
       // If all files failed validation, return early
@@ -595,9 +579,7 @@ export function InstantImageUpload({
       filesToProcess.length = 0
       filesToProcess.push(...validFiles)
       
-      toast.success(`${validFiles.length} file(s) passed validation and will be uploaded.`, {
-        duration: 3000
-      })
+      success(`${validFiles.length} file(s) passed validation and will be uploaded.`, undefined, 3000)
     }
 
     // Initialize uploading state
@@ -651,7 +633,7 @@ export function InstantImageUpload({
         )
 
         onError?.(error.message)
-        toast.error(`Failed to upload ${file.name}: ${error.message}`)
+        error(`Failed to upload ${file.name}: ${error.message}`, undefined, 7000)
         return null
       }
     })
@@ -668,14 +650,14 @@ export function InstantImageUpload({
         // In edit mode, call replacement callback if available, otherwise normal callback
         if (mode === 'single' && successfulUploads[0] && oldUrls.length > 0) {
           onReplace?.(oldUrls[0], successfulUploads[0])
-          toast.success('Image replaced successfully')
+          success('Image replaced successfully')
         } else if (mode === 'multiple') {
           // For multiple mode in edit, this is adding to existing
           onUploadComplete?.(successfulUploads)
-          toast.success(`Successfully added ${successfulUploads.length} file(s)`)
+          success(`Successfully added ${successfulUploads.length} file(s)`)
         } else {
           onUploadComplete?.(mode === 'single' ? successfulUploads[0] : successfulUploads)
-          toast.success(`Successfully uploaded ${successfulUploads.length} file(s)`)
+          success(`Successfully uploaded ${successfulUploads.length} file(s)`)
         }
       } else {
         // In add mode, use normal completion callback
@@ -684,7 +666,7 @@ export function InstantImageUpload({
         } else if (mode === 'multiple') {
           onUploadComplete?.(successfulUploads)
         }
-        toast.success(`Successfully uploaded ${successfulUploads.length} file(s)`)
+        success(`Successfully uploaded ${successfulUploads.length} file(s)`)
       }
     }
 
@@ -762,7 +744,7 @@ export function InstantImageUpload({
     // Process image files if found
     if (imageFiles.length > 0) {
       event.preventDefault()
-      toast.info('📋 Pasted image from clipboard', { duration: 2000 })
+      info('📋 Pasted image from clipboard', undefined, 2000)
       processFiles(imageFiles)
       return
     }
@@ -770,7 +752,7 @@ export function InstantImageUpload({
     // Process URL if it looks like an image URL
     if (urlText && isImageUrl(urlText)) {
       event.preventDefault()
-      toast.info('🔗 Pasting image from URL', { duration: 2000 })
+      info('🔗 Pasting image from URL', undefined, 2000)
       await convertUrlToFile(urlText)
     }
   }, [])
@@ -796,7 +778,7 @@ export function InstantImageUpload({
     if (isExistingImage && editMode) {
       // For existing images in edit mode, we typically don't delete from Cloudinary
       // The parent component should handle the removal from their data
-      toast.success('Image removed from selection')
+      success('Image removed from selection')
       
       // Clean up deletion state
       setDeletingImages(prev => {
@@ -819,22 +801,22 @@ export function InstantImageUpload({
           throw new Error(result.message || 'Failed to delete from cloud storage')
         }
         
-        toast.success('Image deleted successfully')
+        success('Image deleted successfully')
       } else {
         // If no publicId, just remove from UI (shouldn't happen for uploaded images)
-        toast.success('Image removed')
+        success('Image removed')
       }
 
-    } catch (error: any) {
+    } catch (err: any) {
       // If deletion from Cloudinary fails, add image back to UI
-      console.error('Failed to delete from Cloudinary:', error)
+      console.error('Failed to delete from Cloudinary:', err)
       setUploadedImages(prev => {
         const newImages = [...prev]
         newImages.splice(index, 0, image) // Add back at original position
         return newImages
       })
       
-      toast.error('Failed to delete from cloud storage, but removed from form')
+      error('Failed to delete from cloud storage, but removed from form')
     } finally {
       setDeletingImages(prev => {
         const newSet = new Set(prev)
@@ -847,7 +829,7 @@ export function InstantImageUpload({
 
   const copyImageUrl = (url: string) => {
     navigator.clipboard.writeText(url)
-    toast.success('Image URL copied to clipboard')
+    success('Image URL copied to clipboard')
   }
 
   const downloadImage = (url: string, name: string) => {
@@ -901,7 +883,7 @@ export function InstantImageUpload({
         onClick={() => {
           if (disabled) return
           if (mode === 'multiple' && uploadedImages.length >= maxFiles) {
-            toast.error(`Maximum ${maxFiles} images reached. Remove some images to add new ones.`)
+            error(`Maximum ${maxFiles} images reached. Remove some images to add new ones.`)
             return
           }
           fileInputRef.current?.click()

@@ -63,8 +63,7 @@ const initialFormData: ProjectFormData = {
   price: {
     total: "",
     totalNumeric: 0,
-    currency: "AED",
-    pricePerSqft: 0
+    currency: "AED"
   },
   
   paymentPlan: {
@@ -127,7 +126,7 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
     isSubmitting,
     setIsSubmitting,
     handleInputChange,
-    calculateTotalPrice,
+    generateDisplayPrice,
     resetForm
   } = useProjectFormLogic(initialFormData, project, mode)
 
@@ -147,8 +146,8 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
 
   // Auto-save draft functionality
   const debouncedSave = useCallback(
-    createDebouncedProjectSave(project?.projectId, 3000), // 3 second delay
-    [project?.projectId]
+    createDebouncedProjectSave(project?.slug, 3000), // 3 second delay
+    [project?.slug]
   )
 
   // Initialize form data and check for drafts
@@ -229,7 +228,7 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
       // Prepare data for API
       const submitData = {
         ...formData,
-        id: project?.projectId || `proj_${Date.now()}`,
+        id: project?.slug || `proj_${Date.now()}`,
         slug: formData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
         locationSlug: formData.location.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
         statusSlug: formData.status.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
@@ -237,7 +236,7 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
         priceNumeric: formData.price.totalNumeric
       }
 
-      const endpoint = mode === 'edit' ? `/api/projects/${project?.projectId}` : '/api/projects'
+      const endpoint = mode === 'edit' ? `/api/projects/update/${project?.slug}` : '/api/projects/add'
       const method = mode === 'edit' ? 'PUT' : 'POST'
 
       const response = await fetch(endpoint, {
