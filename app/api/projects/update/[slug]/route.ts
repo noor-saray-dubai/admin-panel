@@ -584,11 +584,13 @@ async function handler(
       ...slugs,
       image: coverImageUrl,
       gallery: galleryUrls,
-      // Simple audit data (current requirement)
-      updatedBy: user.firebaseUid,
-      // Rich audit data foundation (for future enhancement)
-      // updatedByEmail: user.email,
-      // updatedByRole: user.fullRole,
+      // Audit data matching schema requirements
+      updatedBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
       updatedAt: new Date(),
     };
 

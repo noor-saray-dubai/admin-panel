@@ -440,13 +440,19 @@ async function handler(request: NextRequest) {
       gallery: projectData.gallery, // Use URLs from form data
       completionDate: new Date(projectData.completionDate),
       launchDate: new Date(projectData.launchDate),
-      // Simple audit data (current requirement)
-      createdBy: user.firebaseUid,
-      updatedBy: user.firebaseUid,
-      // Rich audit data foundation (for future enhancement)
-      // createdByEmail: user.email,
-      // createdByRole: user.fullRole,
-      // permissions: { collection: 'projects', action: 'add', subRole: getUserSubRoleForCollection(user, 'projects') },
+      // Audit data matching schema requirements
+      createdBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
+      updatedBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
       version: 1,
       isActive: true,
       createdAt: new Date(),

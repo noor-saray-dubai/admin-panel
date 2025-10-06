@@ -79,7 +79,14 @@ export function SettingsReviewStep({
       'locationDetails.coordinates.longitude': 'Longitude',
       'flags.elite': 'Elite Flag',
       'flags.exclusive': 'Exclusive Flag',
-      'flags.highValue': 'High Value Flag'
+      'flags.highValue': 'High Value Flag',
+      // Audit fields
+      'createdBy': 'Created By (User Info)',
+      'updatedBy': 'Updated By (User Info)',
+      'createdBy.email': 'Creator Email',
+      'updatedBy.email': 'Updater Email',
+      'createdBy.timestamp': 'Creation Time',
+      'updatedBy.timestamp': 'Update Time'
     }
     
     return fieldMap[fieldName] || fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
@@ -531,6 +538,9 @@ export function SettingsReviewStep({
                   </div>
                   <div className={`flex items-center gap-1 ${formData.locationDetails.nearby.length > 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {formData.locationDetails.nearby.length > 0 ? '✓' : '✗'} Nearby Places: {formData.locationDetails.nearby.length} places
+                  </div>
+                  <div className="text-green-600">
+                    ✓ Audit Fields: Will be auto-generated on submit
                   </div>
                 </div>
               </div>

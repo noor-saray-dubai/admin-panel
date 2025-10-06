@@ -309,8 +309,12 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
               const pathMatch = errorMsg.match(/Path `([^`]+)` (.+)/)
               // Pattern 3: "Cast to Number failed for value ..."
               const castMatch = errorMsg.match(/Cast to (\w+) failed for value .* at path "([^"]+)"/)
-              // Pattern 4: "ValidationError: fieldName: message"
+              // Pattern 4: "Cast to Embedded failed for value ..."
+              const embeddedMatch = errorMsg.match(/Cast to Embedded failed for value .* at path "([^"]+)"/)
+              // Pattern 5: "ValidationError: fieldName: message"
               const validationMatch = errorMsg.match(/ValidationError: ([^:]+): (.+)/)
+              // Pattern 6: "fieldName: Cast to ... failed"
+              const fieldCastMatch = errorMsg.match(/([^:]+): Cast to .* failed/)
               
               if (pathMatch) {
                 const fieldName = pathMatch[1]
@@ -322,6 +326,16 @@ export function ProjectFormModal({ isOpen, onClose, onSuccess, project, mode }: 
                 const message = `Invalid ${castMatch[1].toLowerCase()} value`
                 backendErrors[fieldName] = message
                 console.log(`✅ Mapped cast error: ${fieldName} -> ${message}`)
+              } else if (embeddedMatch) {
+                const fieldName = embeddedMatch[1]
+                const message = `Invalid object structure for ${fieldName}`
+                backendErrors[fieldName] = message
+                console.log(`✅ Mapped embedded cast error: ${fieldName} -> ${message}`)
+              } else if (fieldCastMatch) {
+                const fieldName = fieldCastMatch[1]
+                const message = `Invalid data type for ${fieldName}`
+                backendErrors[fieldName] = message
+                console.log(`✅ Mapped field cast error: ${fieldName} -> ${message}`)
               } else if (validationMatch) {
                 const fieldName = validationMatch[1]
                 const message = validationMatch[2]
