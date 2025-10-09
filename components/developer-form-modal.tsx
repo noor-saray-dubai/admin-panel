@@ -11,7 +11,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { Upload, X, Eye, Star, MapPin, Calendar, Building, Phone, Mail, Globe, Plus, Minus, AlertCircle } from "lucide-react"
+import { X, Eye, Star, MapPin, Calendar, Building, Phone, Mail, Globe, Plus, Minus, AlertCircle } from "lucide-react"
+import { InstantImageUpload } from "@/components/ui/instant-image-upload"
 import {
   saveDeveloperFormDraft,
   loadDeveloperFormDraft,
@@ -51,8 +52,8 @@ interface Developer {
 
 export interface DeveloperFormData {
   name: string
-  logo: File | null
-  coverImage: File | null
+  logo: string
+  coverImage: string
   description: IDescriptionSection[]
   overview: string
   location: string
@@ -104,8 +105,8 @@ const specializationOptions = [
 
 const initialFormData: DeveloperFormData = {
   name: "",
-  logo: null,
-  coverImage: null,
+  logo: "",
+  coverImage: "",
   description: [{ description: "" }],
   overview: "",
   location: "",
@@ -349,148 +350,6 @@ const ValidatedTextarea = ({
   )
 }
 
-// Enhanced Image upload with drag & drop and paste
-const ImageUpload = ({ 
-  label, 
-  value, 
-  onChange, 
-  preview,
-  onRemove,
-  accept = "image/*",
-  required = false,
-  errors,
-  field
-}: { 
-  label: string
-  value: File | null
-  onChange: (file: File | null) => void
-  preview: string | null
-  onRemove: () => void
-  accept?: string
-  required?: boolean
-  errors: FieldErrors
-  field: string
-}) => {
-  const [isDragOver, setIsDragOver] = useState(false)
-
-  const validateAndSetFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select a valid image file (PNG, JPEG, JPG)')
-      return false
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image size should be less than 5MB')
-      return false
-    }
-    onChange(file)
-    return true
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      validateAndSetFile(file)
-    }
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
-    
-    const files = Array.from(e.dataTransfer.files)
-    const imageFile = files.find(file => file.type.startsWith('image/'))
-    
-    if (imageFile) {
-      validateAndSetFile(imageFile)
-    }
-  }
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = Array.from(e.clipboardData.items)
-    const imageItem = items.find(item => item.type.startsWith('image/'))
-    
-    if (imageItem) {
-      const file = imageItem.getAsFile()
-      if (file) {
-        validateAndSetFile(file)
-      }
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <Label>
-        {label} {required && <span className="text-red-500">*</span>}
-      </Label>
-      {!preview ? (
-        <div 
-          className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer
-            ${isDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}
-            ${errors[field] ? 'border-red-500' : ''}
-          `}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onPaste={handlePaste}
-          tabIndex={0}
-        >
-          <Upload className={`mx-auto h-8 w-8 mb-2 ${isDragOver ? 'text-blue-500' : 'text-gray-400'}`} />
-          <div>
-            <Label htmlFor={label.replace(/\s+/g, '-').toLowerCase()} className="cursor-pointer">
-              <span className="text-blue-600 hover:text-blue-500">
-                Upload {label.toLowerCase()}
-              </span>
-              <Input
-                id={label.replace(/\s+/g, '-').toLowerCase()}
-                type="file"
-                accept={accept}
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </Label>
-            <p className="text-gray-500 text-xs mt-1">
-              PNG, JPEG, JPG (max 5MB)<br/>
-              Drag & drop, paste, or click to upload
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="relative">
-          <img
-            src={preview}
-            alt={`${label} preview`}
-            className="w-full h-32 object-cover rounded-lg"
-          />
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            className="absolute top-2 right-2"
-            onClick={onRemove}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
-      {errors[field] && (
-        <div className="flex items-center gap-1 text-red-500 text-xs">
-          <AlertCircle className="h-3 w-3" />
-          {errors[field]}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // Error Display Component
 const ErrorDisplay = ({ submissionState, onRetry }: { 
@@ -556,8 +415,6 @@ const ErrorDisplay = ({ submissionState, onRetry }: {
 
 export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode }: DeveloperFormModalProps) {
   const [formData, setFormData] = useState<DeveloperFormData>(initialFormData)
-  const [logoPreview, setLogoPreview] = useState<string | null>(null)
-  const [coverImagePreview, setCoverImagePreview] = useState<string | null>(null)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [submissionState, setSubmissionState] = useState<SubmissionState>({
     isSubmitting: false,
@@ -605,8 +462,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
         // Edit mode - load existing developer data
         setFormData({
           name: developer.name || "",
-          logo: null,
-          coverImage: null,
+          logo: developer.logo || "",
+          coverImage: developer.coverImage || "",
           description: developer.description || [{ description: "" }],
           overview: developer.overview || "",
           location: developer.location || "",
@@ -619,8 +476,6 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
           awards: developer.awards || [],
         })
         
-        if (developer.logo) setLogoPreview(developer.logo)
-        if (developer.coverImage) setCoverImagePreview(developer.coverImage)
         setHasDraft(false)
       } else {
         // Add mode - check for saved draft
@@ -633,8 +488,6 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
           setShowDraftRestoreDialog(true)
         } else {
           setFormData(initialFormData)
-          setLogoPreview(null)
-          setCoverImagePreview(null)
         }
       }
 
@@ -663,8 +516,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
         JSON.stringify(formData.description) !== JSON.stringify(developer.description || [{ description: "" }]) ||
         JSON.stringify(formData.specialization) !== JSON.stringify(developer.specialization || []) ||
         JSON.stringify(formData.awards) !== JSON.stringify(developer.awards || []) ||
-        formData.logo !== null ||
-        formData.coverImage !== null
+        formData.logo !== (developer.logo || "") ||
+        formData.coverImage !== (developer.coverImage || "")
       )
     }
     
@@ -680,8 +533,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
       formData.description.some(desc => desc.description.trim() !== '' || desc.title?.trim() !== '') ||
       formData.specialization.length > 0 ||
       formData.awards.length > 0 ||
-      formData.logo !== null ||
-      formData.coverImage !== null
+      formData.logo.trim() !== '' ||
+      formData.coverImage.trim() !== ''
     )
   }, [formData, mode, developer])
 
@@ -753,40 +606,6 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
     handleInputChange('awards', newAwards)
   }
 
-  // Handle logo upload
-  const handleLogoUpload = (file: File | null) => {
-    handleInputChange('logo', file)
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setLogoPreview(e.target?.result as string)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  // Handle cover image upload
-  const handleCoverImageUpload = (file: File | null) => {
-    handleInputChange('coverImage', file)
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setCoverImagePreview(e.target?.result as string)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  // Remove images
-  const removeLogo = () => {
-    handleInputChange('logo', null)
-    setLogoPreview(null)
-  }
-
-  const removeCoverImage = () => {
-    handleInputChange('coverImage', null)
-    setCoverImagePreview(null)
-  }
 
   // Count words in overview
   const getWordCount = (text: string) => {
@@ -800,11 +619,9 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
       if (draft) {
         setFormData({
           ...draft,
-          logo: null, // Reset file fields as they're not persisted
-          coverImage: null
+          logo: draft.logo || "", // Restore logo URL if it exists
+          coverImage: draft.coverImage || "" // Restore cover image URL if it exists
         })
-        setLogoPreview(null)
-        setCoverImagePreview(null)
         toast.success("Draft restored successfully")
       }
     } catch (error) {
@@ -816,8 +633,6 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
   const handleDiscardDraft = () => {
     clearDeveloperFormDraft()
     setFormData(initialFormData)
-    setLogoPreview(null)
-    setCoverImagePreview(null)
     setHasDraft(false)
     setShowDraftRestoreDialog(false)
     toast.success("Draft discarded")
@@ -866,8 +681,6 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
   const resetForm = () => {
     setHasUnsavedChanges(false)
     setFormData(initialFormData)
-    setLogoPreview(null)
-    setCoverImagePreview(null)
     setErrors({})
   }
 
@@ -875,8 +688,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
   const fillFakeData = () => {
     const newFormData = {
       name: "Elite Developers LLC",
-      logo: null,
-      coverImage: null,
+      logo: "https://res.cloudinary.com/noorsaray/image/upload/v1234567890/sample-logo.jpg",
+      coverImage: "https://res.cloudinary.com/noorsaray/image/upload/v1234567890/sample-cover.jpg",
       description: [
         { 
           title: "About Us", 
@@ -948,8 +761,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
 
     // Image validation for add mode
     if (mode === 'add') {
-      if (!formData.logo) newErrors['logo'] = 'Logo is required'
-      if (!formData.coverImage) newErrors['coverImage'] = 'Cover image is required'
+      if (!formData.logo || !formData.logo.trim()) newErrors['logo'] = 'Logo is required'
+      if (!formData.coverImage || !formData.coverImage.trim()) newErrors['coverImage'] = 'Cover image is required'
     }
 
     setErrors(newErrors)
@@ -971,31 +784,31 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
     });
 
     try {
-      const submitData = new FormData()
-      
-      // Add all form fields
-      submitData.append('name', formData.name)
-      submitData.append('description', JSON.stringify(formData.description))
-      submitData.append('overview', formData.overview)
-      submitData.append('location', formData.location)
-      submitData.append('establishedYear', formData.establishedYear.toString())
-      submitData.append('website', formData.website)
-      submitData.append('email', formData.email)
-      submitData.append('phone', formData.phone)
-      submitData.append('verified', formData.verified.toString())
-      submitData.append('specialization', JSON.stringify(formData.specialization))
-      submitData.append('awards', JSON.stringify(formData.awards))
-
-      // Add files if provided
-      if (formData.logo) submitData.append('logoFile', formData.logo)
-      if (formData.coverImage) submitData.append('coverImageFile', formData.coverImage)
+      const submitData = {
+        name: formData.name,
+        description: formData.description,
+        overview: formData.overview,
+        location: formData.location,
+        establishedYear: formData.establishedYear,
+        website: formData.website,
+        email: formData.email,
+        phone: formData.phone,
+        verified: formData.verified,
+        specialization: formData.specialization,
+        awards: formData.awards,
+        logo: formData.logo,
+        coverImage: formData.coverImage
+      }
 
       const endpoint = mode === 'add' ? '/api/developers/add' : `/api/developers/update/${developer?.slug}`
       const method = mode === 'add' ? 'POST' : 'PUT'
 
       const response = await fetch(endpoint, {
         method,
-        body: submitData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(submitData),
       })
 
       const result = await response.json()
@@ -1426,26 +1239,79 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-2 gap-6">
-                    <ImageUpload
-                      label="Company Logo"
-                      value={formData.logo}
-                      onChange={handleLogoUpload}
-                      preview={logoPreview}
-                      onRemove={removeLogo}
-                      required={mode === 'add'}
-                      errors={errors}
-                      field="logo"
-                    />
-                    <ImageUpload
-                      label="Cover Image"
-                      value={formData.coverImage}
-                      onChange={handleCoverImageUpload}
-                      preview={coverImagePreview}
-                      onRemove={removeCoverImage}
-                      required={mode === 'add'}
-                      errors={errors}
-                      field="coverImage"
-                    />
+                    <div className="space-y-2">
+                      <Label>
+                        Company Logo {mode === 'add' && <span className="text-red-500">*</span>}
+                      </Label>
+                      <InstantImageUpload
+                        mode="single"
+                        projectTitle={formData.name || "Developer"}
+                        imageType="cover"
+                        existingImages={formData.logo}
+                        editMode={mode === 'edit'}
+                        onUploadComplete={(result) => {
+                          if (typeof result === 'object' && 'url' in result) {
+                            handleInputChange('logo', result.url)
+                            setErrors(prev => ({ ...prev, logo: '' }))
+                          }
+                        }}
+                        onDelete={() => {
+                          handleInputChange('logo', '')
+                        }}
+                        onReplace={(oldUrl, newResult) => {
+                          if (typeof newResult === 'object' && 'url' in newResult) {
+                            handleInputChange('logo', newResult.url)
+                            setErrors(prev => ({ ...prev, logo: '' }))
+                          }
+                        }}
+                        title="Company Logo"
+                        description="Square aspect ratio preferred (e.g., 400×400px)"
+                        className="w-full"
+                      />
+                      {errors.logo && (
+                        <div className="flex items-center gap-1 text-red-500 text-xs">
+                          <AlertCircle className="h-3 w-3" />
+                          {errors.logo}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>
+                        Cover Image {mode === 'add' && <span className="text-red-500">*</span>}
+                      </Label>
+                      <InstantImageUpload
+                        mode="single"
+                        projectTitle={formData.name || "Developer"}
+                        imageType="cover"
+                        existingImages={formData.coverImage}
+                        editMode={mode === 'edit'}
+                        onUploadComplete={(result) => {
+                          if (typeof result === 'object' && 'url' in result) {
+                            handleInputChange('coverImage', result.url)
+                            setErrors(prev => ({ ...prev, coverImage: '' }))
+                          }
+                        }}
+                        onDelete={() => {
+                          handleInputChange('coverImage', '')
+                        }}
+                        onReplace={(oldUrl, newResult) => {
+                          if (typeof newResult === 'object' && 'url' in newResult) {
+                            handleInputChange('coverImage', newResult.url)
+                            setErrors(prev => ({ ...prev, coverImage: '' }))
+                          }
+                        }}
+                        title="Cover Image"
+                        description="Landscape aspect ratio preferred (e.g., 1200×600px)"
+                        className="w-full"
+                      />
+                      {errors.coverImage && (
+                        <div className="flex items-center gap-1 text-red-500 text-xs">
+                          <AlertCircle className="h-3 w-3" />
+                          {errors.coverImage}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1591,8 +1457,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                   {/* Header */}
                   <div className="border-b pb-4">
                     <div className="flex items-start gap-4 mb-4">
-                      {logoPreview && (
-                        <img src={logoPreview} alt="Logo" className="w-16 h-16 object-cover rounded-lg" />
+                      {formData.logo && (
+                        <img src={formData.logo} alt="Logo" className="w-16 h-16 object-cover rounded-lg" />
                       )}
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
@@ -1616,8 +1482,8 @@ export function DeveloperFormModal({ isOpen, onClose, onSuccess, developer, mode
                       </div>
                     </div>
 
-                    {coverImagePreview && (
-                      <img src={coverImagePreview} alt="Cover" className="w-full h-48 object-cover rounded-lg" />
+                    {formData.coverImage && (
+                      <img src={formData.coverImage} alt="Cover" className="w-full h-48 object-cover rounded-lg" />
                     )}
                   </div>
 

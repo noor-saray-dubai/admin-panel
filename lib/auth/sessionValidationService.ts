@@ -93,7 +93,7 @@ class ValidationMetrics {
 export class SessionValidationService {
   
   // Cache configuration
-  private static readonly CACHE_TTL_SECONDS = 3 * 60; // 3 minutes (balance of security vs performance)
+  private static readonly CACHE_TTL_SECONDS = 10 * 60; // 10 minutes (balance of security vs performance)
   private static readonly MAX_CACHE_ATTEMPTS = 2;
   
   /**
@@ -163,7 +163,7 @@ export class SessionValidationService {
   }
 
   /**
-   * Try to get validated session from cache
+   * Try to get validated session from cache with auto-refresh
    */
   private static async getFromCache(sessionCookie: string): Promise<ValidatedSession | null> {
     try {
@@ -183,7 +183,35 @@ export class SessionValidationService {
         return null;
       }
 
-      // Valid cached session
+      // Auto-refresh: If session is close to expiring (within 1 minute), extend it
+      const timeToExpiry = parsedData.expires_at - Date.now();
+      const oneMinute = 60 * 1000;
+      
+      if (timeToExpiry < oneMinute) {
+        // Extend the session by refreshing the cache
+        const newExpiresAt = Date.now() + (this.CACHE_TTL_SECONDS * 1000);
+        const refreshedData = {
+          ...parsedData,
+          expires_at: newExpiresAt,
+          verified_at: Date.now()
+        };
+        
+        // Update cache with new expiry time
+        await redis.setex(
+          cacheKey,
+          this.CACHE_TTL_SECONDS,
+          JSON.stringify(refreshedData)
+        ).catch(console.error);
+        
+        console.log(`🔄 Auto-refreshed session for user ${parsedData.uid}`);
+        
+        return {
+          ...refreshedData,
+          cached: true
+        };
+      }
+
+      // Valid cached session (not close to expiry)
       return {
         ...parsedData,
         cached: true

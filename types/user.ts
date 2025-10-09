@@ -3,6 +3,7 @@
 // Collection types that can be managed
 export enum Collection {
   PROJECTS = 'projects',
+  PROPERTIES = 'properties',
   BLOGS = 'blogs',
   NEWS = 'news',
   CAREERS = 'careers',
@@ -113,12 +114,12 @@ export interface ClientUser {
 export const FULL_ROLE_COLLECTIONS: Record<FullRole, Collection[]> = {
   [FullRole.SUPER_ADMIN]: Object.values(Collection), // Access to all collections
   [FullRole.ADMIN]: [
-    Collection.PROJECTS, Collection.BLOGS, Collection.NEWS, Collection.CAREERS,
+    Collection.PROJECTS, Collection.PROPERTIES, Collection.BLOGS, Collection.NEWS, Collection.CAREERS,
     Collection.DEVELOPERS, Collection.PLOTS, Collection.BUILDINGS, Collection.HOTELS, Collection.MALLS, Collection.COMMUNITIES, Collection.USERS
   ],
-  [FullRole.AGENT]: [Collection.PROJECTS],
+  [FullRole.AGENT]: [Collection.PROJECTS, Collection.PROPERTIES],
   [FullRole.MARKETING]: [Collection.BLOGS, Collection.NEWS],
-  [FullRole.SALES]: [Collection.PLOTS, Collection.BUILDINGS, Collection.HOTELS, Collection.MALLS],
+  [FullRole.SALES]: [Collection.PROPERTIES, Collection.PLOTS, Collection.BUILDINGS, Collection.HOTELS, Collection.MALLS],
   [FullRole.HR]: [Collection.CAREERS, Collection.DEVELOPERS],
   [FullRole.COMMUNITY_MANAGER]: [Collection.COMMUNITIES],
   [FullRole.USER]: [Collection.PROJECTS], // Very limited default access

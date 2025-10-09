@@ -27,6 +27,7 @@ export * from './zeroTrust';
 export const NAVIGATION_COLLECTION_MAP = {
   dashboard: null, // Everyone can see dashboard
   projects: Collection.PROJECTS,
+  properties: Collection.PROPERTIES,
   blogs: Collection.BLOGS,
   news: Collection.NEWS,
   communities: Collection.COMMUNITIES,

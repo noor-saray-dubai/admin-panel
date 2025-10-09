@@ -11,6 +11,7 @@ interface DeleteConfirmationModalProps {
   itemName: string
   itemType: string
   isDeleting?: boolean
+  isActive?: boolean // For two-stage deletion - whether item is currently active
 }
 
 export function DeleteConfirmationModal({
@@ -21,6 +22,7 @@ export function DeleteConfirmationModal({
   itemName,
   itemType,
   isDeleting = false,
+  isActive = true, // Default to active if not specified
 }: DeleteConfirmationModalProps) {
   const handleConfirm = async () => {
     if (isDeleting) return // Prevent multiple clicks during deletion
@@ -41,7 +43,23 @@ export function DeleteConfirmationModal({
             <DialogTitle>Delete {itemType}</DialogTitle>
           </div>
           <DialogDescription>
-            Are you sure you want to delete "{itemName}"? This action cannot be undone.
+            {isActive ? (
+              <>
+                Are you sure you want to deactivate "{itemName}"?
+                <br />
+                <span className="text-sm text-muted-foreground mt-1 block">
+                  This will mark the {itemType.toLowerCase()} as inactive. You can delete it again to permanently remove it from the database.
+                </span>
+              </>
+            ) : (
+              <>
+                Are you sure you want to permanently delete "{itemName}"?
+                <br />
+                <span className="text-sm text-red-500 mt-1 block font-medium">
+                  This action cannot be undone and will permanently remove the {itemType.toLowerCase()} from the database.
+                </span>
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -61,7 +79,10 @@ export function DeleteConfirmationModal({
             {isDeleting && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
-            {isDeleting ? 'Deleting...' : 'Delete'}
+            {isDeleting 
+              ? (isActive ? 'Deactivating...' : 'Deleting...') 
+              : (isActive ? 'Deactivate' : 'Delete Permanently')
+            }
           </Button>
         </div>
       </DialogContent>

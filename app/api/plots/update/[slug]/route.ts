@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Plot from "@/models/plots";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { updatePlotSlugs } from "@/lib/slug-utils";
 import { rateLimit } from "@/lib/rate-limiter";
 import { validatePlotData, sanitizePlotData, type PlotData } from "@/lib/plot-validation";
@@ -69,41 +70,17 @@ interface PlotUpdateData {
 }
 
 
-/**
- * Check if user has permission to update plot
- */
-function canUpdatePlot(user: any, plot: any): { canUpdate: boolean; reason?: string } {
-  // Admin can update any plot
-  const adminEmails = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim()) || [];
-  if (adminEmails.includes(user.email)) {
-    return { canUpdate: true };
-  }
-
-  // Plot creator can update their own plot (createdBy is a string, not an object)
-  if (plot.createdBy === user.email) {
-    return { canUpdate: true };
-  }
-
-  // Check if user is in allowed updaters list (if implemented)
-  const allowedUpdaters = plot.allowedUpdaters || [];
-  if (allowedUpdaters.includes(user.email)) {
-    return { canUpdate: true };
-  }
-
-  return { 
-    canUpdate: false, 
-    reason: "You don't have permission to update this plot" 
-  };
-}
+// Custom permission logic removed - now handled by ZeroTrust withCollectionPermission
 
 /**
- * Main PUT handler with authentication
+ * Main PUT handler with ZeroTrust authentication
  */
-export const PUT = withAuth(async (
-  request: NextRequest, 
-  { user, audit }, 
+async function handler(
+  request: NextRequest,
   { params }: { params: { slug: string } }
-) => {
+) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -133,18 +110,7 @@ export const PUT = withAuth(async (
       );
     }
 
-    // Check permissions
-    const permissionCheck = canUpdatePlot(user, existingPlot);
-    if (!permissionCheck.canUpdate) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: permissionCheck.reason || "Insufficient permissions", 
-          error: "FORBIDDEN" 
-        },
-        { status: 403 }
-      );
-    }
+    // Permission check is handled by withCollectionPermission wrapper
 
     // Parse JSON data
     const updateData: PlotUpdateData = await request.json();
@@ -213,7 +179,13 @@ export const PUT = withAuth(async (
       ...slugs,
       image: coverImageUrl,
       gallery: galleryUrls,
-      updatedBy: audit.email,
+      // Rich audit data matching schema requirements
+      updatedBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
       updatedAt: new Date(),
     };
     
@@ -367,4 +339,7 @@ export const PUT = withAuth(async (
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const PUT = withCollectionPermission(Collection.PLOTS, Action.EDIT)(handler);

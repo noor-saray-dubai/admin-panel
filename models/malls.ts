@@ -2,6 +2,14 @@
 
 import mongoose, { Schema, Document, model, models } from "mongoose";
 
+// Audit tracking interface
+interface IAuditInfo {
+  email: string;
+  timestamp: Date;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 // Interfaces
 interface IPrice {
   total: string; // Display format like "AED 12.5B"
@@ -209,13 +217,24 @@ export interface IMall extends Document {
   isActive?: boolean; // Available for sale
   isAvailable?: boolean; // Not sold/reserved
   isOperational?: boolean; // Currently operating as a mall
-  createdBy?: string;
-  updatedBy?: string;
+  
+  // Audit fields
+  createdBy: IAuditInfo;
+  updatedBy: IAuditInfo;
+  version: number; // For optimistic locking
+  
   createdAt: Date;
   updatedAt: Date;
 }
 
 // Sub-schemas
+const AuditInfoSchema = new Schema<IAuditInfo>({
+  email: { type: String, required: true, lowercase: true, trim: true },
+  timestamp: { type: Date, required: true, default: Date.now },
+  ipAddress: { type: String, trim: true },
+  userAgent: { type: String, trim: true }
+}, { _id: false }); // Disable _id for subdocuments
+
 const PriceSchema = new Schema<IPrice>({
   total: { 
     type: String, 
@@ -705,8 +724,21 @@ const MallSchema = new Schema<IMall>(
     isActive: { type: Boolean, default: true },
     isAvailable: { type: Boolean, default: true },
     isOperational: { type: Boolean, default: false },
-    createdBy: { type: String, trim: true },
-    updatedBy: { type: String, trim: true }
+    
+    // Audit fields
+    createdBy: { 
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    updatedBy: { 
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    version: { 
+      type: Number, 
+      default: 1,
+      min: 1
+    }
   },
   {
     timestamps: true,
@@ -722,6 +754,8 @@ MallSchema.index({ 'saleInformation.preferredBuyerType': 1, verified: 1 });
 MallSchema.index({ 'legalDetails.zoning': 1, ownership: 1 });
 MallSchema.index({ status: 1, isActive: 1, verified: 1 });
 MallSchema.index({ slug: 1 }, { unique: true });
+MallSchema.index({ 'createdBy.email': 1 });
+MallSchema.index({ 'updatedBy.email': 1 });
 
 // Virtual properties
 MallSchema.virtual('investmentSummary').get(function() {
@@ -799,7 +833,7 @@ MallSchema.methods.getSaleHighlights = function() {
   };
 };
 
-// Pre-save middleware
+// Pre-save middleware to update version and handle slug generation
 MallSchema.pre('save', function(next) {
   if (!this.slug && this.name) {
     this.slug = this.name
@@ -815,8 +849,14 @@ MallSchema.pre('save', function(next) {
     this.rentalDetails.currentOccupancy = Math.round((this.rentalDetails.totalStores / this.rentalDetails.maxStores) * 100);
   }
   
+  // Update version for existing documents
+  if (this.isModified() && !this.isNew) {
+    this.version += 1;
+  }
+  
   next();
 });
 
 const Mall = models.Mall || model<IMall>("Mall", MallSchema);
 export default Mall;
+export type { IAuditInfo };

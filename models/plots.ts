@@ -1,5 +1,13 @@
 import mongoose, { Schema, Document, model, models } from "mongoose";
 
+// Audit tracking interface
+interface IAuditInfo {
+  email: string;
+  timestamp: Date;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 // Interfaces
 interface IPrice {
   perSqft: number;
@@ -61,13 +69,24 @@ export interface IPlot extends Document {
   verified: boolean;
   isActive: boolean; // Available for sale
   isAvailable: boolean; // Not sold/reserved
-  createdBy?: string; // Admin/user who created
-  updatedBy?: string; // Admin/user who last updated
+  
+  // Audit fields
+  createdBy: IAuditInfo;
+  updatedBy: IAuditInfo;
+  version: number; // For optimistic locking
+  
   createdAt: Date;
   updatedAt: Date;
 }
 
 // Sub-schemas
+const AuditInfoSchema = new Schema<IAuditInfo>({
+  email: { type: String, required: true, lowercase: true, trim: true },
+  timestamp: { type: Date, required: true, default: Date.now },
+  ipAddress: { type: String, trim: true },
+  userAgent: { type: String, trim: true }
+}, { _id: false }); // Disable _id for subdocuments
+
 const PriceSchema = new Schema<IPrice>({
   perSqft: { 
     type: Number, 
@@ -348,13 +367,20 @@ const PlotSchema = new Schema<IPlot>(
       type: Boolean, 
       default: true
     },
+    
+    // Audit fields
     createdBy: { 
-      type: String,
-      trim: true
+      type: AuditInfoSchema, 
+      required: true 
     },
     updatedBy: { 
-      type: String,
-      trim: true
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    version: { 
+      type: Number, 
+      default: 1,
+      min: 1
     }
   },
   {
@@ -371,6 +397,8 @@ PlotSchema.index({ 'price.totalNumeric': 1, 'size.sqft': 1 });
 PlotSchema.index({ developer: 1, verified: 1 });
 PlotSchema.index({ status: 1, isActive: 1 });
 PlotSchema.index({ slug: 1 }, { unique: true });
+PlotSchema.index({ 'createdBy.email': 1 });
+PlotSchema.index({ 'updatedBy.email': 1 });
 
 // Virtual for price per sqm
 PlotSchema.virtual('pricePerSqm').get(function() {
@@ -422,7 +450,7 @@ PlotSchema.methods.getSizeSummary = function() {
   };
 };
 
-// Pre-save middleware to generate slug if not provided
+// Pre-save middleware to generate slug if not provided and update version
 PlotSchema.pre('save', function(next) {
   if (!this.slug && this.title) {
     this.slug = this.title
@@ -432,6 +460,12 @@ PlotSchema.pre('save', function(next) {
       .replace(/-+/g, '-')
       .trim();
   }
+  
+  // Update version for existing documents
+  if (this.isModified() && !this.isNew) {
+    this.version += 1;
+  }
+  
   next();
 });
 
@@ -447,3 +481,4 @@ PlotSchema.pre('save', function(next) {
 
 const Plot = models.Plot || model<IPlot>("Plot", PlotSchema);
 export default Plot;
+export type { IAuditInfo };

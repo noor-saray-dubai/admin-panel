@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema({
   collectionPermissions: [{
     collection: { 
       type: String, 
-      enum: ['projects', 'blogs', 'news', 'careers', 'developers', 'plots', 'malls', 'buildings', 'communities', 'users', 'system'],
+      enum: ['projects', 'properties', 'blogs', 'news', 'careers', 'developers', 'plots', 'malls', 'buildings', 'communities', 'users', 'system'],
       required: true 
     },
     subRole: { 
@@ -41,7 +41,7 @@ const userSchema = new mongoose.Schema({
   permissionOverrides: [{
     collection: { 
       type: String, 
-      enum: ['projects', 'blogs', 'news', 'careers', 'developers', 'plots', 'malls', 'buildings', 'communities', 'users', 'system'],
+      enum: ['projects', 'properties', 'blogs', 'news', 'careers', 'developers', 'plots', 'malls', 'buildings', 'communities', 'users', 'system'],
       required: true 
     },
     subRole: { 
@@ -79,9 +79,9 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('EnhancedUser', userSchema, 'enhancedusers');
 
-// All collections including buildings
+// All collections including buildings and properties
 const ALL_COLLECTIONS = [
-  'projects', 'blogs', 'news', 'careers', 'developers', 
+  'projects', 'properties', 'blogs', 'news', 'careers', 'developers', 
   'plots', 'malls', 'buildings', 'communities', 'users', 'system'
 ];
 

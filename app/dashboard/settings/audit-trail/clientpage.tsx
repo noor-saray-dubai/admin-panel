@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/toast-system';
 import { 
   FileText, 
   Filter, 
@@ -51,7 +51,7 @@ interface AuditLog {
 
 export default function AuditTrailPage() {
   const { user, loading, isSuperAdmin } = useAuth();
-  const { toast } = useToast();
+  const { error: showError } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -287,14 +287,13 @@ export default function AuditTrailPage() {
     // Show toast notification for unauthorized access
     useEffect(() => {
       if (user && !isSuperAdmin()) {
-        toast({
-          title: "Access Denied",
-          description: "You need super administrator privileges to view audit trails.",
-          variant: "destructive"
-        });
+        showError(
+          "Access Denied", 
+          "You need super administrator privileges to view audit trails."
+        );
         console.warn('🚨 Unauthorized access attempt to audit trail by:', user.email);
       }
-    }, [user, isSuperAdmin, toast]);
+    }, [user, isSuperAdmin, showError]);
 
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">

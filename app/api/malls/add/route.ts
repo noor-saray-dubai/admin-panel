@@ -69,13 +69,6 @@ async function updateMallSlugs(mallData: any, mallId: string) {
 async function handler(request: NextRequest) {
   // User is available on request.user (added by withCollectionPermission)
   const user = (request as any).user;
-  
-  // Create audit context for logging
-  const audit = {
-    email: user.email || 'unknown',
-    ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-    userAgent: request.headers.get('user-agent') || 'unknown'
-  };
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -169,13 +162,19 @@ async function handler(request: NextRequest) {
       image: coverImageUrl,
       gallery: galleryUrls,
       floorPlan: floorPlanUrl,
-      // Simple audit data (current requirement)
-      createdBy: user.firebaseUid,
-      updatedBy: user.firebaseUid,
-      // Rich audit data foundation (for future enhancement)
-      // createdByEmail: user.email,
-      // createdByRole: user.fullRole,
-      // permissions: { collection: 'malls', action: 'add', subRole: getUserSubRoleForCollection(user, 'malls') },
+      // Rich audit data matching schema requirements
+      createdBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
+      updatedBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
       version: 1,
       isActive: sanitizedData.isActive !== undefined ? sanitizedData.isActive : true,
       createdAt: new Date(),

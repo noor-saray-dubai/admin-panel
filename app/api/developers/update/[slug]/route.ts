@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import Developer from "@/models/developers";
 import { connectToDatabase } from "@/lib/db";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
+import { AuditLog } from "@/models/auditLog";
 
 export const runtime = "nodejs";
 
@@ -27,6 +30,8 @@ interface DeveloperData {
   verified: boolean;
   specialization: string[];
   awards: IAward[];
+  logo?: string;
+  coverImage?: string;
 }
 
 // Helper to generate slug from name
@@ -56,43 +61,6 @@ async function ensureUniqueSlug(baseSlug: string, currentSlug?: string): Promise
   }
 }
 
-// Upload to Cloudinary
-async function uploadToCloudinary(file: File, folder: string, fileName: string): Promise<string> {
-  const { v2: cloudinary } = await import("cloudinary");
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-    api_key: process.env.CLOUDINARY_API_KEY!,
-    api_secret: process.env.CLOUDINARY_API_SECRET!,
-  });
-
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-
-  return new Promise((resolve, reject) => {
-    cloudinary.uploader
-      .upload_stream(
-        {
-          resource_type: "image",
-          folder: `developers/${folder}`,
-          public_id: fileName,
-          format: "webp",
-          quality: "auto:good",
-          fetch_format: "auto",
-          transformation: [
-            { width: 800, height: 600, crop: "limit" },
-            { quality: "auto:good" },
-            { format: "auto" }
-          ],
-          overwrite: true,
-        },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result?.secure_url || "");
-        }
-      )
-      .end(buffer);
-  });
-}
 
 /**
  * Count words in a string
@@ -268,6 +236,22 @@ function validateDeveloperData(data: DeveloperData): {
     });
   }
 
+  // Logo URL validation (optional for updates)
+  if (data.logo && typeof data.logo === "string") {
+    const urlRegex = /^https?:\/\/.+/;
+    if (!urlRegex.test(data.logo)) {
+      addError("logo", "Logo must be a valid URL");
+    }
+  }
+
+  // Cover Image URL validation (optional for updates)
+  if (data.coverImage && typeof data.coverImage === "string") {
+    const urlRegex = /^https?:\/\/.+/;
+    if (!urlRegex.test(data.coverImage)) {
+      addError("coverImage", "Cover image must be a valid URL");
+    }
+  }
+
   // Verified validation
   if (typeof data.verified !== "boolean") {
     addError("verified", "Verified status must be true or false");
@@ -294,6 +278,8 @@ function sanitizeDeveloperData(data: DeveloperData): DeveloperData {
     website: data.website ? sanitizeString(data.website) : "",
     email: sanitizeString((data.email || "").toLowerCase()),
     phone: sanitizeString(data.phone || ""),
+    logo: data.logo ? sanitizeString(data.logo) : undefined,
+    coverImage: data.coverImage ? sanitizeString(data.coverImage) : undefined,
     description: data.description?.map(section => ({
       title: section.title ? sanitizeString(section.title) : undefined,
       description: sanitizeString(section.description || "")
@@ -309,82 +295,36 @@ function sanitizeDeveloperData(data: DeveloperData): DeveloperData {
   };
 }
 
-/**
- * Validate image file
- */
-function validateImageFile(file: File | null, fieldName: string, required: boolean = false): {
-  isValid: boolean;
-  error?: string
-} {
-  if (!file || file.size === 0) {
-    if (required) {
-      return { isValid: false, error: `${fieldName} is required` };
-    }
-    return { isValid: true };
-  }
-
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-  if (!allowedTypes.includes(file.type)) {
-    return {
-      isValid: false,
-      error: `${fieldName} must be one of: ${allowedTypes.join(', ')}`
-    };
-  }
-
-  const maxBytes = 5 * 1024 * 1024; // 5MB
-  if (file.size > maxBytes) {
-    return {
-      isValid: false,
-      error: `${fieldName} must be less than 5MB`
-    };
-  }
-
-  return { isValid: true };
-}
 
 // PUT - Update existing developer
-export async function PUT(req: NextRequest, { params }: { params: { slug: string } }) {
+export const PUT = withCollectionPermission(Collection.DEVELOPERS, Action.EDIT)(async (req: NextRequest, { params, user }: { params: { slug: string }, user: any }) => {
   try {
     await connectToDatabase();
 
     const { slug: currentSlug } = params;
-    const formData = await req.formData();
+    
+    // Parse JSON body instead of FormData
+    const body = await req.json();
 
-    // Extract form fields
-    const name = formData.get("name") as string;
-    const overview = formData.get("overview") as string;
-    const location = formData.get("location") as string;
-    const establishedYear = parseInt(formData.get("establishedYear") as string);
-    const website = formData.get("website") as string;
-    const email = formData.get("email") as string;
-    const phone = formData.get("phone") as string;
-    const verified = formData.get("verified") === "true";
-
-    // Parse JSON fields
-    const description = JSON.parse(formData.get("description") as string || "[]");
-    const specialization = JSON.parse(formData.get("specialization") as string || "[]");
-    const awards = JSON.parse(formData.get("awards") as string || "[]");
-
-    const logoFile = formData.get("logoFile") as File | null;
-    const coverImageFile = formData.get("coverImageFile") as File | null;
-
-    // Create developer data object
+    // Create developer data object from body
     let developerData: DeveloperData = {
-      name,
-      description,
-      overview,
-      location,
-      establishedYear,
-      website,
-      email,
-      phone,
-      verified,
-      specialization,
-      awards,
+      name: body.name,
+      description: body.description,
+      overview: body.overview,
+      location: body.location,
+      establishedYear: body.establishedYear,
+      website: body.website,
+      email: body.email,
+      phone: body.phone,
+      verified: body.verified,
+      specialization: body.specialization,
+      awards: body.awards,
+      logo: body.logo,
+      coverImage: body.coverImage
     };
 
     // Basic required field check
-    if (!name || !overview || !email || !phone || !location) {
+    if (!developerData.name || !developerData.overview || !developerData.email || !developerData.phone || !developerData.location) {
       return NextResponse.json({
         success: false,
         error: "MISSING_FIELDS",
@@ -424,41 +364,10 @@ export async function PUT(req: NextRequest, { params }: { params: { slug: string
       );
     }
 
-    // Validate image files (not required for updates)
-    if (logoFile && logoFile.size > 0) {
-      const logoValidation = validateImageFile(logoFile, "Logo", false);
-      if (!logoValidation.isValid) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: logoValidation.error,
-            error: "INVALID_LOGO",
-            errors: { logo: [logoValidation.error!] }
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (coverImageFile && coverImageFile.size > 0) {
-      const coverValidation = validateImageFile(coverImageFile, "Cover image", false);
-      if (!coverValidation.isValid) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: coverValidation.error,
-            error: "INVALID_COVER_IMAGE",
-            errors: { coverImage: [coverValidation.error!] }
-          },
-          { status: 400 }
-        );
-      }
-    }
-
     // Handle slug update if name changed
     let newSlug = currentSlug;
-    if (name.trim() !== developer.name.trim()) {
-      const baseSlug = generateSlug(name);
+    if (developerData.name.trim() !== developer.name.trim()) {
+      const baseSlug = generateSlug(developerData.name);
 
       // Check if the new slug would conflict with existing developers (excluding current one)
       if (baseSlug !== currentSlug) {
@@ -483,62 +392,83 @@ export async function PUT(req: NextRequest, { params }: { params: { slug: string
       }
     }
 
-    let logoUrl = developer.logo;
-    let coverImageUrl = developer.coverImage;
+    // Extract IP address and user agent for audit
+    const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0] || req.headers.get('x-real-ip') || 'unknown';
+    const userAgent = req.headers.get('user-agent') || 'unknown';
 
-    // Upload new logo if provided
-    if (logoFile && logoFile.size > 0) {
-      try {
-        logoUrl = await uploadToCloudinary(logoFile, newSlug, "logo");
-      } catch (err) {
-        console.error("Error uploading logo:", err);
-        return NextResponse.json({
-          success: false,
-          error: "UPLOAD_ERROR",
-          message: "Failed to upload logo image",
-          errors: { logo: ["Failed to upload logo image"] }
-        }, { status: 500 });
-      }
+    // Create audit info for updatedBy
+    const auditInfo = {
+      email: user.email,
+      timestamp: new Date(),
+      ipAddress: ipAddress,
+      userAgent: userAgent
+    };
+
+    // Prepare update object - only include logo and coverImage if provided
+    const updateObj: any = {
+      ...developerData,
+      slug: newSlug,
+      updatedBy: auditInfo
+    };
+
+    // Only update logo if provided
+    if (developerData.logo) {
+      updateObj.logo = developerData.logo;
+    }
+    
+    // Only update coverImage if provided
+    if (developerData.coverImage) {
+      updateObj.coverImage = developerData.coverImage;
     }
 
-    // Upload new cover image if provided
-    if (coverImageFile && coverImageFile.size > 0) {
-      try {
-        coverImageUrl = await uploadToCloudinary(coverImageFile, newSlug, "cover");
-      } catch (err) {
-        console.error("Error uploading cover image:", err);
-        return NextResponse.json({
-          success: false,
-          error: "UPLOAD_ERROR",
-          message: "Failed to upload cover image",
-          errors: { coverImage: ["Failed to upload cover image"] }
-        }, { status: 500 });
-      }
-    }
+    // Remove undefined logo and coverImage from the update object
+    if (updateObj.logo === undefined) delete updateObj.logo;
+    if (updateObj.coverImage === undefined) delete updateObj.coverImage;
 
     // Update developer fields
     const updatedDeveloper = await Developer.findByIdAndUpdate(
       developer._id,
-      {
-        ...developerData,
-        slug: newSlug,
-        logo: logoUrl,
-        coverImage: coverImageUrl,
-        updatedAt: new Date(),
-      },
+      updateObj,
       { new: true, runValidators: true }
     );
 
+    // Log to audit log
+    const changes: any = {
+      before: {
+        name: developer.name,
+        slug: developer.slug,
+        location: developer.location,
+        verified: developer.verified
+      },
+      after: {
+        name: updatedDeveloper.name,
+        slug: updatedDeveloper.slug,
+        location: updatedDeveloper.location,
+        verified: updatedDeveloper.verified
+      }
+    };
+
+    await AuditLog.create({
+      action: "UPDATE",
+      collection: "developers",
+      documentId: updatedDeveloper._id.toString(),
+      userId: user.email,
+      userAgent: userAgent,
+      ipAddress: ipAddress,
+      changes: changes,
+      timestamp: new Date()
+    });
+
     // Log successful update
-    console.log(`Developer updated successfully:`, {
+    console.log(`Developer updated successfully by ${user.email}:`, {
       id: updatedDeveloper._id,
       name: updatedDeveloper.name,
       slug: updatedDeveloper.slug,
       changes: {
-        nameChanged: name !== developer.name,
+        nameChanged: developerData.name !== developer.name,
         slugChanged: newSlug !== currentSlug,
-        logoUpdated: logoFile && logoFile.size > 0,
-        coverImageUpdated: coverImageFile && coverImageFile.size > 0,
+        logoUpdated: !!developerData.logo,
+        coverImageUpdated: !!developerData.coverImage
       }
     });
 
@@ -621,4 +551,4 @@ export async function PUT(req: NextRequest, { params }: { params: { slug: string
       { status: 500 }
     );
   }
-}
+});

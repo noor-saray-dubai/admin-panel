@@ -83,13 +83,6 @@ async function handler(
 ) {
   // User is available on request.user (added by withCollectionPermission)
   const user = (request as any).user;
-  
-  // Create audit context for logging
-  const audit = {
-    email: user.email || 'unknown',
-    ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-    userAgent: request.headers.get('user-agent') || 'unknown'
-  };
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -193,7 +186,13 @@ async function handler(
       mainImage: mainImageUrl,
       gallery: galleryUrls,
       floorPlans: floorPlanUrls,
-      updatedBy: user.firebaseUid,
+      // Rich audit data matching schema requirements
+      updatedBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
       updatedAt: new Date(),
     };
 
@@ -237,8 +236,8 @@ async function handler(
       level: AuditLevel.INFO,
       userId: user.firebaseUid,
       userEmail: user.email,
-      ip: audit.ipAddress,
-      userAgent: audit.userAgent,
+      ip: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown',
       resource: 'building',
       resourceId: updatedBuilding.buildingId,
       details: {

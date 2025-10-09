@@ -2,6 +2,14 @@
 
 import mongoose, { Schema, Document, model, models, Query } from "mongoose";
 
+// Audit tracking interface
+interface IAuditInfo {
+  email: string;
+  timestamp: Date;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 // Define custom query helpers interface
 interface BuildingQueryHelpers {
   residential(): Query<any, Document> & BuildingQueryHelpers;
@@ -308,14 +316,24 @@ export interface IBuilding extends Document<any, BuildingQueryHelpers> {
   isActive?: boolean;
   isFeatured?: boolean;
   
+  // Audit fields
+  createdBy: IAuditInfo;
+  updatedBy: IAuditInfo;
+  version: number; // For optimistic locking
+  
   // Metadata
-  createdBy?: string;
-  updatedBy?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
 // Sub-schemas
+const AuditInfoSchema = new Schema<IAuditInfo>({
+  email: { type: String, required: true, lowercase: true, trim: true },
+  timestamp: { type: Date, required: true, default: Date.now },
+  ipAddress: { type: String, trim: true },
+  userAgent: { type: String, trim: true }
+}, { _id: false }); // Disable _id for subdocuments
+
 const PriceSchema = new Schema<IPrice>({
   value: { 
     type: String, 
@@ -879,9 +897,20 @@ const BuildingSchema = new Schema<IBuilding>(
     isActive: { type: Boolean, default: true },
     isFeatured: { type: Boolean, default: false },
     
-    // Metadata
-    createdBy: { type: String, trim: true },
-    updatedBy: { type: String, trim: true }
+    // Audit fields
+    createdBy: { 
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    updatedBy: { 
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    version: { 
+      type: Number, 
+      default: 1,
+      min: 1
+    }
   },
   {
     timestamps: true,
@@ -899,6 +928,8 @@ BuildingSchema.index({ year: 1, status: 1 });
 BuildingSchema.index({ slug: 1 }, { unique: true });
 BuildingSchema.index({ buildingId: 1 }, { unique: true });
 BuildingSchema.index({ verified: 1, isActive: 1 });
+BuildingSchema.index({ 'createdBy.email': 1 });
+BuildingSchema.index({ 'updatedBy.email': 1 });
 
 // Virtual properties
 BuildingSchema.virtual('occupancyPercentage').get(function() {
@@ -1152,6 +1183,11 @@ BuildingSchema.pre('save', function(next) {
     this.availableUnits = totalAvailable;
   }
   
+  // Update version for existing documents
+  if (this.isModified() && !this.isNew) {
+    this.version += 1;
+  }
+  
   next();
 });
 
@@ -1197,6 +1233,7 @@ export default Building;
 
 // Export interfaces for use in other files
 export type {
+  IAuditInfo,
   IPrice,
   IPriceRange,
   IDimensions,

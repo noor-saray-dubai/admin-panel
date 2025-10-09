@@ -152,6 +152,7 @@ const AuditLogSchema = new mongoose.Schema<IAuditLog>({
 }, {
   // Don't add createdAt/updatedAt as we have timestamp
   timestamps: false,
+  suppressReservedKeysWarning: true
 });
 
 // Compound indexes for common queries

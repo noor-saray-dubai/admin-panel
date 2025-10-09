@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 // Collection types that can be managed
 export enum Collection {
   PROJECTS = 'projects',
+  PROPERTIES = 'properties',
   BLOGS = 'blogs',
   NEWS = 'news',
   CAREERS = 'careers',
@@ -12,6 +13,7 @@ export enum Collection {
   PLOTS = 'plots',
   MALLS = 'malls',
   BUILDINGS = 'buildings',
+  HOTELS = 'hotels',
   COMMUNITIES = 'communities',
   USERS = 'users',
   SYSTEM = 'system',
@@ -148,13 +150,13 @@ export interface IEnhancedUser {
 export const FULL_ROLE_COLLECTIONS: Record<FullRole, Collection[]> = {
   [FullRole.SUPER_ADMIN]: Object.values(Collection), // Access to all collections
   [FullRole.ADMIN]: [
-    Collection.PROJECTS, Collection.BLOGS, Collection.NEWS, Collection.CAREERS,
-    Collection.DEVELOPERS, Collection.PLOTS, Collection.MALLS, Collection.BUILDINGS, 
+    Collection.PROJECTS, Collection.PROPERTIES, Collection.BLOGS, Collection.NEWS, Collection.CAREERS,
+    Collection.DEVELOPERS, Collection.PLOTS, Collection.MALLS, Collection.BUILDINGS, Collection.HOTELS,
     Collection.COMMUNITIES, Collection.USERS
   ],
-  [FullRole.AGENT]: [Collection.PROJECTS],
+  [FullRole.AGENT]: [Collection.PROJECTS, Collection.PROPERTIES],
   [FullRole.MARKETING]: [Collection.BLOGS, Collection.NEWS],
-  [FullRole.SALES]: [Collection.PLOTS, Collection.MALLS, Collection.BUILDINGS],
+  [FullRole.SALES]: [Collection.PROPERTIES, Collection.PLOTS, Collection.MALLS, Collection.BUILDINGS, Collection.HOTELS],
   [FullRole.HR]: [Collection.CAREERS, Collection.DEVELOPERS],
   [FullRole.COMMUNITY_MANAGER]: [Collection.COMMUNITIES],
   [FullRole.USER]: [Collection.PROJECTS],

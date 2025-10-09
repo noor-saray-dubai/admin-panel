@@ -2,8 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import Developer from "@/models/developers";
 import { connectToDatabase } from "@/lib/db";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
+import { AuditLog } from "@/models/auditLog";
 
 export const runtime = "nodejs";
 
@@ -29,6 +31,8 @@ interface DeveloperData {
   verified: boolean;
   specialization: string[];
   awards: IAward[];
+  logo: string;
+  coverImage: string;
 }
 
 // Helper to generate slug from name
@@ -53,43 +57,6 @@ async function ensureUniqueSlug(baseSlug: string): Promise<string> {
   }
 }
 
-// Upload to Cloudinary
-async function uploadToCloudinary(file: File, folder: string, fileName: string): Promise<string> {
-  const { v2: cloudinary } = await import("cloudinary");
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-    api_key: process.env.CLOUDINARY_API_KEY!,
-    api_secret: process.env.CLOUDINARY_API_SECRET!,
-  });
-
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-
-  return new Promise((resolve, reject) => {
-    cloudinary.uploader
-      .upload_stream(
-        {
-          resource_type: "image",
-          folder: `developers/${folder}`,
-          public_id: fileName,
-          format: "webp",
-          quality: "auto:good",
-          fetch_format: "auto",
-          transformation: [
-            { width: 800, height: 600, crop: "limit" },
-            { quality: "auto:good" },
-            { format: "auto" }
-          ],
-          overwrite: true,
-        },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result?.secure_url || "");
-        }
-      )
-      .end(buffer);
-  });
-}
 
 /**
  * Count words in a string
@@ -265,6 +232,26 @@ function validateDeveloperData(data: DeveloperData): {
     });
   }
 
+  // Logo URL validation
+  if (!data.logo || typeof data.logo !== "string") {
+    addError("logo", "Logo URL is required");
+  } else {
+    const urlRegex = /^https?:\/\/.+/;
+    if (!urlRegex.test(data.logo)) {
+      addError("logo", "Logo must be a valid URL");
+    }
+  }
+
+  // Cover Image URL validation
+  if (!data.coverImage || typeof data.coverImage !== "string") {
+    addError("coverImage", "Cover image URL is required");
+  } else {
+    const urlRegex = /^https?:\/\/.+/;
+    if (!urlRegex.test(data.coverImage)) {
+      addError("coverImage", "Cover image must be a valid URL");
+    }
+  }
+
   // Verified validation
   if (typeof data.verified !== "boolean") {
     addError("verified", "Verified status must be true or false");
@@ -291,6 +278,8 @@ function sanitizeDeveloperData(data: DeveloperData): DeveloperData {
     website: data.website ? sanitizeString(data.website) : "",
     email: sanitizeString((data.email || "").toLowerCase()),
     phone: sanitizeString(data.phone || ""),
+    logo: sanitizeString(data.logo || ""),
+    coverImage: sanitizeString(data.coverImage || ""),
     description: data.description?.map(section => ({
       title: section.title ? sanitizeString(section.title) : undefined,
       description: sanitizeString(section.description || "")
@@ -306,41 +295,9 @@ function sanitizeDeveloperData(data: DeveloperData): DeveloperData {
   };
 }
 
-/**
- * Validate image file
- */
-function validateImageFile(file: File | null, fieldName: string, required: boolean = false): { 
-  isValid: boolean; 
-  error?: string 
-} {
-  if (!file || file.size === 0) {
-    if (required) {
-      return { isValid: false, error: `${fieldName} is required` };
-    }
-    return { isValid: true };
-  }
-
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-  if (!allowedTypes.includes(file.type)) {
-    return { 
-      isValid: false, 
-      error: `${fieldName} must be one of: ${allowedTypes.join(', ')}` 
-    };
-  }
-
-  const maxBytes = 5 * 1024 * 1024; // 5MB
-  if (file.size > maxBytes) {
-    return { 
-      isValid: false, 
-      error: `${fieldName} must be less than 5MB` 
-    };
-  }
-
-  return { isValid: true };
-}
 
 // POST - Create new developer with authentication
-export const POST = withAuth(async (req: NextRequest, { user, audit }) => {
+export const POST = withCollectionPermission(Collection.DEVELOPERS, Action.ADD)(async (req: NextRequest, { user }: { user: any }) => {
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(req, user);
@@ -358,49 +315,34 @@ export const POST = withAuth(async (req: NextRequest, { user, audit }) => {
 
     await connectToDatabase();
 
-    const formData = await req.formData();
+    // Parse JSON body instead of FormData
+    const body = await req.json();
 
-    // Extract form fields
-    const name = formData.get("name") as string;
-    const overview = formData.get("overview") as string;
-    const location = formData.get("location") as string;
-    const establishedYear = parseInt(formData.get("establishedYear") as string);
-    const website = formData.get("website") as string;
-    const email = formData.get("email") as string;
-    const phone = formData.get("phone") as string;
-    const verified = formData.get("verified") === "true";
-    
-    // Parse JSON fields
-    const description = JSON.parse(formData.get("description") as string || "[]");
-    const specialization = JSON.parse(formData.get("specialization") as string || "[]");
-    const awards = JSON.parse(formData.get("awards") as string || "[]");
-
-    const logoFile = formData.get("logoFile") as File | null;
-    const coverImageFile = formData.get("coverImageFile") as File | null;
-
-    // Create developer data object
+    // Create developer data object from body
     let developerData: DeveloperData = {
-      name,
-      description,
-      overview,
-      location,
-      establishedYear,
-      website,
-      email,
-      phone,
-      verified,
-      specialization,
-      awards,
+      name: body.name,
+      description: body.description,
+      overview: body.overview,
+      location: body.location,
+      establishedYear: body.establishedYear,
+      website: body.website,
+      email: body.email,
+      phone: body.phone,
+      verified: body.verified,
+      specialization: body.specialization,
+      awards: body.awards,
+      logo: body.logo,
+      coverImage: body.coverImage
     };
 
     // Basic required field check
-    if (!name || !overview || !email || !phone || !location) {
+    if (!developerData.name || !developerData.overview || !developerData.email || !developerData.phone || !developerData.location || !developerData.logo || !developerData.coverImage) {
       return NextResponse.json({ 
         success: false, 
         error: "MISSING_FIELDS",
         message: "Missing required fields",
         errors: {
-          general: ["Name, overview, email, phone, and location are required"]
+          general: ["Name, overview, email, phone, location, logo, and cover image are required"]
         }
       }, { status: 400 });
     }
@@ -423,37 +365,10 @@ export const POST = withAuth(async (req: NextRequest, { user, audit }) => {
       );
     }
 
-    // Validate image files
-    const logoValidation = validateImageFile(logoFile, "Logo", true);
-    if (!logoValidation.isValid) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: logoValidation.error, 
-          error: "INVALID_LOGO",
-          errors: { logo: [logoValidation.error!] }
-        },
-        { status: 400 }
-      );
-    }
-
-    const coverValidation = validateImageFile(coverImageFile, "Cover image", true);
-    if (!coverValidation.isValid) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: coverValidation.error, 
-          error: "INVALID_COVER_IMAGE",
-          errors: { coverImage: [coverValidation.error!] }
-        },
-        { status: 400 }
-      );
-    }
-
     // Generate base slug from name
-    const baseSlug = generateSlug(name);
+    const baseSlug = generateSlug(developerData.name);
     
-    // Check if developer already exists by slug (this is our only uniqueness check)
+    // Check if developer already exists by slug
     const existingDeveloper = await Developer.findOne({ slug: baseSlug });
     if (existingDeveloper) {
       return NextResponse.json(
@@ -467,48 +382,46 @@ export const POST = withAuth(async (req: NextRequest, { user, audit }) => {
       );
     }
 
-    // Since no existing developer found, use the base slug
+    // Use the base slug
     const slug = baseSlug;
 
-    let logoUrl = "";
-    let coverImageUrl = "";
+    // Extract IP address and user agent for audit
+    const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0] || req.headers.get('x-real-ip') || 'unknown';
+    const userAgent = req.headers.get('user-agent') || 'unknown';
 
-    // Upload logo
-    if (logoFile && logoFile.size > 0) {
-      try {
-        logoUrl = await uploadToCloudinary(logoFile, slug, "logo");
-      } catch (err) {
-        console.error("Error uploading logo:", err);
-        return NextResponse.json({ 
-          success: false, 
-          error: "UPLOAD_ERROR",
-          message: "Failed to upload logo image",
-          errors: { logo: ["Failed to upload logo image"] }
-        }, { status: 500 });
-      }
-    }
+    // Create audit info
+    const auditInfo = {
+      email: user.email,
+      timestamp: new Date(),
+      ipAddress: ipAddress,
+      userAgent: userAgent
+    };
 
-    // Upload cover image
-    if (coverImageFile && coverImageFile.size > 0) {
-      try {
-        coverImageUrl = await uploadToCloudinary(coverImageFile, slug, "cover");
-      } catch (err) {
-        console.error("Error uploading cover image:", err);
-        return NextResponse.json({ 
-          success: false, 
-          error: "UPLOAD_ERROR",
-          message: "Failed to upload cover image",
-          errors: { coverImage: ["Failed to upload cover image"] }
-        }, { status: 500 });
-      }
-    }
-
-    // Create developer
+    // Create developer with audit info
     const newDeveloper = await Developer.create({
       ...developerData,
       slug,
-      logo: logoUrl,
-      coverImage: coverImageUrl,
+      createdBy: auditInfo,
+      updatedBy: auditInfo
+    });
+
+    // Log to audit log
+    await AuditLog.create({
+      action: "CREATE",
+      collection: "developers",
+      documentId: newDeveloper._id.toString(),
+      userId: user.email,
+      userAgent: userAgent,
+      ipAddress: ipAddress,
+      changes: {
+        after: {
+          name: newDeveloper.name,
+          slug: newDeveloper.slug,
+          location: newDeveloper.location,
+          verified: newDeveloper.verified
+        }
+      },
+      timestamp: new Date()
     });
 
     // Log successful creation
@@ -523,7 +436,7 @@ export const POST = withAuth(async (req: NextRequest, { user, audit }) => {
       message: "Developer created successfully",
       warnings: validation.warnings,
       developer: {
-        id: newDeveloper._id.toString(), // Ensure string conversion
+        id: newDeveloper._id.toString(),
         name: newDeveloper.name,
         slug: newDeveloper.slug,
         email: newDeveloper.email,

@@ -71,6 +71,7 @@ async function createSuperAdmin() {
       // Grant access to all collections with admin sub-role
       collectionPermissions: [
         { collection: 'projects', subRole: 'admin' },
+        { collection: 'properties', subRole: 'admin' },
         { collection: 'blogs', subRole: 'admin' },
         { collection: 'news', subRole: 'admin' },
         { collection: 'careers', subRole: 'admin' },

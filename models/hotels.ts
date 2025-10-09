@@ -2,6 +2,14 @@
 
 import mongoose, { Schema, Document, model, models, Query } from "mongoose";
 
+// Audit tracking interface
+interface IAuditInfo {
+  email: string;
+  timestamp: Date;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 // Define custom query helpers interface
 interface HotelQueryHelpers {
   operational(): Query<any, Document> & HotelQueryHelpers;
@@ -273,14 +281,24 @@ export interface IHotel extends Document<any, HotelQueryHelpers> {
   isActive?: boolean;
   isAvailable?: boolean; // Available for sale/investment
   
+  // Audit fields
+  createdBy: IAuditInfo;
+  updatedBy: IAuditInfo;
+  version: number; // For optimistic locking
+  
   // Metadata
-  createdBy?: string;
-  updatedBy?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
 // Sub-schemas
+const AuditInfoSchema = new Schema<IAuditInfo>({
+  email: { type: String, required: true, lowercase: true, trim: true },
+  timestamp: { type: Date, required: true, default: Date.now },
+  ipAddress: { type: String, trim: true },
+  userAgent: { type: String, trim: true }
+}, { _id: false }); // Disable _id for subdocuments
+
 const PriceSchema = new Schema<IPrice>({
   total: { 
     type: String, 
@@ -860,9 +878,20 @@ const HotelSchema = new Schema<IHotel>(
     isActive: { type: Boolean, default: true },
     isAvailable: { type: Boolean, default: false }, // Available for sale/investment
     
-    // Metadata
-    createdBy: { type: String, trim: true },
-    updatedBy: { type: String, trim: true }
+    // Audit fields
+    createdBy: { 
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    updatedBy: { 
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    version: { 
+      type: Number, 
+      default: 1,
+      min: 1
+    }
   },
   {
     timestamps: true,
@@ -878,6 +907,8 @@ HotelSchema.index({ 'saleInformation.saleStatus': 1, isAvailable: 1 });
 HotelSchema.index({ 'operationalDetails.serviceStandard': 1, verified: 1 });
 HotelSchema.index({ slug: 1 }, { unique: true });
 HotelSchema.index({ hotelId: 1 }, { unique: true });
+HotelSchema.index({ 'createdBy.email': 1 });
+HotelSchema.index({ 'updatedBy.email': 1 });
 
 // Virtual properties
 HotelSchema.virtual('totalAccommodation').get(function() {
@@ -1083,6 +1114,11 @@ HotelSchema.pre('save', function(next) {
     }
   }
   
+  // Update version for existing documents
+  if (this.isModified() && !this.isNew) {
+    this.version += 1;
+  }
+  
   next();
 });
 
@@ -1125,6 +1161,7 @@ export default Hotel;
 
 // Export interfaces for use in other files
 export type {
+  IAuditInfo,
   IPrice,
   IDimensions,
   IRoomSuite,

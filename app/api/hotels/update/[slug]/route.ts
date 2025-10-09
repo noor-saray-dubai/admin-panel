@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Hotel from "@/models/hotels";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 import { validateHotelFormData, sanitizeHotelData } from "@/lib/hotel-validation";
 import { AuditLog, AuditAction, AuditLevel } from "@/models/auditLog";
@@ -68,13 +69,14 @@ async function updateHotelSlugs(hotelData: any, existingHotel: any) {
 }
 
 /**
- * Main PUT handler with authentication
+ * Main PUT handler with ZeroTrust authentication
  */
-export const PUT = withAuth(async (
-  request: NextRequest, 
-  { user, audit }, 
+async function handler(
+  request: NextRequest,
   { params }: { params: { slug: string } }
-) => {
+) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -171,7 +173,13 @@ export const PUT = withAuth(async (
       mainImage: mainImageUrl,
       gallery: galleryUrls,
       floorPlan: floorPlanUrl,
-      updatedBy: audit.email,
+      // Rich audit data matching schema requirements
+      updatedBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
       updatedAt: new Date(),
     };
 
@@ -200,10 +208,10 @@ export const PUT = withAuth(async (
     AuditLog.createLog({
       action: AuditAction.CONTENT_UPDATED,
       level: AuditLevel.INFO,
-      userId: user.uid,
+      userId: user.firebaseUid,
       userEmail: user.email,
-      ip: audit.ipAddress || 'unknown',
-      userAgent: audit.userAgent,
+      ip: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown',
       resource: 'hotel',
       resourceId: updatedHotel.hotelId,
       details: {
@@ -281,4 +289,7 @@ export const PUT = withAuth(async (
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const PUT = withCollectionPermission(Collection.HOTELS, Action.EDIT)(handler);

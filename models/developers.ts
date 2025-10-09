@@ -1,5 +1,13 @@
 import mongoose, { Schema, Document, model, models } from "mongoose"
 
+// Audit info interface
+interface IAuditInfo {
+  email: string;
+  timestamp: Date;
+  ipAddress: string;
+  userAgent: string;
+}
+
 interface IDescriptionSection {
   title?: string
   description: string
@@ -25,6 +33,9 @@ interface IDeveloper extends Document {
   specialization: string[]
   awards: IAward[]
   verified: boolean
+  createdBy: IAuditInfo
+  updatedBy: IAuditInfo
+  version: number
   createdAt: Date
   updatedAt: Date
 }
@@ -141,6 +152,22 @@ const DeveloperSchema = new Schema<IDeveloper>(
     verified: { 
       type: Boolean, 
       default: false
+    },
+    createdBy: {
+      email: { type: String, required: true },
+      timestamp: { type: Date, required: true },
+      ipAddress: { type: String, required: true },
+      userAgent: { type: String, required: true }
+    },
+    updatedBy: {
+      email: { type: String, required: true },
+      timestamp: { type: Date, required: true },
+      ipAddress: { type: String, required: true },
+      userAgent: { type: String, required: true }
+    },
+    version: {
+      type: Number,
+      default: 1
     }
   },
   {
@@ -155,6 +182,18 @@ DeveloperSchema.index({ verified: 1, location: 1 })
 DeveloperSchema.index({ verified: 1, specialization: 1 })
 DeveloperSchema.index({ slug: 1 }, { unique: true })
 DeveloperSchema.index({ createdAt: -1 })
+
+// Audit field indexes
+DeveloperSchema.index({ 'createdBy.email': 1 })
+DeveloperSchema.index({ 'updatedBy.email': 1 })
+
+// Pre-save middleware for version control
+DeveloperSchema.pre('save', function(next) {
+  if (this.isModified() && !this.isNew) {
+    this.version = (this.version || 1) + 1;
+  }
+  next();
+});
 
 // Static method to find developers by specialization
 DeveloperSchema.statics.findBySpecialization = function(specialization: string) {

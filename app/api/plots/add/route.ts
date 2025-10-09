@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Plot from "@/models/plots";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 import { validatePlotData, sanitizePlotData, type PlotData } from "@/lib/plot-validation";
 
@@ -36,9 +37,11 @@ function generatePlotIdentifiers(data: PlotData): { plotId: string; slug: string
 }
 
 /**
- * Main POST handler with authentication
+ * Main POST handler with ZeroTrust authentication
  */
-export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     // Apply rate limiting
     const rateLimitResult = await rateLimit(request, user);
@@ -121,8 +124,20 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       ...identifiers,
       image: sanitizedData.image,
       gallery: sanitizedData.gallery || [],
-      createdBy: user.email,
-      updatedBy: user.email,
+      // Rich audit data matching schema requirements
+      createdBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
+      updatedBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
+      version: 1,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -156,7 +171,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
           image: createdPlot.image,
           gallery: createdPlot.gallery,
           createdAt: createdPlot.createdAt,
-          createdBy: user.email
+          createdBy: createdPlot.createdBy
         },
       },
       { status: 201 }
@@ -200,4 +215,7 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       { status: 500 }
     );
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+export const POST = withCollectionPermission(Collection.PLOTS, Action.ADD)(handler);
