@@ -229,11 +229,29 @@ export function useHotelFormLogic({
         (newData as any)[field] = value
       }
 
-      // Special handling for price fields - trigger auto-calculation
-      if (field === 'price.totalNumeric' || field === 'price.valueNumeric') {
-        const currency = newData.price?.currency || 'AED'
-        updatePriceCalculations(value, currency)
-        return prev // Return the updated data from updatePriceCalculations
+      // Special handling for price fields - auto-format the display
+      if ((field === 'price.totalNumeric' && typeof value === 'number' && value >= 0) || field === 'price.currency') {
+        const currency = field === 'price.currency' ? value : (newData.price?.currency || 'AED')
+        const numericValue = field === 'price.totalNumeric' ? value : (newData.price?.totalNumeric || 0)
+        
+        const formatPrice = (amount: number, curr: string) => {
+          if (amount >= 1000000000) {
+            return `${curr} ${(amount / 1000000000).toFixed(1)}B`
+          } else if (amount >= 1000000) {
+            return `${curr} ${(amount / 1000000).toFixed(1)}M`
+          } else if (amount >= 1000) {
+            return `${curr} ${(amount / 1000).toFixed(1)}K`
+          } else if (amount > 0) {
+            return `${curr} ${amount.toLocaleString()}`
+          } else {
+            return `${curr} 0` // Always provide a formatted value, even for 0
+          }
+        }
+        
+        // Always update the formatted display (required field)
+        if (newData.price) {
+          newData.price.total = formatPrice(numericValue, currency)
+        }
       }
 
       return newData
