@@ -28,6 +28,8 @@ export const NAVIGATION_COLLECTION_MAP = {
   developers: Collection.DEVELOPERS,
   careers: Collection.CAREERS,
   plots: Collection.PLOTS,
+  buildings: Collection.BUILDINGS,
+  hotels: Collection.HOTELS,
   malls: Collection.MALLS,
   users: Collection.USERS,
   settings: Collection.SYSTEM,

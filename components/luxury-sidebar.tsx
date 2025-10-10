@@ -21,6 +21,7 @@ const navigationMap = {
   [Collection.CAREERS]: { name: "Careers", href: "/dashboard/careers", icon: Briefcase, collection: Collection.CAREERS },
   [Collection.PLOTS]: { name: "Plots", href: "/dashboard/plots?tab=all&page=1", icon: Building, collection: Collection.PLOTS },
   [Collection.BUILDINGS]: { name: "Buildings", href: "/dashboard/buildings?tab=all&page=1", icon: Building, collection: Collection.BUILDINGS },
+  [Collection.HOTELS]: { name: "Hotels", href: "/dashboard/hotels?tab=all&page=1", icon: Building2, collection: Collection.HOTELS },
   [Collection.MALLS]: { name: "Malls", href: "/dashboard/malls?tab=all&page=1", icon: ShoppingCart, collection: Collection.MALLS },
   [Collection.USERS]: { name: "Users", href: "/dashboard/users", icon: Users, collection: Collection.USERS },
   [Collection.SYSTEM]: { name: "Settings", href: "/dashboard/settings", icon: Settings, collection: Collection.SYSTEM },
