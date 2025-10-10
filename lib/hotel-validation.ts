@@ -25,7 +25,9 @@ export function validateHotelFormData(data: HotelFormData): ValidationResult {
     errors.name = "Hotel name cannot exceed 100 characters";
   }
 
-  if (data.subtitle && data.subtitle.trim().length > 200) {
+  if (!data.subtitle?.trim()) {
+    errors.subtitle = "Subtitle is required";
+  } else if (data.subtitle.trim().length > 200) {
     errors.subtitle = "Subtitle cannot exceed 200 characters";
   }
 
@@ -230,7 +232,7 @@ export function validateHotelFormData(data: HotelFormData): ValidationResult {
     }
   }
 
-  // Ratings validation
+  // Ratings validation - rating is optional
   if (data.rating && (data.rating < 1 || data.rating > 7)) {
     errors.rating = "Rating must be between 1 and 7";
   }
@@ -356,12 +358,21 @@ export function validateHotelFormData(data: HotelFormData): ValidationResult {
     warnings.push("Adding key features will highlight the hotel's unique selling points");
   }
 
+  // Optional field recommendations
   if (!data.rating) {
     warnings.push("Star rating helps guests understand the service level");
   }
 
   if (!data.wellness) {
     warnings.push("Adding wellness facilities information can attract more guests");
+  }
+
+  if (!data.roomsSuites || data.roomsSuites.length === 0) {
+    warnings.push("Adding room and suite information helps showcase accommodation options");
+  }
+
+  if (!data.dining || data.dining.length === 0) {
+    warnings.push("Adding dining venue information highlights culinary offerings");
   }
 
 

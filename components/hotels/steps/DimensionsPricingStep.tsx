@@ -43,10 +43,9 @@ export function DimensionsPricingStep({
               errors={errors}
               setErrors={setErrors}
               type="number"
-              required
               min={1}
               max={200}
-              description="Total floors in the hotel building"
+              description="Total floors in the hotel building (optional)"
             />
 
             <ValidatedInput
@@ -58,10 +57,9 @@ export function DimensionsPricingStep({
               errors={errors}
               setErrors={setErrors}
               type="text"
-              required
               placeholder="180m"
               maxLength={20}
-              description="Height display format (e.g., '180m')"
+              description="Height display format (e.g., '180m') - optional"
             />
           </div>
 
@@ -75,10 +73,9 @@ export function DimensionsPricingStep({
               errors={errors}
               setErrors={setErrors}
               type="number"
-              required
               min={0}
               placeholder="180"
-              description="Numeric height value in meters"
+              description="Numeric height value in meters (optional)"
             />
 
             <ValidatedInput
@@ -132,11 +129,10 @@ export function DimensionsPricingStep({
               errors={errors}
               setErrors={setErrors}
               type="number"
-              required
               min={1}
               max={5000}
               placeholder="250"
-              description="Total number of guest rooms"
+              description="Total number of guest rooms (optional)"
             />
 
             <ValidatedInput

@@ -229,10 +229,11 @@ export function useHotelFormLogic({
         (newData as any)[field] = value
       }
 
-      // Special handling for price fields
+      // Special handling for price fields - trigger auto-calculation
       if (field === 'price.totalNumeric' || field === 'price.valueNumeric') {
-        updatePriceCalculations(value, newData.price?.currency || 'AED')
-        return newData
+        const currency = newData.price?.currency || 'AED'
+        updatePriceCalculations(value, currency)
+        return prev // Return the updated data from updatePriceCalculations
       }
 
       return newData

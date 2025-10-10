@@ -53,6 +53,7 @@ export function BasicInformationStep({
               errors={errors}
               setErrors={setErrors}
               placeholder="Enter hotel subtitle"
+              required
               maxLength={300}
               description="A brief tagline or subtitle for the hotel"
             />

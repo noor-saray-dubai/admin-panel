@@ -178,20 +178,21 @@ export function HotelFormModal({ isOpen, onClose, onSuccess, hotel, mode }: Hote
     switch (stepIndex) {
       case 0: // Basic Information
         const basicRequired = formData.name?.trim() && 
+                             formData.subtitle?.trim() && 
                              formData.location?.trim() && 
                              formData.description?.trim() && 
                              formData.type?.trim() && 
-                             formData.rating && 
                              formData.status?.trim()
         
         // Check for basic field errors
         const hasBasicErrors = !formData.name?.trim() ||
+                              !formData.subtitle?.trim() ||
                               !formData.location?.trim() ||
                               !formData.description?.trim() ||
                               !formData.type?.trim() ||
-                              !formData.rating ||
                               !formData.status?.trim() ||
                               (formData.name && formData.name.length > 100) ||
+                              (formData.subtitle && formData.subtitle.length > 200) ||
                               (formData.location && formData.location.length > 100) ||
                               (formData.description && formData.description.length > 2000) ||
                               (formData.type && formData.type.length > 50)
@@ -200,33 +201,25 @@ export function HotelFormModal({ isOpen, onClose, onSuccess, hotel, mode }: Hote
         return basicRequired ? 'valid' : 'incomplete'
         
       case 1: // Dimensions & Pricing
-        const dimensionRequired = formData.dimensions?.floors && 
-                                 formData.dimensions?.height?.trim() && 
-                                 formData.dimensions?.heightNumeric && 
-                                 formData.totalRooms && 
-                                 formData.price?.totalNumeric && 
+        const dimensionRequired = formData.price?.totalNumeric && 
                                  formData.price?.currency?.trim() && 
                                  formData.year?.trim()
         
-        // Check for dimension field errors
-        const hasDimensionErrors = !formData.dimensions?.floors ||
-                                  !formData.dimensions?.height?.trim() ||
-                                  !formData.dimensions?.heightNumeric ||
-                                  !formData.totalRooms ||
-                                  !formData.price?.totalNumeric ||
+        // Check for dimension field errors (only check required fields)
+        const hasDimensionErrors = !formData.price?.totalNumeric ||
                                   !formData.price?.currency?.trim() ||
                                   !formData.year?.trim() ||
-                                  formData.dimensions.floors < 1 ||
-                                  formData.dimensions.heightNumeric < 0 ||
-                                  formData.totalRooms < 1 ||
+                                  (formData.dimensions?.floors && formData.dimensions.floors < 1) ||
+                                  (formData.dimensions?.heightNumeric && formData.dimensions.heightNumeric < 0) ||
+                                  (formData.totalRooms && formData.totalRooms < 1) ||
                                   formData.price.totalNumeric < 0
         
         if (hasDimensionErrors) return dimensionRequired ? 'invalid' : 'incomplete'
         return dimensionRequired ? 'valid' : 'incomplete'
         
       case 2: // Amenities & Services
-        const amenityRequired = Object.keys(formData.amenities || {}).length > 0
-        return amenityRequired ? 'valid' : 'incomplete'
+        // Amenities are optional - step is always valid
+        return 'valid'
         
       case 3: // Rooms & Suites
         const roomsRequired = (formData.roomsSuites && formData.roomsSuites.length > 0)
