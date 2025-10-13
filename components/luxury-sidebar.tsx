@@ -14,7 +14,7 @@ const navigationMap = {
   dashboard: { name: "Dashboard", href: "/", icon: Home, collection: null },
   [Collection.PROJECTS]: { name: "Projects", href: "/dashboard/projects", icon: FileText, collection: Collection.PROJECTS },
   [Collection.PROPERTIES]: { name: "Properties", href: "/dashboard/properties?tab=all&page=1", icon: Building2, collection: Collection.PROPERTIES },
-  [Collection.BLOGS]: { name: "Blogs", href: "/dashboard/blogs", icon: MessageSquare, collection: Collection.BLOGS },
+  [Collection.BLOGS]: { name: "Blogs", href: "/dashboard/blogs?tab=all&page=1", icon: MessageSquare, collection: Collection.BLOGS },
   [Collection.NEWS]: { name: "News", href: "/dashboard/news", icon: Newspaper, collection: Collection.NEWS },
   [Collection.COMMUNITIES]: { name: "Communities", href: "/dashboard/communities", icon: Users, collection: Collection.COMMUNITIES },
   [Collection.DEVELOPERS]: { name: "Developers", href: "/dashboard/developers?tab=all&page=1", icon: Shield, collection: Collection.DEVELOPERS },

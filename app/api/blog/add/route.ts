@@ -2,7 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Blog from "@/models/blog";
 import { connectToDatabase } from "@/lib/db";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
 import type { 
   IContentBlock, 
@@ -44,12 +45,12 @@ interface BlogRequestData {
   contentBlocks: IContentBlock[];
   author: string;
   category: string;
-  tags: string[];
-  status: "Published" | "Draft" | "Scheduled";
+  tags: string[]; // Will default to [] if not provided
+  status: "Published" | "Draft"; // Aligned with schema
   publishDate: string;
-  readTime?: number; // Optional - will be auto-calculated if not provided
-  featured: boolean;
-  featuredImage?: string;
+  // readTime is always auto-calculated, never passed by user
+  featured: boolean; // Required in API, has default in schema
+  featuredImage?: string; // Optional as per schema
 }
 
 // Error response interface for consistent API responses
@@ -86,7 +87,7 @@ const VALIDATION_RULES = {
   CATEGORY: { MIN_LENGTH: 2, MAX_LENGTH: 100 },
   TAG: { MIN_LENGTH: 1, MAX_LENGTH: 50, MAX_COUNT: 10 },
   READ_TIME: { MIN: 1, MAX: 300 },
-  CONTENT_BLOCKS: { MIN_COUNT: 1, MAX_COUNT: 15 },
+  CONTENT_BLOCKS: { MIN_COUNT: 1, MAX_COUNT: 50 }, // Updated from 15 to 50
   PARAGRAPH_SEGMENTS: { MIN_COUNT: 1, MAX_COUNT: 50 },
   QUOTE_SEGMENTS: { MIN_COUNT: 1, MAX_COUNT: 30 },
   LIST_ITEMS: { MIN_COUNT: 1, MAX_COUNT: 20 },
@@ -94,18 +95,18 @@ const VALIDATION_RULES = {
   IMAGE_ALT: { MIN_LENGTH: 1, MAX_LENGTH: 200 },
   IMAGE_CAPTION: { MAX_LENGTH: 300 },
   LINK_COVER_TEXT: { MIN_LENGTH: 1, MAX_LENGTH: 200 },
-  LIST_TITLE: { MIN_LENGTH: 1, MAX_LENGTH: 200 },
+  LIST_TITLE: { MIN_LENGTH: 0, MAX_LENGTH: 200 }, // Allow optional title (0 min length)
   LIST_ITEM_TEXT: { MIN_LENGTH: 1, MAX_LENGTH: 300 },
   QUOTE_AUTHOR: { MAX_LENGTH: 100 },
   QUOTE_SOURCE: { MAX_LENGTH: 200 },
-  CONTENT_SEGMENT_TEXT: { MIN_LENGTH: 1, MAX_LENGTH: 500 },
+  CONTENT_SEGMENT_TEXT: { MIN_LENGTH: 1, MAX_LENGTH: 2000 }, // Updated from 500 to 2000
   WORDS_PER_MINUTE: 200 // Average reading speed
 } as const;
 
-const ALLOWED_STATUSES = ['Published', 'Draft', 'Scheduled'] as const;
+const ALLOWED_STATUSES = ['Published', 'Draft'] as const; // Aligned with schema
 const ALLOWED_CONTENT_TYPES = ['paragraph', 'heading', 'image', 'link', 'quote', 'list'] as const;
 const ALLOWED_HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
-const ALLOWED_LIST_TYPES = ['ordered', 'unordered'] as const;
+const ALLOWED_LIST_TYPES = ['ordered', 'unordered', 'plain'] as const; // Added 'plain'
 const ALLOWED_SEGMENT_TYPES = ['text', 'link'] as const;
 
 // URL validation patterns
@@ -271,7 +272,7 @@ function calculateReadTime(contentBlocks: IContentBlock[], excerpt: string = '')
         
       case 'list':
         const listBlock = block as IListBlock;
-        totalWords += countWordsInText(listBlock.title);
+        totalWords += countWordsInText(listBlock.title || '');
         listBlock.items.forEach(item => {
           totalWords += countWordsInText(item.text);
           if (item.subItems) {
@@ -373,7 +374,12 @@ async function uploadMultipleImagesToCloudinary(
 // MAIN API ROUTE HANDLERS
 // =============================================
 
-export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
+/**
+ * Main POST handler with ZeroTrust authentication
+ */
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
   try {
@@ -410,9 +416,9 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       const contentBlocksStr = formData.get("contentBlocks") as string;
       const author = formData.get("author") as string;
       const category = formData.get("category") as string;
-      const status = formData.get("status") as "Published" | "Draft" | "Scheduled";
+      const status = formData.get("status") as "Published" | "Draft";
       const publishDate = formData.get("publishDate") as string;
-      const readTime = formData.get("readTime") as string;
+      // readTime is always auto-calculated, never extracted from form
       const featured = formData.get("featured") as string;
       const tagsStr = formData.get("tags") as string;
       
@@ -463,9 +469,9 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
         author: author || '',
         category: category || '',
         tags,
-        status: status || 'Draft',
+        status: status || 'Published', // Auto-publish by default
         publishDate: publishDate || new Date().toISOString(),
-        readTime: readTime ? parseInt(readTime) : undefined, // Allow auto-calculation
+        // readTime will be auto-calculated below
         featured: featured === 'true'
       };
     } else if (contentType.includes('application/json')) {
@@ -497,10 +503,8 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       }, { status: 400 });
     }
 
-    // Auto-calculate read time if not provided and sanitize data
-    if (blogData.readTime === undefined) {
-      blogData.readTime = calculateReadTime(blogData.contentBlocks, blogData.excerpt);
-    }
+    // Always auto-calculate read time (never trust user input for this)
+    const calculatedReadTime = calculateReadTime(blogData.contentBlocks, blogData.excerpt);
 
     // Validate featured image file if provided (ACTUAL FILE VALIDATION)
     if (featuredImageFile && featuredImageFile.size > 0) {
@@ -644,11 +648,22 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       tags: blogData.tags,
       status: blogData.status,
       publishDate: new Date(blogData.publishDate),
-      readTime: blogData.readTime,
+      readTime: calculatedReadTime, // Always use calculated value
       views: 0,
       featured: blogData.featured,
-      createdBy: audit,
-      updatedBy: audit,
+      // Audit data matching schema requirements
+      createdBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
+      updatedBy: {
+        email: user.email,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
       version: 1,
       isActive: true,
     };
@@ -756,7 +771,11 @@ export const POST = withAuth(async (request: NextRequest, { user, audit }) => {
       requestId
     }, { status: 500 });
   }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+// Requires CREATE_CONTENT capability for BLOGS collection
+export const POST = withCollectionPermission(Collection.BLOGS, Action.ADD)(handler);
 
 // GET endpoint for fetching blogs
 export async function GET(request: NextRequest) {

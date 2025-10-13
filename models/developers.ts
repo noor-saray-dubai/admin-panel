@@ -1,11 +1,11 @@
 import mongoose, { Schema, Document, model, models } from "mongoose"
 
-// Audit info interface
+// Import shared audit schema from project model for consistency
 interface IAuditInfo {
   email: string;
   timestamp: Date;
-  ipAddress: string;
-  userAgent: string;
+  ipAddress?: string;
+  userAgent?: string;
 }
 
 interface IDescriptionSection {
@@ -153,17 +153,18 @@ const DeveloperSchema = new Schema<IDeveloper>(
       type: Boolean, 
       default: false
     },
+    // Audit fields using consistent schema
     createdBy: {
-      email: { type: String, required: true },
-      timestamp: { type: Date, required: true },
-      ipAddress: { type: String, required: true },
-      userAgent: { type: String, required: true }
+      email: { type: String, required: true, lowercase: true, trim: true },
+      timestamp: { type: Date, required: true, default: Date.now },
+      ipAddress: { type: String, trim: true },
+      userAgent: { type: String, trim: true }
     },
     updatedBy: {
-      email: { type: String, required: true },
-      timestamp: { type: Date, required: true },
-      ipAddress: { type: String, required: true },
-      userAgent: { type: String, required: true }
+      email: { type: String, required: true, lowercase: true, trim: true },
+      timestamp: { type: Date, required: true, default: Date.now },
+      ipAddress: { type: String, trim: true },
+      userAgent: { type: String, trim: true }
     },
     version: {
       type: Number,

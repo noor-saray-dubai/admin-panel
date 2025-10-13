@@ -73,8 +73,8 @@ interface IQuoteBlock {
 interface IListBlock extends ITextFormatting {
   type: "list";
   order: number;
-  listType: "ordered" | "unordered";
-  title: string;
+  listType: "ordered" | "unordered" | "plain";
+  title?: string;
   items: IListItem[];
 }
 
@@ -103,7 +103,7 @@ interface IBlog extends Document {
   author: string;
   category: string;
   tags: string[];
-  status: "Published" | "Draft" | "Scheduled";
+  status: "Published" | "Draft";
   publishDate: Date;
   readTime: number;
   views: number;
@@ -126,7 +126,7 @@ interface IBlog extends Document {
 // Content Segment Discriminator Schema
 // ----------------------
 const ContentSegmentSchema = new Schema({
-  content: { type: String, required: true, trim: true, maxlength: 500 }
+  content: { type: String, required: true, trim: true, maxlength: 2000 }
 }, { 
   discriminatorKey: 'type',
   _id: false 
@@ -256,8 +256,8 @@ const QuoteBlockSchema = new Schema({
 
 const ListBlockSchema = new Schema({
   order: { type: Number, required: true, min: 1 },
-  listType: { type: String, enum: ["ordered", "unordered"], required: true },
-  title: { type: String, required: true, trim: true, maxlength: 200 },
+  listType: { type: String, enum: ["ordered", "unordered", "plain"], required: true },
+  title: { type: String, trim: true, maxlength: 200 },
   items: {
     type: [ListItemSchema],
     required: true,
@@ -276,15 +276,12 @@ const ListBlockSchema = new Schema({
 // ----------------------
 // Audit info schema
 // ----------------------
-const AuditInfoSchema = new Schema<IAuditInfo>(
-  {
-    email: { type: String, required: true, lowercase: true, trim: true },
-    timestamp: { type: Date, required: true, default: Date.now },
-    ipAddress: { type: String, trim: true },
-    userAgent: { type: String, trim: true },
-  },
-  { _id: false }
-);
+const AuditInfoSchema = new Schema<IAuditInfo>({
+  email: { type: String, required: true, lowercase: true, trim: true },
+  timestamp: { type: Date, required: true, default: Date.now },
+  ipAddress: { type: String, trim: true },
+  userAgent: { type: String, trim: true }
+}, { _id: false });
 
 // ----------------------
 // Content Block Discriminator Schema
@@ -330,7 +327,7 @@ const BlogSchema = new Schema<IBlog>(
       required: true,
       validate: {
         validator: function(blocks: any[]) {
-          if (!blocks || blocks.length === 0 || blocks.length > 15) {
+          if (!blocks || blocks.length === 0 || blocks.length > 50) {
             return false;
           }
           
@@ -357,7 +354,7 @@ const BlogSchema = new Schema<IBlog>(
           
           return true;
         },
-        message: "Content must have 1-15 blocks, at least one paragraph, unique order values, and at most one H1 heading"
+        message: "Content must have 1-50 blocks, at least one paragraph, unique order values, and at most one H1 heading"
       }
     },
     
@@ -365,16 +362,26 @@ const BlogSchema = new Schema<IBlog>(
     author: { type: String, required: true, trim: true, index: true },
     category: { type: String, required: true, trim: true, index: true },
     tags: { type: [String], default: [], index: true },
-    status: { type: String, enum: ["Published", "Draft", "Scheduled"], default: "Draft", index: true },
+    status: { type: String, enum: ["Published", "Draft"], default: "Published", index: true },
     publishDate: { type: Date, required: true, default: Date.now, index: true },
     readTime: { type: Number, default: 5, min: 1 },
     views: { type: Number, default: 0, min: 0 },
     featured: { type: Boolean, default: false, index: true },
 
-    // Audit
-    createdBy: { type: AuditInfoSchema, required: true },
-    updatedBy: { type: AuditInfoSchema, required: true },
-    version: { type: Number, default: 1, min: 1 },
+    // Audit fields
+    createdBy: { 
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    updatedBy: { 
+      type: AuditInfoSchema, 
+      required: true 
+    },
+    version: { 
+      type: Number, 
+      default: 1,
+      min: 1
+    },
 
     // Metadata
     isActive: { type: Boolean, default: true, index: true },
@@ -388,16 +395,9 @@ const BlogSchema = new Schema<IBlog>(
 // ----------------------
 // Middleware (Updated)
 // ----------------------
-BlogSchema.pre("save", function (next) {
-  // Only bump version on meaningful content changes, not view increments
-  if (!this.isNew && (
-    this.isModified("contentBlocks") || 
-    this.isModified("title") || 
-    this.isModified("excerpt") ||
-    this.isModified("status") ||
-    this.isModified("category") ||
-    this.isModified("tags")
-  )) {
+// Pre-save middleware to update version
+BlogSchema.pre('save', function(next) {
+  if (this.isModified() && !this.isNew) {
     this.version += 1;
   }
   next();
@@ -436,6 +436,8 @@ BlogSchema.index({ category: 1, status: 1 });
 BlogSchema.index({ author: 1 });
 BlogSchema.index({ featured: 1, isActive: 1 });
 BlogSchema.index({ "contentBlocks.type": 1 });
+BlogSchema.index({ 'createdBy.email': 1 });
+BlogSchema.index({ 'updatedBy.email': 1 });
 
 // ----------------------
 // Model Export

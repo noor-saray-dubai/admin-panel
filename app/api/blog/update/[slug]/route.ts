@@ -2,8 +2,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import Blog from "@/models/blog";
 import { connectToDatabase } from "@/lib/db";
-import { withAuth } from "@/lib/auth-utils";
+import { withCollectionPermission } from "@/lib/auth/server";
+import { Collection, Action } from "@/types/user";
 import { rateLimit } from "@/lib/rate-limiter";
+import type { 
+  IContentBlock, 
+  IParagraphBlock, 
+  IHeadingBlock, 
+  IImageBlock, 
+  ILinkBlock, 
+  IQuoteBlock, 
+  IListBlock
+} from "@/models/blog";
 
 // Force Node.js runtime
 export const runtime = "nodejs";
@@ -11,14 +21,15 @@ export const runtime = "nodejs";
 interface BlogData {
   title: string;
   excerpt: string;
-  content: string;
+  contentBlocks: IContentBlock[]; // Aligned with schema
   author: string;
   category: string;
-  tags: string[];
-  status: "Published" | "Draft" | "Scheduled";
+  tags: string[]; // Will default to [] if not provided  
+  status: "Published" | "Draft"; // Aligned with schema
   publishDate: string;
-  readTime: number;
-  featured: boolean;
+  // readTime is always auto-calculated, never passed by user
+  featured: boolean; // Required in API, has default in schema
+  featuredImage?: string; // Optional as per schema
 }
 
 // Helper: generate slug from title
@@ -43,6 +54,78 @@ async function ensureUniqueSlug(baseSlug: string, currentSlug?: string): Promise
         slug = `${baseSlug}-${counter}`;
         counter++;
     }
+}
+
+// Calculate read time based on content
+function countWordsInText(text: string): number {
+  if (!text || typeof text !== 'string') return 0;
+  return text
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim()
+    .split(/\s+/)
+    .filter(word => word.length > 0).length;
+}
+
+function calculateReadTime(contentBlocks: IContentBlock[], excerpt: string = ''): number {
+  const WORDS_PER_MINUTE = 200;
+  let totalWords = 0;
+  
+  // Add words from excerpt
+  totalWords += countWordsInText(excerpt);
+  
+  // Count words in each content block
+  contentBlocks.forEach(block => {
+    switch (block.type) {
+      case 'paragraph':
+      case 'quote':
+        const contentBlock = block as IParagraphBlock | IQuoteBlock;
+        contentBlock.content.forEach(segment => {
+          totalWords += countWordsInText(segment.content);
+        });
+        if (block.type === 'quote') {
+          const quoteBlock = block as IQuoteBlock;
+          totalWords += countWordsInText(quoteBlock.author || '');
+          totalWords += countWordsInText(quoteBlock.source || '');
+        }
+        break;
+        
+      case 'heading':
+        const headingBlock = block as IHeadingBlock;
+        totalWords += countWordsInText(headingBlock.content);
+        break;
+        
+      case 'link':
+        const linkBlock = block as ILinkBlock;
+        totalWords += countWordsInText(linkBlock.coverText);
+        break;
+        
+      case 'list':
+        const listBlock = block as IListBlock;
+        totalWords += countWordsInText(listBlock.title || '');
+        listBlock.items.forEach(item => {
+          totalWords += countWordsInText(item.text);
+          if (item.subItems) {
+            item.subItems.forEach(subItem => {
+              totalWords += countWordsInText(subItem);
+            });
+          }
+        });
+        break;
+        
+      case 'image':
+        const imageBlock = block as IImageBlock;
+        totalWords += countWordsInText(imageBlock.alt);
+        totalWords += countWordsInText(imageBlock.caption || '');
+        // Images typically add processing time
+        totalWords += 50; // Equivalent word count for image processing time
+        break;
+    }
+  });
+  
+  // Calculate reading time (minimum 1 minute)
+  const readTimeMinutes = Math.max(1, Math.ceil(totalWords / WORDS_PER_MINUTE));
+  return Math.min(readTimeMinutes, 300); // Max 300 minutes
 }
 
 // Upload to Cloudinary without Sharp processing
@@ -116,20 +199,23 @@ function validateBlogData(data: BlogData): { isValid: boolean; errors: string[];
   // Required string fields with length limits
   validateString(data.title, "title", 2, 200);
   validateString(data.excerpt, "excerpt", 10, 500);
-  validateString(data.content, "content", 50, 20000);
   validateString(data.author, "author", 2, 100);
   validateString(data.category, "category", 2, 100);
 
+  // Validate contentBlocks array
+  if (!Array.isArray(data.contentBlocks) || data.contentBlocks.length === 0) {
+    errors.push("contentBlocks must be a non-empty array.");
+  } else if (data.contentBlocks.length > 50) {
+    errors.push("contentBlocks must not exceed 50 blocks.");
+  }
+
   // Validate enums
-  const validStatuses = ['Published', 'Draft', 'Scheduled'];
+  const validStatuses = ['Published', 'Draft']; // Aligned with schema
   if (!validStatuses.includes(data.status)) {
     errors.push(`status must be one of: ${validStatuses.join(', ')}`);
   }
 
-  // Numeric validations
-  if (typeof data.readTime !== "number" || data.readTime <= 0) {
-    errors.push("readTime must be a positive number.");
-  }
+  // readTime is always auto-calculated, no validation needed for user input
 
   // Boolean validations
   if (typeof data.featured !== "boolean") {
@@ -168,15 +254,20 @@ function sanitizeBlogData(data: BlogData): BlogData {
     ...data,
     title: sanitizeString(data.title),
     excerpt: sanitizeString(data.excerpt),
-    content: sanitizeString(data.content),
+    // contentBlocks are objects, not strings - leave as is
     author: sanitizeString(data.author),
     category: sanitizeString(data.category),
     tags: data.tags.map(tag => sanitizeString(tag)).filter(tag => tag.length > 0)
   };
 }
 
-// PUT - Update existing blog post
-export const PUT = withAuth(async (req: NextRequest, { user, audit }) => {
+/**
+ * Main PUT handler with ZeroTrust authentication
+ */
+async function handler(req: NextRequest) {
+    // User is available on request.user (added by withCollectionPermission)
+    const user = (req as any).user;
+    
     try {
         await connectToDatabase();
 
@@ -218,14 +309,36 @@ export const PUT = withAuth(async (req: NextRequest, { user, audit }) => {
         // Extract fields
         const title = formData.get("title") as string;
         const excerpt = formData.get("excerpt") as string;
-        const content = formData.get("content") as string;
+        const contentBlocksStr = formData.get("contentBlocks") as string;
         const author = formData.get("author") as string;
         const category = formData.get("category") as string;
-        const status = formData.get("status") as "Published" | "Draft" | "Scheduled";
+        const status = formData.get("status") as "Published" | "Draft"; // Aligned with schema
         const publishDate = formData.get("publishDate") as string;
-        const readTime = parseInt(formData.get("readTime") as string);
+        // readTime is always auto-calculated, never extracted from form
         const featured = formData.get("featured") === "true";
-        const tags = JSON.parse(formData.get("tags") as string || "[]");
+        const tagsStr = formData.get("tags") as string;
+        
+        // Parse JSON fields
+        let contentBlocks: IContentBlock[] = [];
+        let tags: string[] = [];
+        
+        try {
+            contentBlocks = contentBlocksStr ? JSON.parse(contentBlocksStr) : [];
+        } catch (error) {
+            return NextResponse.json({ 
+                success: false, 
+                error: "Invalid JSON format in contentBlocks field" 
+            }, { status: 400 });
+        }
+        
+        try {
+            tags = tagsStr ? JSON.parse(tagsStr) : [];
+        } catch (error) {
+            return NextResponse.json({ 
+                success: false, 
+                error: "Invalid JSON format in tags field" 
+            }, { status: 400 });
+        }
 
         const featuredImageFile = formData.get("featuredImageFile") as File | null;
 
@@ -233,18 +346,18 @@ export const PUT = withAuth(async (req: NextRequest, { user, audit }) => {
         let blogData: BlogData = {
             title,
             excerpt,
-            content,
+            contentBlocks,
             author,
             category,
             tags,
             status,
             publishDate,
-            readTime,
+            // readTime will be auto-calculated
             featured,
         };
 
         // Basic required field check
-        if (!title || !excerpt || !content || !author || !category) {
+        if (!title || !excerpt || !contentBlocks || contentBlocks.length === 0 || !author || !category) {
             return NextResponse.json({ 
                 success: false, 
                 error: "Missing required fields" 
@@ -253,6 +366,9 @@ export const PUT = withAuth(async (req: NextRequest, { user, audit }) => {
 
         // Sanitize data
         blogData = sanitizeBlogData(blogData);
+
+        // Always auto-calculate read time (never trust user input for this)
+        const calculatedReadTime = calculateReadTime(blogData.contentBlocks, blogData.excerpt);
 
         // Validate blog data
         const validation = validateBlogData(blogData);
@@ -298,7 +414,7 @@ export const PUT = withAuth(async (req: NextRequest, { user, audit }) => {
         if (featuredImageFile) {
             try {
                 const featuredImageUrl = await uploadToCloudinary(featuredImageFile, newSlug, "featured");
-                blog.featuredImage = [featuredImageUrl];
+                blog.featuredImage = featuredImageUrl; // Fixed: should be string, not array
             } catch (err) {
                 console.error("Error uploading featured image:", err);
                 return NextResponse.json({ 
@@ -312,16 +428,23 @@ export const PUT = withAuth(async (req: NextRequest, { user, audit }) => {
         blog.title = blogData.title;
         blog.slug = newSlug;
         blog.excerpt = blogData.excerpt;
-        blog.content = blogData.content;
+        blog.contentBlocks = blogData.contentBlocks;
         blog.author = blogData.author;
         blog.category = blogData.category;
         blog.tags = blogData.tags;
         blog.status = blogData.status;
         blog.publishDate = new Date(blogData.publishDate);
-        blog.readTime = blogData.readTime;
+        blog.readTime = calculatedReadTime; // Always use calculated value
         blog.featured = blogData.featured;
-        blog.updatedBy = audit;
-        blog.version = blog.version + 1;
+        
+        // Update audit info to match project schema style
+        blog.updatedBy = {
+            email: user.email,
+            timestamp: new Date(),
+            ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+            userAgent: req.headers.get('user-agent') || 'unknown'
+        };
+        // Version is automatically incremented by pre-save middleware
 
         await blog.save();
 
@@ -342,8 +465,8 @@ export const PUT = withAuth(async (req: NextRequest, { user, audit }) => {
                 title: blog.title,
                 slug: blog.slug,
                 excerpt: blog.excerpt,
-                content: blog.content,
-                featuredImage: blog.featuredImage[0] || "",
+                contentBlocks: blog.contentBlocks,
+                featuredImage: blog.featuredImage || "",
                 author: blog.author,
                 category: blog.category,
                 tags: blog.tags,
@@ -396,4 +519,8 @@ export const PUT = withAuth(async (req: NextRequest, { user, audit }) => {
             { status: 500 }
         );
     }
-});
+}
+
+// Export with ZeroTrust collection permission validation
+// Requires EDIT_CONTENT capability for BLOGS collection
+export const PUT = withCollectionPermission(Collection.BLOGS, Action.EDIT)(handler);

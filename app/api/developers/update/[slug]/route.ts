@@ -4,6 +4,7 @@ import Developer from "@/models/developers";
 import { connectToDatabase } from "@/lib/db";
 import { withCollectionPermission } from "@/lib/auth/server";
 import { Collection, Action } from "@/types/user";
+import { rateLimit } from "@/lib/rate-limiter";
 import { AuditLog } from "@/models/auditLog";
 
 export const runtime = "nodejs";
@@ -296,15 +297,36 @@ function sanitizeDeveloperData(data: DeveloperData): DeveloperData {
 }
 
 
-// PUT - Update existing developer
-export const PUT = withCollectionPermission(Collection.DEVELOPERS, Action.EDIT)(async (req: NextRequest, { params, user }: { params: { slug: string }, user: any }) => {
+/**
+ * Main PUT handler with authentication
+ */
+async function handler(
+  request: NextRequest, 
+  { params }: { params: { slug: string } }
+) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
+    // Apply rate limiting
+    const rateLimitResult = await rateLimit(request, user);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: "RATE_LIMITED", 
+          message: "Too many requests. Please try again later.",
+          retryAfter: rateLimitResult.retryAfter 
+        },
+        { status: 429 }
+      );
+    }
+
     await connectToDatabase();
 
     const { slug: currentSlug } = params;
     
     // Parse JSON body instead of FormData
-    const body = await req.json();
+    const body = await request.json();
 
     // Create developer data object from body
     let developerData: DeveloperData = {
@@ -393,8 +415,8 @@ export const PUT = withCollectionPermission(Collection.DEVELOPERS, Action.EDIT)(
     }
 
     // Extract IP address and user agent for audit
-    const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0] || req.headers.get('x-real-ip') || 'unknown';
-    const userAgent = req.headers.get('user-agent') || 'unknown';
+    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0] || request.headers.get('x-real-ip') || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
 
     // Create audit info for updatedBy
     const auditInfo = {
@@ -425,12 +447,32 @@ export const PUT = withCollectionPermission(Collection.DEVELOPERS, Action.EDIT)(
     if (updateObj.logo === undefined) delete updateObj.logo;
     if (updateObj.coverImage === undefined) delete updateObj.coverImage;
 
-    // Update developer fields
-    const updatedDeveloper = await Developer.findByIdAndUpdate(
-      developer._id,
-      updateObj,
-      { new: true, runValidators: true }
+    // Update developer with optimistic locking (like projects)
+    const updatedDeveloper = await Developer.findOneAndUpdate(
+      { 
+        _id: developer._id,
+        version: developer.version // Optimistic locking
+      },
+      { 
+        $set: updateObj,
+        $inc: { version: 1 }
+      },
+      { 
+        new: true,
+        runValidators: true
+      }
     );
+
+    if (!updatedDeveloper) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          message: "Developer was modified by another user. Please refresh and try again.", 
+          error: "CONFLICT" 
+        },
+        { status: 409 }
+      );
+    }
 
     // Log to audit log
     const changes: any = {
@@ -494,6 +536,8 @@ export const PUT = withCollectionPermission(Collection.DEVELOPERS, Action.EDIT)(
         phone: updatedDeveloper.phone,
         createdAt: updatedDeveloper.createdAt,
         updatedAt: updatedDeveloper.updatedAt,
+        updatedBy: updatedDeveloper.updatedBy,
+        version: updatedDeveloper.version
       }
     }, { status: 200 });
 
@@ -551,4 +595,7 @@ export const PUT = withCollectionPermission(Collection.DEVELOPERS, Action.EDIT)(
       { status: 500 }
     );
   }
-});
+}
+
+// Export with authentication wrapper - requires EDIT capability for DEVELOPERS collection
+export const PUT = withCollectionPermission(Collection.DEVELOPERS, Action.EDIT)(handler);

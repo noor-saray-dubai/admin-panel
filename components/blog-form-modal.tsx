@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef, JSX } from "react"
+import { useState, useEffect, useRef, useCallback, JSX } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,8 +15,32 @@ import { toast } from "sonner"
 import { 
   Upload, X, Eye, Star, Calendar, User, Tag, FileText, 
   GripVertical, Plus, Bold, Italic, Link, Type, Image as ImageIcon,
-  Quote, List, Hash, Trash2, Copy, AlertCircle, MoveUp, MoveDown
+  Quote, List, Hash, Trash2, Copy, AlertCircle, MoveUp, MoveDown,
+  ChevronLeft, ChevronRight, Info, Settings, Palette
 } from "lucide-react"
+
+// Import new step components
+import { BlogFormStepNavigation } from "./blog/BlogFormStepNavigation"
+import { BasicInfoStep } from "./blog/steps/BasicInfoStep"
+import { ContentCreationStep } from "./blog/steps/ContentCreationStep"
+import { MediaTagsStep } from "./blog/steps/MediaTagsStep"
+import { PublishingStep } from "./blog/steps/PublishingStep"
+
+// Import dialog components
+import { DraftRestoreDialog } from "./blog/DraftRestoreDialog"
+import { ConfirmationDialogs } from "./blog/ConfirmationDialogs"
+
+// Import draft management utilities
+import {
+  saveBlogFormDraft,
+  loadBlogFormDraft,
+  clearBlogFormDraft,
+  hasSavedBlogDraft,
+  getBlogDraftTimestamp,
+  createDebouncedBlogSave,
+  blogToFormData,
+  hasFormDataChanged
+} from "@/lib/blog-form-persistence"
 interface ApiError {
   message: string
   error: string
@@ -87,7 +111,7 @@ interface IQuoteBlock {
 interface IListBlock extends ITextFormatting {
   type: "list"
   order: number
-  listType: "ordered" | "unordered"
+  listType: "ordered" | "unordered" | "plain" // Aligned with schema
   title: string
   items: IListItem[]
 }
@@ -100,15 +124,31 @@ interface Blog {
   slug?: string
   excerpt: string
   contentBlocks: IContentBlock[]
-  featuredImage: string
+  featuredImage?: string
   author: string
   category: string
   tags: string[]
-  status: "Published" | "Draft" | "Scheduled"
-  publishDate: string
-  readTime: number
-  views: number
+  status: "Published" | "Draft" | "Scheduled" // Aligned with schema and API
+  publishDate: string | Date
+  readTime: number // This will be auto-calculated by API
+  views: number // Include views field
   featured: boolean
+  createdBy: {
+    email: string
+    timestamp: Date | string
+    ipAddress?: string
+    userAgent?: string
+  }
+  updatedBy: {
+    email: string
+    timestamp: Date | string
+    ipAddress?: string
+    userAgent?: string
+  }
+  version: number
+  isActive: boolean
+  createdAt?: string
+  updatedAt?: string
 }
 
 interface BlogFormData {
@@ -119,9 +159,9 @@ interface BlogFormData {
   author: string
   category: string
   tags: string[]
-  status: "Published" | "Draft" | "Scheduled"
+  status: "Published" | "Draft" // Aligned with schema and API
   publishDate: string
-  readTime: number
+  // readTime removed - will be auto-calculated by API
   featured: boolean
 }
 
@@ -139,13 +179,28 @@ interface FieldErrors {
 
 const categories = ["Investment", "Development", "Legal", "Sustainability", "Market Analysis", "Lifestyle", "News"]
 
+// Step configuration for multi-step form
+interface BlogFormStep {
+  id: string
+  title: string
+  icon: React.ComponentType<{ className?: string }>
+  description: string
+}
+
+const blogFormSteps: BlogFormStep[] = [
+  { id: "basic", title: "Basic Info", icon: Info, description: "Title, excerpt, author, category" },
+  { id: "content", title: "Content Creation", icon: FileText, description: "Create your blog content blocks" },
+  { id: "media", title: "Media & Tags", icon: Palette, description: "Featured image and tags" },
+  { id: "publishing", title: "Publishing", icon: Settings, description: "Status, publish date, featured" }
+]
+
 // Character limits from schema
 const LIMITS = {
   title: 200,
   excerpt: 500,
   headingContent: 200,
-  textSegmentContent: 500,
-  linkSegmentContent: 500,
+  textSegmentContent: 2000, // Aligned with schema limit
+  linkSegmentContent: 2000, // Aligned with schema limit
   imageAlt: 200,
   imageCaption: 300,
   linkBlockCoverText: 200,
@@ -156,7 +211,7 @@ const LIMITS = {
   listSubItemText: 300
 }
 
-const MAX_BLOCKS = 15
+const MAX_BLOCKS = 50 // Aligned with schema limit
 const MAX_PARAGRAPH_SEGMENTS = 50
 const MAX_QUOTE_SEGMENTS = 30
 const MAX_LIST_ITEMS = 20
@@ -178,9 +233,7 @@ const validateField = (field: string, value: any, formData?: BlogFormData): stri
     case 'category':
       if (!value || !value.toString().trim()) return 'Category is required'
       return ''
-    case 'readTime':
-      if (!value || value <= 0) return 'Read time must be greater than 0'
-      return ''
+    // readTime removed - auto-calculated by API
     case 'publishDate':
       if (!value) return 'Publish date is required'
       return ''
@@ -810,12 +863,35 @@ const BlogPreview = ({ formData }: { formData: BlogFormData }) => {
         )
       
       case "list":
-        const ListTag = block.listType === "ordered" ? "ol" : "ul"
         const listStyle = {
           fontWeight: block.bold ? 'bold' : 'normal',
           fontStyle: block.italic ? 'italic' : 'normal',
           color: block.color
         }
+        
+        if (block.listType === "plain") {
+          return (
+            <div key={index} className="mb-6">
+              <h4 className="font-semibold mb-2">{block.title}</h4>
+              <div className="space-y-2" style={listStyle}>
+                {block.items.map((item, itemIndex) => (
+                  <div key={itemIndex}>
+                    {item.text}
+                    {item.subItems && item.subItems.length > 0 && (
+                      <div className="pl-4 mt-1 space-y-1">
+                        {item.subItems.map((subItem, subIndex) => (
+                          <div key={subIndex}>{subItem}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        }
+        
+        const ListTag = block.listType === "ordered" ? "ol" : "ul"
         
         return (
           <div key={index} className="mb-6">
@@ -845,7 +921,7 @@ const BlogPreview = ({ formData }: { formData: BlogFormData }) => {
   const featuredImageUrl = formData.featuredImage ? URL.createObjectURL(formData.featuredImage) : null
 
   return (
-    <div className="bg-white rounded-lg border p-6 max-h-96 overflow-y-auto">
+    <div className="bg-white rounded-lg border p-6 h-full overflow-y-auto">
       <div className="mb-6">
         {featuredImageUrl && (
           <img 
@@ -858,7 +934,7 @@ const BlogPreview = ({ formData }: { formData: BlogFormData }) => {
         <div className="flex items-center gap-2 mb-2 text-sm text-gray-600">
           <Badge variant="outline">{formData.category}</Badge>
           <span>•</span>
-          <span>{formData.readTime} min read</span>
+          <span>Auto-calc min read</span>
           <span>•</span>
           <span>{formData.author}</span>
           {formData.featured && (
@@ -1209,7 +1285,7 @@ const ContentBlockEditor = ({
                 <Label>List Type</Label>
                 <Select 
                   value={block.listType} 
-                  onValueChange={(listType: "ordered" | "unordered") => handleUpdate({ listType })}
+                  onValueChange={(listType: "ordered" | "unordered" | "plain") => handleUpdate({ listType })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -1217,6 +1293,7 @@ const ContentBlockEditor = ({
                   <SelectContent>
                     <SelectItem value="ordered">Numbered List</SelectItem>
                     <SelectItem value="unordered">Bullet List</SelectItem>
+                    <SelectItem value="plain">Plain List</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1452,6 +1529,9 @@ const ContentBlockEditor = ({
 }
 
 export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFormModalProps) {
+  // Step navigation state (NEW - but preserves all existing logic)
+  const [currentStep, setCurrentStep] = useState(0)
+  
   const [formData, setFormData] = useState<BlogFormData>({
     title: "",
     excerpt: "",
@@ -1462,7 +1542,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
     tags: [],
     status: "Published",
     publishDate: new Date().toISOString().slice(0, 16),
-    readTime: 5,
+    // readTime removed - auto-calculated by API
     featured: false,
   })
   
@@ -1471,50 +1551,100 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
   const [errors, setErrors] = useState<FieldErrors>({})
   const [apiError, setApiError] = useState<string>("")
   const [tagInput, setTagInput] = useState("")
+  
+  // Draft management state (NEW)
+  const [showDraftDialog, setShowDraftDialog] = useState(false)
+  const [draftTimestamp, setDraftTimestamp] = useState<Date | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [initialFormData, setInitialFormData] = useState<BlogFormData | null>(null)
 
-  // Initialize form data
+  // Initialize form data and check for drafts
   useEffect(() => {
     if (isOpen) {
       if (mode === "edit" && blog) {
-        setFormData({
-          title: blog.title || "",
-          excerpt: blog.excerpt || "",
-          contentBlocks: blog.contentBlocks || [],
-          featuredImage: null,
-          author: blog.author || "",
-          category: blog.category || "",
-          tags: blog.tags || [],
-          status: blog.status || "Published",
-          publishDate: blog.publishDate ? blog.publishDate.slice(0, 16) : new Date().toISOString().slice(0, 16),
-          readTime: blog.readTime || 5,
-          featured: blog.featured || false,
-        })
+        // Load existing blog data for edit mode
+        const convertedData = blogToFormData(blog)
+        setFormData(convertedData)
+        setInitialFormData(convertedData)
+        setHasUnsavedChanges(false)
         
         if (blog.featuredImage) {
           setFeaturedImagePreview(blog.featuredImage)
         }
-      } else {
-        // Reset form for add mode
-        setFormData({
-          title: "",
-          excerpt: "",
-          contentBlocks: [],
-          featuredImage: null,
-          author: "",
-          category: "",
-          tags: [],
-          status: "Published",
-          publishDate: new Date().toISOString().slice(0, 16),
-          readTime: 5,
-          featured: false,
-        })
-        setFeaturedImagePreview(null)
+      } else if (mode === "add") {
+        // Check for saved draft in add mode
+        const hasDraft = hasSavedBlogDraft()
+        if (hasDraft) {
+          const timestamp = getBlogDraftTimestamp()
+          setDraftTimestamp(timestamp)
+          setShowDraftDialog(true)
+        } else {
+          resetToInitialState()
+        }
       }
       setErrors({})
       setApiError("")
       setTagInput("")
+      setCurrentStep(0) // Reset to first step
     }
   }, [blog, mode, isOpen])
+  
+  // Helper function to reset to initial state
+  const resetToInitialState = () => {
+    const initialData = {
+      title: "",
+      excerpt: "",
+      contentBlocks: [],
+      featuredImage: null,
+      author: "",
+      category: "",
+      tags: [],
+      status: "Published" as const,
+      publishDate: new Date().toISOString().slice(0, 16),
+      featured: false,
+    }
+    setFormData(initialData)
+    setInitialFormData(initialData)
+    setFeaturedImagePreview(null)
+    setHasUnsavedChanges(false)
+  }
+  
+  // Auto-save draft functionality (NEW)
+  const debouncedSave = useCallback(
+    createDebouncedBlogSave(3000), // 3 second delay
+    []
+  )
+
+  // Draft dialog handlers (NEW)
+  const handleRestoreDraft = () => {
+    const draft = loadBlogFormDraft()
+    if (draft) {
+      setFormData(draft)
+      setHasUnsavedChanges(true)
+    }
+    setShowDraftDialog(false)
+  }
+
+  const handleDiscardDraft = () => {
+    clearBlogFormDraft()
+    resetToInitialState()
+    setShowDraftDialog(false)
+  }
+  
+  // Auto-save when form data changes
+  useEffect(() => {
+    if (isOpen && hasUnsavedChanges && mode === 'add' && initialFormData) {
+      debouncedSave(formData)
+    }
+  }, [formData, hasUnsavedChanges, isOpen, mode, initialFormData, debouncedSave])
+  
+  // Track unsaved changes
+  useEffect(() => {
+    if (initialFormData) {
+      const hasChanges = hasFormDataChanged(formData, initialFormData)
+      setHasUnsavedChanges(hasChanges)
+    }
+  }, [formData, initialFormData])
 
   // Real-time validation
   const handleFieldChange = (field: keyof BlogFormData, value: any) => {
@@ -1564,6 +1694,23 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
       e.preventDefault()
       addTag()
     }
+  }
+
+  // Step navigation handlers (NEW - but preserves all existing logic)
+  const handleNext = () => {
+    if (currentStep < blogFormSteps.length - 1) {
+      setCurrentStep(currentStep + 1)
+    }
+  }
+
+  const handlePrevious = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1)
+    }
+  }
+
+  const handleStepClick = (stepIndex: number) => {
+    setCurrentStep(stepIndex)
   }
 
   // Check if H1 already exists
@@ -1742,10 +1889,10 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
   }
 
   // Check if form is valid for submission
-  const isFormValid = () => {
+  const isFormValid = (): boolean => {
     const hasErrors = Object.values(errors).some(error => error && error.trim() !== '')
-    const hasRequiredFields = formData.title && formData.excerpt && formData.author && formData.category && formData.readTime > 0
-    const hasFeaturedImage = mode === 'edit' || formData.featuredImage
+    const hasRequiredFields = !!(formData.title && formData.excerpt && formData.author && formData.category)
+    const hasFeaturedImage = mode === 'edit' || !!formData.featuredImage
     const hasContentBlocks = formData.contentBlocks.length > 0
     const hasParagraph = formData.contentBlocks.some(block => block.type === "paragraph")
     
@@ -1764,13 +1911,13 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
         case "link":
           return !block.coverText.trim() || !block.url.trim()
         case "list":
-          return !block.title.trim() || block.items.length === 0 || block.items.some(item => !item.text.trim())
+          return block.items.length === 0 || block.items.some(item => !item.text.trim())
         default:
           return false
       }
     })
     
-    return !hasErrors && hasRequiredFields && hasFeaturedImage && hasContentBlocks && hasParagraph && !hasIncompleteBlocks
+    return Boolean(!hasErrors && hasRequiredFields && hasFeaturedImage && hasContentBlocks && hasParagraph && !hasIncompleteBlocks)
   }
 
   const fillFakeData = () => {
@@ -1838,7 +1985,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
       tags: ["Dubai Real Estate", "Investment", "Property Market", "Luxury Properties", "Market Trends"],
       status: "Published",
       publishDate: new Date().toISOString().slice(0, 16),
-      readTime: 8,
+      // readTime removed - auto-calculated by API
       featured: true,
     })
     
@@ -1877,7 +2024,7 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
       submitData.append('category', formData.category)
       submitData.append('status', formData.status)
       submitData.append('publishDate', formData.publishDate + ':00.000Z')
-      submitData.append('readTime', formData.readTime.toString())
+      // readTime removed - auto-calculated by API
       submitData.append('featured', formData.featured.toString())
       submitData.append('tags', JSON.stringify(formData.tags))
 
@@ -1946,6 +2093,11 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
           }
     
 
+      // Clear draft on successful save
+      if (mode === 'add') {
+        clearBlogFormDraft()
+      }
+      
       toast.success(`Blog post ${mode === 'edit' ? 'updated' : 'created'} successfully!`)
       onSuccess?.(result)
       handleClose()
@@ -1959,370 +2111,139 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
     }
   }
 
+  // Close handler with unsaved changes check (UPDATED)
   const handleClose = () => {
-    setFormData({
-      title: "",
-      excerpt: "",
-      contentBlocks: [],
-      featuredImage: null,
-      author: "",
-      category: "",
-      tags: [],
-      status: "Published",
-      publishDate: new Date().toISOString().slice(0, 16),
-      readTime: 5,
-      featured: false,
-    })
-    setFeaturedImagePreview(null)
+    // Reset all state
+    resetToInitialState()
     setErrors({})
     setApiError("")
     setTagInput("")
+    setCurrentStep(0)
     onClose()
   }
 
+  // Handle close with confirmation check - always show confirmation like project form
+  const handleCloseWithConfirmation = () => {
+    // Always trigger the confirmation dialog through global handler
+    if ((window as any).handleBlogFormClose) {
+      (window as any).handleBlogFormClose()
+    } else {
+      // Fallback if no handler is registered
+      handleClose()
+    }
+  }
+
+  // Render current step content (NEW - uses existing components and logic)
+  const renderCurrentStep = () => {
+    switch (blogFormSteps[currentStep].id) {
+      case "basic":
+        return (
+          <BasicInfoStep
+            formData={formData}
+            errors={errors}
+            onFieldChange={handleFieldChange}
+          />
+        )
+      case "content":
+        return (
+          <ContentCreationStep
+            formData={formData}
+            errors={errors}
+            onFieldChange={handleFieldChange}
+            addContentBlock={addContentBlock}
+            updateContentBlock={updateContentBlock}
+            removeContentBlock={removeContentBlock}
+            moveContentBlock={moveContentBlock}
+            hasH1={hasH1}
+            setErrors={setErrors}
+            ContentBlockEditor={ContentBlockEditor}
+          />
+        )
+      case "media":
+        return (
+          <MediaTagsStep
+            formData={formData}
+            errors={errors}
+            onFieldChange={handleFieldChange}
+            mode={mode}
+            featuredImagePreview={featuredImagePreview}
+            tagInput={tagInput}
+            setTagInput={setTagInput}
+            addTag={addTag}
+            removeTag={removeTag}
+            handleTagKeyPress={handleTagKeyPress}
+            handleFeaturedImageUpload={handleFeaturedImageUpload}
+            removeFeaturedImage={removeFeaturedImage}
+            ImageUpload={ImageUpload}
+          />
+        )
+      case "publishing":
+        return (
+          <PublishingStep
+            formData={formData}
+            errors={errors}
+            onFieldChange={handleFieldChange}
+            apiError={apiError}
+            isFormValid={isFormValid}
+            fillFakeData={fillFakeData}
+            isSubmitting={isSubmitting}
+            BlogPreview={BlogPreview}
+          />
+        )
+      default:
+        return null
+    }
+  }
+
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 flex">
+    <>
+      {/* Draft Restore Dialog */}
+      <DraftRestoreDialog
+        isOpen={showDraftDialog}
+        onRestore={handleRestoreDraft}
+        onDiscard={handleDiscardDraft}
+        draftTimestamp={draftTimestamp}
+      />
+
+      <ConfirmationDialogs
+        mode={mode}
+        hasUnsavedChanges={hasUnsavedChanges}
+        formData={formData}
+        onClose={onClose}
+        isSubmitting={isSubmitting}
+        onResetForm={resetToInitialState}
+        isModalOpen={isOpen}
+      />
+
+      {/* Main Form Modal */}
+      <Dialog open={isOpen} onOpenChange={(open) => {
+        if (!open && !isSubmitting) {
+          handleCloseWithConfirmation()
+        }
+      }}>
+      <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 flex flex-col">
         <DialogHeader className="p-6 pb-0 flex-shrink-0">
-          <DialogTitle className="text-2xl font-bold">
+          <DialogTitle className="text-2xl font-bold flex items-center gap-2">
             {mode === "add" ? "Create New Blog Post" : "Edit Blog Post"}
+            {hasUnsavedChanges && (
+              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                Unsaved Changes
+              </Badge>
+            )}
           </DialogTitle>
         </DialogHeader>
 
+        {/* Step Navigation */}
+        <BlogFormStepNavigation
+          steps={blogFormSteps}
+          currentStep={currentStep}
+          onStepClick={handleStepClick}
+        />
+
         <div className="flex flex-1 min-h-0">
-          {/* Left Panel - Form */}
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <div className="space-y-6 py-4">
-              
-              {/* Basic Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Basic Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <LimitedInput
-                      value={formData.title}
-                      onChange={(value) => handleFieldChange("title", value)}
-                      maxLength={LIMITS.title}
-                      placeholder="Enter blog post title"
-                      label="Title"
-                      required
-                      error={errors.title}
-                    />
-                    <div className="space-y-2">
-                      <Label htmlFor="author">Author <span className="text-red-500">*</span></Label>
-                      <Input
-                        value={formData.author}
-                        onChange={(e) => handleFieldChange("author", e.target.value)}
-                        placeholder="Enter author name"
-                        className={errors.author ? 'border-red-500' : ''}
-                      />
-                      {errors.author && (
-                        <div className="flex items-center gap-1 text-red-500 text-xs">
-                          <AlertCircle className="h-3 w-3" />
-                          {errors.author}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <LimitedInput
-                    value={formData.excerpt}
-                    onChange={(value) => handleFieldChange("excerpt", value)}
-                    maxLength={LIMITS.excerpt}
-                    placeholder="Brief description of the blog post..."
-                    multiline
-                    rows={3}
-                    label="Excerpt"
-                    required
-                    error={errors.excerpt}
-                  />
-                </CardContent>
-              </Card>
-
-              {/* Publishing Details */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Publishing Details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="category">Category <span className="text-red-500">*</span></Label>
-                      <Select value={formData.category} onValueChange={(value) => handleFieldChange("category", value)}>
-                        <SelectTrigger className={`mt-1 ${errors.category ? 'border-red-500' : ''}`}>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((category) => (
-                            <SelectItem key={category} value={category}>
-                              {category}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {errors.category && (
-                        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-                          <AlertCircle className="h-3 w-3" />
-                          {errors.category}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <Label htmlFor="status">Status</Label>
-                      <Select value={formData.status} onValueChange={(value) => handleFieldChange("status", value)}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                         
-                          <SelectItem value="Published">Published</SelectItem>
-                          <SelectItem value="Scheduled">Scheduled</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="readTime">Read Time (minutes) <span className="text-red-500">*</span></Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={formData.readTime}
-                        onChange={(e) => handleFieldChange("readTime", parseInt(e.target.value) || 1)}
-                        className={`mt-1 ${errors.readTime ? 'border-red-500' : ''}`}
-                      />
-                      {errors.readTime && (
-                        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-                          <AlertCircle className="h-3 w-3" />
-                          {errors.readTime}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="publishDate">Publish Date <span className="text-red-500">*</span></Label>
-                      <Input
-                        type="datetime-local"
-                        value={formData.publishDate}
-                        onChange={(e) => handleFieldChange("publishDate", e.target.value)}
-                        className={`mt-1 ${errors.publishDate ? 'border-red-500' : ''}`}
-                      />
-                      {errors.publishDate && (
-                        <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-                          <AlertCircle className="h-3 w-3" />
-                          {errors.publishDate}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-2 pt-6">
-                      <Checkbox
-                        checked={formData.featured}
-                        onCheckedChange={(checked) => handleFieldChange("featured", checked as boolean)}
-                      />
-                      <Label>Featured Blog Post</Label>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Featured Image */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    Featured Image {mode === 'add' ? <span className="text-red-500">*</span> : '(Optional - leave blank to keep existing)'}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ImageUpload
-                    file={formData.featuredImage}
-                    url={featuredImagePreview}
-                    onChange={handleFeaturedImageUpload}
-                    onRemove={removeFeaturedImage}
-                    label="Featured Image"
-                    required={mode === 'add'}
-                    error={errors.featuredImage}
-                  />
-                </CardContent>
-              </Card>
-
-              {/* Tags */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Tags</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex space-x-2">
-                    <Input
-                      value={tagInput}
-                      onChange={(e) => setTagInput(e.target.value)}
-                      onKeyPress={handleTagKeyPress}
-                      placeholder="Add a tag and press Enter"
-                      className="flex-1"
-                    />
-                    <Button type="button" onClick={addTag}>
-                      Add Tag
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {formData.tags.map((tag, index) => (
-                      <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
-                        {tag}
-                        <button
-                          type="button"
-                          onClick={() => removeTag(tag)}
-                          className="ml-2 text-blue-600 hover:text-blue-800"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Content Blocks */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>Content Blocks</span>
-                    <div className="flex items-center gap-2">
-                      <CharCounter 
-                        current={formData.contentBlocks.length} 
-                        max={MAX_BLOCKS}
-                      />
-                      <div className="flex gap-1">
-                        <Button 
-                          type="button" 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => addContentBlock("paragraph")}
-                          disabled={formData.contentBlocks.length >= MAX_BLOCKS}
-                        >
-                          <Type className="h-3 w-3" />
-                        </Button>
-                        <Button 
-                          type="button" 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => addContentBlock("heading")}
-                          disabled={formData.contentBlocks.length >= MAX_BLOCKS}
-                        >
-                          <Hash className="h-3 w-3" />
-                        </Button>
-                        <Button 
-                          type="button" 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => addContentBlock("image")}
-                          disabled={formData.contentBlocks.length >= MAX_BLOCKS}
-                        >
-                          <ImageIcon className="h-3 w-3" />
-                        </Button>
-                        <Button 
-                          type="button" 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => addContentBlock("link")}
-                          disabled={formData.contentBlocks.length >= MAX_BLOCKS}
-                        >
-                          <Link className="h-3 w-3" />
-                        </Button>
-                        <Button 
-                          type="button" 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => addContentBlock("quote")}
-                          disabled={formData.contentBlocks.length >= MAX_BLOCKS}
-                        >
-                          <Quote className="h-3 w-3" />
-                        </Button>
-                        <Button 
-                          type="button" 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => addContentBlock("list")}
-                          disabled={formData.contentBlocks.length >= MAX_BLOCKS}
-                        >
-                          <List className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {formData.contentBlocks.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p className="text-lg font-medium mb-2">No content blocks yet</p>
-                      <p className="text-sm">Use the buttons above to add paragraph, heading, image, link, quote, or list blocks.</p>
-                    </div>
-                  ) : (
-                    formData.contentBlocks
-                      .sort((a, b) => a.order - b.order)
-                      .map((block, index) => (
-                        <ContentBlockEditor
-                          key={`${block.type}-${block.order}`}
-                          block={block}
-                          onUpdate={(updates) => updateContentBlock(
-                            formData.contentBlocks.findIndex(b => b.order === block.order),
-                            updates
-                          )}
-                          onRemove={() => removeContentBlock(
-                            formData.contentBlocks.findIndex(b => b.order === block.order)
-                          )}
-                          onMove={(direction) => moveContentBlock(
-                            formData.contentBlocks.findIndex(b => b.order === block.order),
-                            direction
-                          )}
-                          canMoveUp={index > 0}
-                          canMoveDown={index < formData.contentBlocks.length - 1}
-                          errors={errors}
-                          setErrors={setErrors}
-                          hasH1Already={hasH1}
-                        />
-                      ))
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* API Error Display */}
-              {apiError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-5 w-5 text-red-500 mt-0.5" />
-                    <div>
-                      <h4 className="font-medium text-red-800 mb-1">Server Error:</h4>
-                      <p className="text-red-700 text-sm">{apiError}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 justify-between pt-4 border-t">
-                <Button variant="outline" onClick={fillFakeData} disabled={isSubmitting}>
-                  Fill Test Data
-                </Button>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
-                    Cancel
-                  </Button>
-                  <Button 
-                    onClick={handleSubmit} 
-                    disabled={isSubmitting || !isFormValid()}
-                  >
-                    {isSubmitting ? 
-                      (mode === "edit" ? "Updating..." : "Creating...") : 
-                      (mode === "edit" ? "Update Blog Post" : "Create Blog Post")
-                    }
-                  </Button>
-                </div>
-              </div>
-            </div>
+          {/* Left Panel - Step Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            {renderCurrentStep()}
           </div>
 
           {/* Right Panel - Live Preview */}
@@ -2338,7 +2259,46 @@ export function BlogFormModal({ isOpen, onClose, onSuccess, blog, mode }: BlogFo
             </div>
           </div>
         </div>
+
+        {/* Navigation Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between flex-shrink-0">
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              onClick={handlePrevious}
+              disabled={currentStep === 0}
+            >
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              Previous
+            </Button>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {currentStep < blogFormSteps.length - 1 ? (
+              <Button onClick={handleNext}>
+                Next
+                <ChevronRight className="h-4 w-4 ml-2" />
+              </Button>
+            ) : (
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleSubmit} 
+                  disabled={isSubmitting || !isFormValid()}
+                >
+                  {isSubmitting ? 
+                    (mode === "edit" ? "Updating..." : "Creating...") : 
+                    (mode === "edit" ? "Update Blog Post" : "Create Blog Post")
+                  }
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
+    </>
   )
 }

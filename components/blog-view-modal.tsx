@@ -78,7 +78,7 @@ type IContentBlock = IParagraphBlock | IHeadingBlock | IImageBlock | ILinkBlock 
 
 interface IAuditInfo {
   email: string
-  timestamp: string
+  timestamp: Date | string
   ipAddress?: string
   userAgent?: string
 }
@@ -94,7 +94,7 @@ interface Blog {
   category: string
   tags: string[]
   status: "Published" | "Draft" | "Scheduled"
-  publishDate: string
+  publishDate: string | Date
   readTime: number
   views: number
   featured: boolean
@@ -102,14 +102,16 @@ interface Blog {
   updatedBy: IAuditInfo
   version: number
   isActive: boolean
-  createdAt: string
-  updatedAt: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 interface BlogViewModalProps {
   isOpen: boolean
   onClose: () => void
   blog: Blog | null
+  onEdit?: () => void
+  onDelete?: () => void
 }
 
 // Component to render individual content segments
@@ -261,7 +263,7 @@ function ContentBlockRenderer({ block }: { block: IContentBlock }) {
 export function BlogViewModal({ isOpen, onClose, blog }: BlogViewModalProps) {
   if (!blog) return null
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | Date) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
@@ -269,7 +271,8 @@ export function BlogViewModal({ isOpen, onClose, blog }: BlogViewModalProps) {
     })
   }
 
-  const formatDateTime = (dateString: string) => {
+  const formatDateTime = (dateString: string | Date | undefined) => {
+    if (!dateString) return 'Not available'
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
@@ -292,7 +295,7 @@ export function BlogViewModal({ isOpen, onClose, blog }: BlogViewModalProps) {
     }
   }
 
-  const getActualStatus = (publishDate: string, status: string) => {
+  const getActualStatus = (publishDate: string | Date, status: string) => {
     const now = new Date()
     const pubDate = new Date(publishDate)
     

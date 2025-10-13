@@ -296,11 +296,15 @@ function sanitizeDeveloperData(data: DeveloperData): DeveloperData {
 }
 
 
-// POST - Create new developer with authentication
-export const POST = withCollectionPermission(Collection.DEVELOPERS, Action.ADD)(async (req: NextRequest, { user }: { user: any }) => {
+/**
+ * Main POST handler with authentication
+ */
+async function handler(request: NextRequest) {
+  // User is available on request.user (added by withCollectionPermission)
+  const user = (request as any).user;
   try {
     // Apply rate limiting
-    const rateLimitResult = await rateLimit(req, user);
+    const rateLimitResult = await rateLimit(request, user);
     if (!rateLimitResult.success) {
       return NextResponse.json(
         { 
@@ -316,7 +320,7 @@ export const POST = withCollectionPermission(Collection.DEVELOPERS, Action.ADD)(
     await connectToDatabase();
 
     // Parse JSON body instead of FormData
-    const body = await req.json();
+    const body = await request.json();
 
     // Create developer data object from body
     let developerData: DeveloperData = {
@@ -386,8 +390,8 @@ export const POST = withCollectionPermission(Collection.DEVELOPERS, Action.ADD)(
     const slug = baseSlug;
 
     // Extract IP address and user agent for audit
-    const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0] || req.headers.get('x-real-ip') || 'unknown';
-    const userAgent = req.headers.get('user-agent') || 'unknown';
+    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0] || request.headers.get('x-real-ip') || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
 
     // Create audit info
     const auditInfo = {
@@ -505,7 +509,10 @@ export const POST = withCollectionPermission(Collection.DEVELOPERS, Action.ADD)(
       { status: 500 }
     );
   }
-});
+}
+
+// Export with authentication wrapper - requires ADD capability for DEVELOPERS collection
+export const POST = withCollectionPermission(Collection.DEVELOPERS, Action.ADD)(handler);
 
 // GET - Fetch all developers
 export async function GET() {

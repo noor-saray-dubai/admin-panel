@@ -8,7 +8,7 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: Home, key: "dashboard", color: "text-blue-500" },
   { name: "Projects", href: "/projects", icon: FileText, key: "projects", color: "text-green-500" },
   { name: "Properties", href: "/properties", icon: Building2, key: "properties", color: "text-emerald-500" },
-  { name: "Blogs", href: "/blogs", icon: MessageSquare, key: "blogs", color: "text-purple-500" },
+  { name: "Blogs", href: "/blogs?tab=all&page=1", icon: MessageSquare, key: "blogs", color: "text-purple-500" },
   { name: "Communities", href: "/communities", icon: Users, key: "communities", color: "text-orange-500" },
   { name: "Developers", href: "/developers", icon: Shield, key: "developers", color: "text-indigo-500" },
   { name: "Settings", href: "/settings", icon: Settings, key: "settings", color: "text-gray-500" },

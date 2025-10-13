@@ -6,7 +6,7 @@ import { Users, Settings, Home, FileText, MessageSquare, Shield } from "lucide-r
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home, key: "dashboard" },
   { name: "Projects", href: "/projects", icon: FileText, key: "projects" },
-  { name: "Blogs", href: "/blogs", icon: MessageSquare, key: "blogs" },
+  { name: "Blogs", href: "/blogs?tab=all&page=1", icon: MessageSquare, key: "blogs" },
   { name: "Communities", href: "/communities", icon: Users, key: "communities" },
   { name: "Developers", href: "/developers", icon: Shield, key: "developers" },
   { name: "Settings", href: "/settings", icon: Settings, key: "settings" },
