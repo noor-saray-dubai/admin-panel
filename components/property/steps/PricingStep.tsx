@@ -36,7 +36,7 @@ export function PricingStep({ formData, errors, setErrors, onInputChange }: Prop
     
     // Calculate price per sq ft if built up area exists
     if (numericPrice > 0 && formData.builtUpArea) {
-      const area = parseFloat(formData.builtUpArea.replace(/[^0-9.]/g, ''))
+      const area = formData.builtUpArea // builtUpArea is already a number
       if (area > 0) {
         const pricePerSqFt = Math.round(numericPrice / area)
         onInputChange('pricePerSqFt', pricePerSqFt)
@@ -144,7 +144,7 @@ export function PricingStep({ formData, errors, setErrors, onInputChange }: Prop
                   <h4 className="font-medium text-blue-900 mb-2">Price Calculation</h4>
                   <div className="text-sm text-blue-800 space-y-1">
                     <p>Property Price: {formatNumber(formData.priceNumeric)} AED</p>
-                    <p>Built-up Area: {formData.builtUpArea}</p>
+                    <p>Built-up Area: {formData.builtUpArea} {formData.areaUnit}</p>
                     {formData.pricePerSqFt > 0 && (
                       <p>Price per Sq Ft: {formatNumber(formData.pricePerSqFt)} AED/sq ft</p>
                     )}

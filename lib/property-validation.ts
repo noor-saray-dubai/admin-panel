@@ -46,8 +46,8 @@ const isValidPrice = (priceStr: string, priceNumeric: number): boolean => {
 
 const isValidArea = (area: string): boolean => {
   if (!area) return false
-  // Should contain numbers and valid area units
-  return /^\d+\s*(sq\s*ft|sqft|sq\s*m|sqm|square\s*feet|square\s*meters)$/i.test(area.trim())
+  // Should contain numbers and "sq ft" specifically (we enforce sq ft only)
+  return /^\d+(\.\d+)?\s*sq\s*ft$/i.test(area.trim())
 }
 
 // Property type validation
@@ -81,14 +81,48 @@ export const validatePropertyField = (fieldName: string, value: any, formData: P
       return null
 
     case 'builtUpArea':
-      if (!value || value.trim().length === 0) return 'Built-up area is required'
-      if (!isValidArea(value)) return 'Please enter a valid area (e.g., "1200 sq ft", "100 sq m")'
+      if (value === undefined || value === null) return 'Built-up area is required'
+      if (typeof value !== 'number' || value <= 0) return 'Built-up area must be a positive number'
+      if (value > 100000) return 'Built-up area cannot exceed 100,000'
       return null
 
     case 'carpetArea':
-      if (value && value.trim().length > 0 && !isValidArea(value)) {
-        return 'Please enter a valid carpet area (e.g., "1000 sq ft", "90 sq m")'
+      if (value !== undefined && value !== null) {
+        if (typeof value !== 'number' || value <= 0) return 'Carpet area must be a positive number'
+        if (value > 100000) return 'Carpet area cannot exceed 100,000'
       }
+      return null
+
+    case 'suiteArea':
+      if (value !== undefined && value !== null) {
+        if (typeof value !== 'number' || value <= 0) return 'Suite area must be a positive number'
+        if (value > 100000) return 'Suite area cannot exceed 100,000'
+      }
+      return null
+
+    case 'balconyArea':
+      if (value !== undefined && value !== null) {
+        if (typeof value !== 'number' || value <= 0) return 'Balcony area must be a positive number'
+        if (value > 100000) return 'Balcony area cannot exceed 100,000'
+      }
+      return null
+
+    case 'terracePoolArea':
+      if (value !== undefined && value !== null) {
+        if (typeof value !== 'number' || value <= 0) return 'Terrace & pool area must be a positive number'
+        if (value > 100000) return 'Terrace & pool area cannot exceed 100,000'
+      }
+      return null
+
+    case 'totalArea':
+      if (value === undefined || value === null) return 'Total area is required'
+      if (typeof value !== 'number' || value <= 0) return 'Total area must be a positive number'
+      if (value > 100000) return 'Total area cannot exceed 100,000'
+      return null
+
+    case 'areaUnit':
+      if (!value || value.trim().length === 0) return 'Area unit is required'
+      if (!['sq ft', 'sq m'].includes(value)) return 'Area unit must be "sq ft" or "sq m"'
       return null
 
     case 'furnishingStatus':
@@ -102,8 +136,10 @@ export const validatePropertyField = (fieldName: string, value: any, formData: P
       return null
 
     case 'floorLevel':
-      if (value === undefined || value === null) return 'Floor level is required'
-      if (!Number.isInteger(value) || value < -5 || value > 200) return 'Floor level must be between -5 and 200'
+      // Floor level is now optional
+      if (value !== undefined && value !== null) {
+        if (!Number.isInteger(value) || value < -5 || value > 200) return 'Floor level must be between -5 and 200'
+      }
       return null
 
     case 'ownershipType':
@@ -267,12 +303,28 @@ export const validatePropertyStep = (step: string, formData: PropertyFormData): 
       const builtUpAreaError = validatePropertyField('builtUpArea', formData.builtUpArea, formData)
       if (builtUpAreaError) addError('builtUpArea', builtUpAreaError)
 
+      const carpetAreaError = validatePropertyField('carpetArea', formData.carpetArea, formData)
+      if (carpetAreaError) addError('carpetArea', carpetAreaError)
+
+      const suiteAreaError = validatePropertyField('suiteArea', formData.suiteArea, formData)
+      if (suiteAreaError) addError('suiteArea', suiteAreaError)
+
+      const balconyAreaError = validatePropertyField('balconyArea', formData.balconyArea, formData)
+      if (balconyAreaError) addError('balconyArea', balconyAreaError)
+
+      const terracePoolAreaError = validatePropertyField('terracePoolArea', formData.terracePoolArea, formData)
+      if (terracePoolAreaError) addError('terracePoolArea', terracePoolAreaError)
+
+      const totalAreaError = validatePropertyField('totalArea', formData.totalArea, formData)
+      if (totalAreaError) addError('totalArea', totalAreaError)
+
       const furnishingError = validatePropertyField('furnishingStatus', formData.furnishingStatus, formData)
       if (furnishingError) addError('furnishingStatus', furnishingError)
 
       const facingError = validatePropertyField('facingDirection', formData.facingDirection, formData)
       if (facingError) addError('facingDirection', facingError)
 
+      // Floor level is now optional
       const floorError = validatePropertyField('floorLevel', formData.floorLevel, formData)
       if (floorError) addError('floorLevel', floorError)
 
@@ -399,11 +451,10 @@ export const validatePropertyFormData = (formData: PropertyFormData): PropertyVa
 
   // Additional cross-field validations
   if (formData.carpetArea && formData.builtUpArea) {
-    // Basic check that carpet area is not larger than built-up area (rough validation)
-    // This is a simple check, more sophisticated area comparison would require parsing the area strings
-    const carpetAreaNum = parseFloat(formData.carpetArea)
-    const builtUpAreaNum = parseFloat(formData.builtUpArea)
-    if (!isNaN(carpetAreaNum) && !isNaN(builtUpAreaNum) && carpetAreaNum > builtUpAreaNum) {
+    // Check that carpet area is not larger than built-up area
+    const carpetAreaNum = formData.carpetArea // Already a number
+    const builtUpAreaNum = formData.builtUpArea // Already a number
+    if (carpetAreaNum > builtUpAreaNum) {
       fieldErrors.carpetArea = 'Carpet area cannot be larger than built-up area'
     }
   }

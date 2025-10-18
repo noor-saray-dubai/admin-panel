@@ -72,11 +72,16 @@ const initialFormData: PropertyFormData = {
   propertyType: "",
   bedrooms: 1,
   bathrooms: 0,
-  builtUpArea: "",
-  carpetArea: "",
+  builtUpArea: undefined,
+  carpetArea: undefined,
+  suiteArea: undefined,
+  balconyArea: undefined,
+  terracePoolArea: undefined,
+  totalArea: undefined,
+  areaUnit: "sq ft",
   furnishingStatus: "",
   facingDirection: "",
-  floorLevel: 0,
+  floorLevel: undefined,
   
   // Ownership & Availability
   ownershipType: "",
@@ -200,18 +205,32 @@ export function PropertyFormModal({ isOpen, onClose, onSuccess, property, mode }
       setFormData(convertedData)
       setHasUnsavedChanges(false)
     } else if (mode === 'add') {
-      // Check for saved draft
-      const hasDraft = hasSavedPropertyDraft()
-      if (hasDraft) {
-        const timestamp = getPropertyDraftTimestamp()
-        setDraftTimestamp(timestamp)
-        setShowDraftDialog(true)
-      } else {
-        setFormData(initialFormData)
+      // Check if this is a duplicate operation (add mode with property data)
+      if (property) {
+        // Duplicate: Load property data but modify name and clear unique fields
+        const convertedData = propertyToFormData(property)
+        convertedData.name = `Copy of ${convertedData.name}`
+        // Clear any existing draft as we're duplicating
+        clearPropertyFormDraft()
+        setFormData(convertedData)
         setCurrentStep(0)
         setErrors({})
         setIsSubmitting(false)
-        setHasUnsavedChanges(false)
+        setHasUnsavedChanges(true) // Mark as changed since we modified the name
+      } else {
+        // Normal add: Check for saved draft
+        const hasDraft = hasSavedPropertyDraft()
+        if (hasDraft) {
+          const timestamp = getPropertyDraftTimestamp()
+          setDraftTimestamp(timestamp)
+          setShowDraftDialog(true)
+        } else {
+          setFormData(initialFormData)
+          setCurrentStep(0)
+          setErrors({})
+          setIsSubmitting(false)
+          setHasUnsavedChanges(false)
+        }
       }
     }
     

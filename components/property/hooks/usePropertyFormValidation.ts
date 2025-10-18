@@ -37,7 +37,7 @@ const stepValidationRules = {
     }
   },
   specifications: {
-    required: ['bedrooms', 'bathrooms', 'builtUpArea', 'furnishingStatus', 'facingDirection', 'floorLevel'],
+    required: ['bedrooms', 'bathrooms', 'builtUpArea', 'totalArea', 'areaUnit', 'furnishingStatus', 'facingDirection'],
     validate: (data: PropertyFormData) => {
       const errors: Record<string, string> = {}
       
@@ -55,27 +55,66 @@ const stepValidationRules = {
         errors.bathrooms = 'Number of bathrooms cannot be negative'
       }
       
-      // Floor level validation - can be 0 for ground floor  
-      if (data.floorLevel === undefined || data.floorLevel === null) {
-        errors.floorLevel = 'Floor level is required'
-      } else if (typeof data.floorLevel !== 'number') {
-        errors.floorLevel = 'Floor level must be a number'
-      } else if (data.floorLevel < -5) {
-        errors.floorLevel = 'Floor level cannot be less than -5'
-      } else if (data.floorLevel > 200) {
-        errors.floorLevel = 'Floor level cannot be more than 200'
+      // Floor level validation - now optional
+      if (data.floorLevel !== undefined && data.floorLevel !== null) {
+        if (typeof data.floorLevel !== 'number') {
+          errors.floorLevel = 'Floor level must be a number'
+        } else if (data.floorLevel < -5) {
+          errors.floorLevel = 'Floor level cannot be less than -5'
+        } else if (data.floorLevel > 200) {
+          errors.floorLevel = 'Floor level cannot be more than 200'
+        }
       }
       
       // Built up area validation
-      if (!data.builtUpArea?.trim()) {
+      if (data.builtUpArea === undefined || data.builtUpArea === null) {
         errors.builtUpArea = 'Built up area is required'
-      } else if (!/^\d+(\.\d+)?\s*(sq\.?\s*ft\.?|sqft|square\s*feet?)$/i.test(data.builtUpArea)) {
-        errors.builtUpArea = 'Built up area must be in format "1000 sq ft"'
+      } else if (typeof data.builtUpArea !== 'number' || data.builtUpArea <= 0) {
+        errors.builtUpArea = 'Built up area must be a positive number'
+      } else if (data.builtUpArea > 100000) {
+        errors.builtUpArea = 'Built up area cannot exceed 100,000'
       }
       
-      // Carpet area validation (optional)
-      if (data.carpetArea && !/^\d+(\.\d+)?\s*(sq\.?\s*ft\.?|sqft|square\s*feet?)$/i.test(data.carpetArea)) {
-        errors.carpetArea = 'Carpet area must be in format "800 sq ft"'
+      // Total area validation (mandatory)
+      if (data.totalArea === undefined || data.totalArea === null) {
+        errors.totalArea = 'Total area is required'
+      } else if (typeof data.totalArea !== 'number' || data.totalArea <= 0) {
+        errors.totalArea = 'Total area must be a positive number'
+      } else if (data.totalArea > 100000) {
+        errors.totalArea = 'Total area cannot exceed 100,000'
+      }
+      
+      // Optional area validations
+      if (data.carpetArea !== undefined && data.carpetArea !== null) {
+        if (typeof data.carpetArea !== 'number' || data.carpetArea <= 0) {
+          errors.carpetArea = 'Carpet area must be a positive number'
+        } else if (data.carpetArea > 100000) {
+          errors.carpetArea = 'Carpet area cannot exceed 100,000'
+        }
+      }
+      
+      if (data.suiteArea !== undefined && data.suiteArea !== null) {
+        if (typeof data.suiteArea !== 'number' || data.suiteArea <= 0) {
+          errors.suiteArea = 'Suite area must be a positive number'
+        } else if (data.suiteArea > 100000) {
+          errors.suiteArea = 'Suite area cannot exceed 100,000'
+        }
+      }
+      
+      if (data.balconyArea !== undefined && data.balconyArea !== null) {
+        if (typeof data.balconyArea !== 'number' || data.balconyArea <= 0) {
+          errors.balconyArea = 'Balcony area must be a positive number'
+        } else if (data.balconyArea > 100000) {
+          errors.balconyArea = 'Balcony area cannot exceed 100,000'
+        }
+      }
+      
+      if (data.terracePoolArea !== undefined && data.terracePoolArea !== null) {
+        if (typeof data.terracePoolArea !== 'number' || data.terracePoolArea <= 0) {
+          errors.terracePoolArea = 'Terrace & Pool area must be a positive number'
+        } else if (data.terracePoolArea > 100000) {
+          errors.terracePoolArea = 'Terrace & Pool area cannot exceed 100,000'
+        }
       }
       
       // Furnishing status validation

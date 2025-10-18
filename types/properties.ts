@@ -81,11 +81,16 @@ export interface IProperty {
   propertyType: 'Apartment' | 'Villa' | 'Penthouse' | 'Condo' | 'Townhouse' | 'Studio' | 'Duplex' | 'Loft';
   bedrooms: number;
   bathrooms: number;
-  builtUpArea: string; // e.g., "1200 sq ft"
-  carpetArea?: string; // Optional - e.g., "1000 sq ft"
+  builtUpArea: number; // e.g., 1200
+  carpetArea?: number; // Optional - e.g., 1000
+  suiteArea?: number; // Optional - e.g., 800
+  balconyArea?: number; // Optional - e.g., 150
+  terracePoolArea?: number; // Optional - e.g., 300
+  totalArea: number; // Mandatory - e.g., 1500
+  areaUnit: string; // Unit for all areas - e.g., "sq ft"
   furnishingStatus: 'Unfurnished' | 'Semi-Furnished' | 'Fully Furnished';
   facingDirection: 'North' | 'South' | 'East' | 'West' | 'North-East' | 'North-West' | 'South-East' | 'South-West';
-  floorLevel: number; // Which floor (e.g., 5 for 5th floor)
+  floorLevel?: number; // Optional - Which floor (e.g., 5 for 5th floor)
   
   // Ownership & Availability
   ownershipType: 'Primary' | 'Secondary'; // Primary = from developer, Secondary = from owner
@@ -149,8 +154,13 @@ export interface PropertyFormData {
   propertyType: string;
   bedrooms: number | undefined;
   bathrooms: number | undefined;
-  builtUpArea: string;
-  carpetArea: string;
+  builtUpArea: number | undefined;
+  carpetArea: number | undefined;
+  suiteArea: number | undefined;
+  balconyArea: number | undefined;
+  terracePoolArea: number | undefined;
+  totalArea: number | undefined;
+  areaUnit: string;
   furnishingStatus: string;
   facingDirection: string;
   floorLevel: number | undefined;

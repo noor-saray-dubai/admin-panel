@@ -114,6 +114,7 @@ export function PropertyTabs() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<IProperty | null>(null)
+  const [duplicateProperty, setDuplicateProperty] = useState<IProperty | null>(null)
 
   // Update URL with new parameters
   const updateURL = (newParams: Record<string, string | number>) => {
@@ -378,6 +379,7 @@ export function PropertyTabs() {
     currentUrl.searchParams.delete("action")
     router.replace(currentUrl.toString())
     setIsAddModalOpen(false)
+    setDuplicateProperty(null) // Clear duplicate property when closing
   }
 
   const closeEditModal = () => {
@@ -416,6 +418,11 @@ export function PropertyTabs() {
   const handleDeleteProperty = (property: IProperty) => {
     setSelectedProperty(property)
     setIsDeleteModalOpen(true)
+  }
+
+  const handleDuplicateProperty = (property: IProperty) => {
+    setDuplicateProperty(property)
+    setIsAddModalOpen(true) // Open add modal for duplicate
   }
 
   // API functions for property operations
@@ -691,6 +698,7 @@ export function PropertyTabs() {
                       property={property}
                       onView={handleViewProperty}
                       onEdit={handleEditProperty}
+                      onDuplicate={handleDuplicateProperty}
                       onDelete={handleDeleteProperty}
                       isDeleting={isDeleting && selectedProperty?.id === property.id}
                     />
@@ -756,6 +764,7 @@ export function PropertyTabs() {
         isOpen={isAddModalOpen}
         onClose={closeModal}
         onSuccess={handleAddPropertySuccess}
+        property={duplicateProperty || undefined}
         mode="add"
       />
 

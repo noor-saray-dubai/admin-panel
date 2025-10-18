@@ -22,7 +22,8 @@ import {
   Bath,
   Square,
   Compass,
-  Building2
+  Building2,
+  Copy
 } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import type { IProperty } from "@/types/properties"
@@ -31,11 +32,12 @@ interface PropertyCardProps {
   property: IProperty
   onView: (property: IProperty) => void
   onEdit: (property: IProperty) => void
+  onDuplicate: (property: IProperty) => void
   onDelete: (property: IProperty) => void
   isDeleting?: boolean
 }
 
-export function PropertyCard({ property, onView, onEdit, onDelete, isDeleting = false }: PropertyCardProps) {
+export function PropertyCard({ property, onView, onEdit, onDuplicate, onDelete, isDeleting = false }: PropertyCardProps) {
   const getAvailabilityColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "ready":
@@ -143,6 +145,10 @@ export function PropertyCard({ property, onView, onEdit, onDelete, isDeleting = 
               <DropdownMenuItem onClick={() => onEdit(property)} disabled={isDeleting}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Property
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDuplicate(property)} disabled={isDeleting}>
+                <Copy className="mr-2 h-4 w-4" />
+                Duplicate Property
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => onDelete(property)} 

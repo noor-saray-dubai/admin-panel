@@ -101,14 +101,63 @@ function validatePropertyData(data: any): { isValid: boolean; errors: Record<str
     addError('bathrooms', 'Bathrooms must be between 0 and 20');
   }
 
+  // Area validation - all areas are now numbers
   // Built-up area (required)
-  if (!data.builtUpArea || !data.builtUpArea.trim()) {
+  if (data.builtUpArea === undefined || data.builtUpArea === null) {
     addError('builtUpArea', 'Built-up area is required');
+  } else if (typeof data.builtUpArea !== 'number' || data.builtUpArea <= 0) {
+    addError('builtUpArea', 'Built-up area must be a positive number');
+  } else if (data.builtUpArea > 100000) {
+    addError('builtUpArea', 'Built-up area cannot exceed 100,000');
   }
 
-  // Carpet area (optional, but must be valid if provided)
-  if (data.carpetArea && data.carpetArea.trim && !data.carpetArea.trim()) {
-    addError('carpetArea', 'Carpet area cannot be empty if provided');
+  // Total area (required)
+  if (data.totalArea === undefined || data.totalArea === null) {
+    addError('totalArea', 'Total area is required');
+  } else if (typeof data.totalArea !== 'number' || data.totalArea <= 0) {
+    addError('totalArea', 'Total area must be a positive number');
+  } else if (data.totalArea > 100000) {
+    addError('totalArea', 'Total area cannot exceed 100,000');
+  }
+
+  // Area unit validation (required)
+  if (!data.areaUnit || !data.areaUnit.trim()) {
+    addError('areaUnit', 'Area unit is required');
+  } else if (!['sq ft', 'sq m'].includes(data.areaUnit)) {
+    addError('areaUnit', 'Area unit must be "sq ft" or "sq m"');
+  }
+
+  // Optional area fields validation
+  if (data.carpetArea !== undefined && data.carpetArea !== null) {
+    if (typeof data.carpetArea !== 'number' || data.carpetArea <= 0) {
+      addError('carpetArea', 'Carpet area must be a positive number');
+    } else if (data.carpetArea > 100000) {
+      addError('carpetArea', 'Carpet area cannot exceed 100,000');
+    }
+  }
+
+  if (data.suiteArea !== undefined && data.suiteArea !== null) {
+    if (typeof data.suiteArea !== 'number' || data.suiteArea <= 0) {
+      addError('suiteArea', 'Suite area must be a positive number');
+    } else if (data.suiteArea > 100000) {
+      addError('suiteArea', 'Suite area cannot exceed 100,000');
+    }
+  }
+
+  if (data.balconyArea !== undefined && data.balconyArea !== null) {
+    if (typeof data.balconyArea !== 'number' || data.balconyArea <= 0) {
+      addError('balconyArea', 'Balcony area must be a positive number');
+    } else if (data.balconyArea > 100000) {
+      addError('balconyArea', 'Balcony area cannot exceed 100,000');
+    }
+  }
+
+  if (data.terracePoolArea !== undefined && data.terracePoolArea !== null) {
+    if (typeof data.terracePoolArea !== 'number' || data.terracePoolArea <= 0) {
+      addError('terracePoolArea', 'Terrace & Pool area must be a positive number');
+    } else if (data.terracePoolArea > 100000) {
+      addError('terracePoolArea', 'Terrace & Pool area cannot exceed 100,000');
+    }
   }
 
   // Furnishing status validation
@@ -125,9 +174,11 @@ function validatePropertyData(data: any): { isValid: boolean; errors: Record<str
     addError('facingDirection', `Facing direction must be one of: ${VALID_FACING_DIRECTIONS.join(', ')}`);
   }
 
-  // Floor level validation
-  if (typeof data.floorLevel !== 'number' || !Number.isInteger(data.floorLevel) || data.floorLevel < -5 || data.floorLevel > 200) {
-    addError('floorLevel', 'Floor level must be between -5 and 200');
+  // Floor level validation (optional)
+  if (data.floorLevel !== undefined && data.floorLevel !== null) {
+    if (typeof data.floorLevel !== 'number' || !Number.isInteger(data.floorLevel) || data.floorLevel < -5 || data.floorLevel > 200) {
+      addError('floorLevel', 'Floor level must be between -5 and 200');
+    }
   }
 
   // Ownership type validation
@@ -394,11 +445,16 @@ async function handler(request: NextRequest) {
       propertyType: body.propertyType,
       bedrooms: body.bedrooms,
       bathrooms: body.bathrooms,
-      builtUpArea: body.builtUpArea.trim(),
-      carpetArea: body.carpetArea?.trim() || undefined,
+      builtUpArea: body.builtUpArea,
+      carpetArea: body.carpetArea || undefined,
+      suiteArea: body.suiteArea || undefined,
+      balconyArea: body.balconyArea || undefined,
+      terracePoolArea: body.terracePoolArea || undefined,
+      totalArea: body.totalArea,
+      areaUnit: body.areaUnit || 'sq ft',
       furnishingStatus: body.furnishingStatus,
       facingDirection: body.facingDirection,
-      floorLevel: body.floorLevel,
+      floorLevel: body.floorLevel || undefined,
       
         // Ownership & Availability
         ownershipType: body.ownershipType,

@@ -31,11 +31,11 @@ export function usePropertyFormLogic(
     }
 
     // Handle special calculations
-    if (field === 'price' || field === 'builtUpArea') {
-      // Calculate price per sq ft when price or built up area changes
+    if (field === 'price' || field === 'totalArea') {
+      // Calculate price per sq ft when price or total area changes
       const updatedData = { ...formData, [field]: value }
-      if (updatedData.priceNumeric && updatedData.builtUpArea) {
-        const area = parseFloat(updatedData.builtUpArea.replace(/[^0-9.]/g, ''))
+      if (updatedData.priceNumeric && updatedData.totalArea && typeof updatedData.totalArea === 'number') {
+        const area = updatedData.totalArea
         if (area > 0) {
           const pricePerSqFt = updatedData.priceNumeric / area
           setFormData(prev => ({

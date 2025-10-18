@@ -71,7 +71,17 @@ export function SettingsReviewStep({
   }
 
   const addPaymentPlanMilestone = () => {
-    const newMilestones = [...formData.paymentPlan.construction, { milestone: '', percentage: '' }]
+    // Get the last milestone to prefill the new one
+    const existingMilestones = formData.paymentPlan.construction
+    const lastMilestone = existingMilestones.length > 0 ? existingMilestones[existingMilestones.length - 1] : null
+    
+    // Create new milestone with prefilled values from the last milestone (if exists)
+    const newMilestone = {
+      milestone: lastMilestone ? lastMilestone.milestone : '',
+      percentage: lastMilestone ? lastMilestone.percentage : ''
+    }
+    
+    const newMilestones = [...existingMilestones, newMilestone]
     handleFieldChange('paymentPlan', { ...formData.paymentPlan, construction: newMilestones })
   }
 
