@@ -73,7 +73,6 @@ const initialFormData: PropertyFormData = {
   bedrooms: 1,
   bathrooms: 0,
   builtUpArea: undefined,
-  carpetArea: undefined,
   suiteArea: undefined,
   balconyArea: undefined,
   terracePoolArea: undefined,
@@ -81,7 +80,7 @@ const initialFormData: PropertyFormData = {
   areaUnit: "sq ft",
   furnishingStatus: "",
   facingDirection: "",
-  floorLevel: undefined,
+  floorLevel: { type: 'single', value: 0 }, // Default to ground floor
   
   // Ownership & Availability
   ownershipType: "",

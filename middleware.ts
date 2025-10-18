@@ -106,6 +106,8 @@ export async function middleware(request: NextRequest) {
                            sessionCookie.length > 20 && 
                            sessionCookie.includes('.');
   
+  // console.log('🔍 [MIDDLEWARE DEBUG] Path:', pathname, 'Cookie exists:', !!sessionCookie, 'Has valid cookie:', hasSessionCookie);
+  
   // ═══════════════════════════════════════════════════════════
   // PHASE 3: HANDLE PUBLIC ROUTES (login, register)
   // ═══════════════════════════════════════════════════════════

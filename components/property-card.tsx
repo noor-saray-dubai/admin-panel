@@ -96,6 +96,38 @@ export function PropertyCard({ property, onView, onEdit, onDuplicate, onDelete, 
     return property.amenities?.reduce((total, category) => total + category.items.length, 0) || 0
   }
 
+  const formatFloorLevel = (floorLevel: any): string => {
+    if (!floorLevel) return 'N/A'
+    
+    if (typeof floorLevel === 'object') {
+      if (floorLevel.type === 'single') {
+        const value = floorLevel.value
+        if (value < 0) {
+          return `B${Math.abs(value)}`
+        } else if (value === 0) {
+          return 'G'
+        } else if (value >= 2000) {
+          return `R${value - 2000}`
+        } else if (value >= 1000) {
+          return `M${value - 1000}`
+        } else {
+          return `${value}`
+        }
+      } else if (floorLevel.type === 'complex') {
+        const parts = []
+        if (floorLevel.basements > 0) parts.push(`${floorLevel.basements}B`)
+        if (floorLevel.hasGroundFloor) parts.push('G')
+        if (floorLevel.floors > 0) parts.push(`${floorLevel.floors}F`)
+        if (floorLevel.mezzanines > 0) parts.push(`${floorLevel.mezzanines}M`)
+        if (floorLevel.hasRooftop) parts.push('R')
+        return parts.join('+')
+      }
+    }
+    
+    // Fallback for old numeric format
+    return floorLevel.toString()
+  }
+
   return (
     <Card className="hover:shadow-lg transition-shadow">
       <CardHeader className="pb-2">
@@ -175,7 +207,7 @@ export function PropertyCard({ property, onView, onEdit, onDuplicate, onDelete, 
           </div>
           <div className="flex items-center text-sm text-muted-foreground">
             <Square className="h-4 w-4 mr-1" />
-            <span>{property.builtUpArea}</span>
+            <span>{property.builtUpArea || property.totalArea || 'N/A'} sq ft</span>
           </div>
         </div>
 
@@ -227,7 +259,7 @@ export function PropertyCard({ property, onView, onEdit, onDuplicate, onDelete, 
             <span>{property.facingDirection} Facing</span>
           </div>
           <div className="flex items-center space-x-1">
-            <span>Floor {property.floorLevel}</span>
+            <span>Floor {formatFloorLevel(property.floorLevel)}</span>
           </div>
         </div>
 

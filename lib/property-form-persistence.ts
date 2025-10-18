@@ -115,7 +115,6 @@ export function propertyToFormData(property: IProperty): PropertyFormData {
     bedrooms: property.bedrooms || 0,
     bathrooms: property.bathrooms || 0,
     builtUpArea: property.builtUpArea || undefined,
-    carpetArea: property.carpetArea || undefined,
     suiteArea: property.suiteArea || undefined,
     balconyArea: property.balconyArea || undefined,
     terracePoolArea: property.terracePoolArea || undefined,
@@ -123,7 +122,7 @@ export function propertyToFormData(property: IProperty): PropertyFormData {
     areaUnit: property.areaUnit || "sq ft",
     furnishingStatus: property.furnishingStatus || "",
     facingDirection: property.facingDirection || "",
-    floorLevel: property.floorLevel || undefined,
+    floorLevel: property.floorLevel || { type: 'single', value: 0 }, // Default to ground floor
     
     // Ownership & Availability
     ownershipType: property.ownershipType || "",

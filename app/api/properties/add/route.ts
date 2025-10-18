@@ -102,13 +102,13 @@ function validatePropertyData(data: any): { isValid: boolean; errors: Record<str
   }
 
   // Area validation - all areas are now numbers
-  // Built-up area (required)
-  if (data.builtUpArea === undefined || data.builtUpArea === null) {
-    addError('builtUpArea', 'Built-up area is required');
-  } else if (typeof data.builtUpArea !== 'number' || data.builtUpArea <= 0) {
-    addError('builtUpArea', 'Built-up area must be a positive number');
-  } else if (data.builtUpArea > 100000) {
-    addError('builtUpArea', 'Built-up area cannot exceed 100,000');
+  // Built-up area (now optional)
+  if (data.builtUpArea !== undefined && data.builtUpArea !== null) {
+    if (typeof data.builtUpArea !== 'number' || data.builtUpArea <= 0) {
+      addError('builtUpArea', 'Built-up area must be a positive number');
+    } else if (data.builtUpArea > 100000) {
+      addError('builtUpArea', 'Built-up area cannot exceed 100,000');
+    }
   }
 
   // Total area (required)
@@ -128,13 +128,6 @@ function validatePropertyData(data: any): { isValid: boolean; errors: Record<str
   }
 
   // Optional area fields validation
-  if (data.carpetArea !== undefined && data.carpetArea !== null) {
-    if (typeof data.carpetArea !== 'number' || data.carpetArea <= 0) {
-      addError('carpetArea', 'Carpet area must be a positive number');
-    } else if (data.carpetArea > 100000) {
-      addError('carpetArea', 'Carpet area cannot exceed 100,000');
-    }
-  }
 
   if (data.suiteArea !== undefined && data.suiteArea !== null) {
     if (typeof data.suiteArea !== 'number' || data.suiteArea <= 0) {
@@ -174,10 +167,34 @@ function validatePropertyData(data: any): { isValid: boolean; errors: Record<str
     addError('facingDirection', `Facing direction must be one of: ${VALID_FACING_DIRECTIONS.join(', ')}`);
   }
 
-  // Floor level validation (optional)
-  if (data.floorLevel !== undefined && data.floorLevel !== null) {
-    if (typeof data.floorLevel !== 'number' || !Number.isInteger(data.floorLevel) || data.floorLevel < -5 || data.floorLevel > 200) {
-      addError('floorLevel', 'Floor level must be between -5 and 200');
+  // Floor level validation (required JSON structure)
+  if (!data.floorLevel || typeof data.floorLevel !== 'object') {
+    addError('floorLevel', 'Floor level is required');
+  } else {
+    if (data.floorLevel.type === 'single') {
+      if (typeof data.floorLevel.value !== 'number') {
+        addError('floorLevel', 'Single floor level value must be a number');
+      } else if (data.floorLevel.value < -5 || data.floorLevel.value > 2200) {
+        addError('floorLevel', 'Single floor level value must be between -5 and 2200');
+      }
+    } else if (data.floorLevel.type === 'complex') {
+      if (typeof data.floorLevel.basements !== 'number' || data.floorLevel.basements < 0 || data.floorLevel.basements > 10) {
+        addError('floorLevel', 'Basements must be between 0 and 10');
+      }
+      if (typeof data.floorLevel.hasGroundFloor !== 'boolean') {
+        addError('floorLevel', 'Ground floor flag must be a boolean');
+      }
+      if (typeof data.floorLevel.floors !== 'number' || data.floorLevel.floors < 0 || data.floorLevel.floors > 200) {
+        addError('floorLevel', 'Number of floors must be between 0 and 200');
+      }
+      if (typeof data.floorLevel.mezzanines !== 'number' || data.floorLevel.mezzanines < 0 || data.floorLevel.mezzanines > 10) {
+        addError('floorLevel', 'Number of mezzanines must be between 0 and 10');
+      }
+      if (typeof data.floorLevel.hasRooftop !== 'boolean') {
+        addError('floorLevel', 'Rooftop flag must be a boolean');
+      }
+    } else {
+      addError('floorLevel', 'Floor level type must be either "single" or "complex"');
     }
   }
 
@@ -445,8 +462,7 @@ async function handler(request: NextRequest) {
       propertyType: body.propertyType,
       bedrooms: body.bedrooms,
       bathrooms: body.bathrooms,
-      builtUpArea: body.builtUpArea,
-      carpetArea: body.carpetArea || undefined,
+      builtUpArea: body.builtUpArea || undefined,
       suiteArea: body.suiteArea || undefined,
       balconyArea: body.balconyArea || undefined,
       terracePoolArea: body.terracePoolArea || undefined,
@@ -454,7 +470,7 @@ async function handler(request: NextRequest) {
       areaUnit: body.areaUnit || 'sq ft',
       furnishingStatus: body.furnishingStatus,
       facingDirection: body.facingDirection,
-      floorLevel: body.floorLevel || undefined,
+      floorLevel: body.floorLevel,
       
         // Ownership & Availability
         ownershipType: body.ownershipType,

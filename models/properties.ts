@@ -67,6 +67,23 @@ interface IAuditInfo {
   userAgent?: string;
 }
 
+// Floor level types
+interface ISingleFloorLevel {
+  type: 'single';
+  value: number; // Encoded value: B1=-1, G=0, floors=positive, M=1000+floor, R=2000+floor
+}
+
+interface IComplexFloorLevel {
+  type: 'complex';
+  basements: number;
+  hasGroundFloor: boolean; // Always true - ground floor is mandatory
+  floors: number;
+  mezzanines: number;
+  hasRooftop: boolean;
+}
+
+type IFloorLevel = ISingleFloorLevel | IComplexFloorLevel;
+
 interface IProperty extends Document {
   id: string;
   slug: string;
@@ -82,8 +99,7 @@ interface IProperty extends Document {
   propertyType: 'Apartment' | 'Villa' | 'Penthouse' | 'Condo' | 'Townhouse' | 'Studio' | 'Duplex' | 'Loft';
   bedrooms: number;
   bathrooms: number;
-  builtUpArea: number; // e.g., 1200
-  carpetArea?: number; // Optional - e.g., 1000
+  builtUpArea?: number; // Optional - e.g., 1200
   suiteArea?: number; // Optional - e.g., 800
   balconyArea?: number; // Optional - e.g., 150
   terracePoolArea?: number; // Optional - e.g., 300
@@ -91,7 +107,7 @@ interface IProperty extends Document {
   areaUnit: string; // Unit for all areas - e.g., "sq ft"
   furnishingStatus: 'Unfurnished' | 'Semi-Furnished' | 'Fully Furnished';
   facingDirection: 'North' | 'South' | 'East' | 'West' | 'North-East' | 'North-West' | 'South-East' | 'South-West';
-  floorLevel?: number; // Optional - Which floor (e.g., 5 for 5th floor)
+  floorLevel: IFloorLevel; // Required JSON structure for floor information
   
   // Ownership & Availability
   ownershipType: 'Primary' | 'Secondary'; // Primary = from developer, Secondary = from owner
@@ -252,6 +268,65 @@ const FlagsSchema = new Schema<IFlags>({
   highValue: { type: Boolean, default: false }
 }, { _id: false });
 
+// Floor level schemas
+const SingleFloorLevelSchema = new Schema<ISingleFloorLevel>({
+  type: { type: String, required: true, enum: ['single'] },
+  value: { 
+    type: Number, 
+    required: true,
+    min: -5, // Allow basement floors (B5 = -5)
+    max: 2200 // Allow rooftop floors (R200 = 2200)
+  }
+}, { _id: false });
+
+const ComplexFloorLevelSchema = new Schema<IComplexFloorLevel>({
+  type: { type: String, required: true, enum: ['complex'] },
+  basements: { 
+    type: Number, 
+    required: true, 
+    min: 0, 
+    max: 10,
+    default: 0
+  },
+  hasGroundFloor: { 
+    type: Boolean, 
+    required: true, 
+    default: true // Ground floor is mandatory
+  },
+  floors: { 
+    type: Number, 
+    required: true, 
+    min: 0, 
+    max: 200,
+    default: 0
+  },
+  mezzanines: { 
+    type: Number, 
+    required: true, 
+    min: 0, 
+    max: 10,
+    default: 0
+  },
+  hasRooftop: { 
+    type: Boolean, 
+    required: true, 
+    default: false
+  }
+}, { _id: false });
+
+// Mixed floor level schema
+const FloorLevelSchema = new Schema({
+  type: { 
+    type: String, 
+    required: true, 
+    enum: ['single', 'complex'] 
+  }
+}, { 
+  _id: false,
+  discriminatorKey: 'type',
+  strict: false
+});
+
 // ============ MAIN PROPERTY SCHEMA ============
 
 const PropertySchema = new Schema<IProperty>(
@@ -329,12 +404,7 @@ const PropertySchema = new Schema<IProperty>(
     },
     builtUpArea: { 
       type: Number, 
-      required: true,
-      min: 1,
-      max: 100000
-    },
-    carpetArea: { 
-      type: Number,
+      required: false, // Now optional
       min: 1,
       max: 100000
     },
@@ -379,10 +449,24 @@ const PropertySchema = new Schema<IProperty>(
       index: true
     },
     floorLevel: { 
-      type: Number, 
-      required: false,
-      min: -5, // Allow basement floors
-      max: 200
+      type: Schema.Types.Mixed, 
+      required: true,
+      validate: {
+        validator: function(v: any) {
+          if (!v || typeof v !== 'object') return false;
+          if (v.type === 'single') {
+            return typeof v.value === 'number' && v.value >= -5 && v.value <= 2200;
+          } else if (v.type === 'complex') {
+            return typeof v.basements === 'number' && v.basements >= 0 && v.basements <= 10 &&
+                   typeof v.hasGroundFloor === 'boolean' &&
+                   typeof v.floors === 'number' && v.floors >= 0 && v.floors <= 200 &&
+                   typeof v.mezzanines === 'number' && v.mezzanines >= 0 && v.mezzanines <= 10 &&
+                   typeof v.hasRooftop === 'boolean';
+          }
+          return false;
+        },
+        message: 'Floor level must be a valid single or complex floor structure'
+      }
     },
     
     // Ownership & Availability
@@ -654,5 +738,8 @@ export type {
   ICoordinates,
   IAmenityCategory,
   IPaymentPlan,
-  IFlags
+  IFlags,
+  IFloorLevel,
+  ISingleFloorLevel,
+  IComplexFloorLevel
 };

@@ -1,5 +1,22 @@
 // types/properties.ts
 
+// Floor level type definitions
+export interface ISingleFloorLevel {
+  type: 'single';
+  value: number; // Encoded value: B1=-1, G=0, floors=positive, M=1000+floor, R=2000+floor
+}
+
+export interface IComplexFloorLevel {
+  type: 'complex';
+  basements: number;
+  hasGroundFloor: boolean; // Always true - ground floor is mandatory
+  floors: number;
+  mezzanines: number;
+  hasRooftop: boolean;
+}
+
+export type IFloorLevel = ISingleFloorLevel | IComplexFloorLevel;
+
 // Re-export interfaces from the model for frontend use
 export interface IProjectLink {
   projectName: string;
@@ -81,8 +98,7 @@ export interface IProperty {
   propertyType: 'Apartment' | 'Villa' | 'Penthouse' | 'Condo' | 'Townhouse' | 'Studio' | 'Duplex' | 'Loft';
   bedrooms: number;
   bathrooms: number;
-  builtUpArea: number; // e.g., 1200
-  carpetArea?: number; // Optional - e.g., 1000
+  builtUpArea?: number; // Optional - e.g., 1200
   suiteArea?: number; // Optional - e.g., 800
   balconyArea?: number; // Optional - e.g., 150
   terracePoolArea?: number; // Optional - e.g., 300
@@ -90,7 +106,7 @@ export interface IProperty {
   areaUnit: string; // Unit for all areas - e.g., "sq ft"
   furnishingStatus: 'Unfurnished' | 'Semi-Furnished' | 'Fully Furnished';
   facingDirection: 'North' | 'South' | 'East' | 'West' | 'North-East' | 'North-West' | 'South-East' | 'South-West';
-  floorLevel?: number; // Optional - Which floor (e.g., 5 for 5th floor)
+  floorLevel: IFloorLevel; // Required JSON structure for floor information
   
   // Ownership & Availability
   ownershipType: 'Primary' | 'Secondary'; // Primary = from developer, Secondary = from owner
@@ -155,7 +171,6 @@ export interface PropertyFormData {
   bedrooms: number | undefined;
   bathrooms: number | undefined;
   builtUpArea: number | undefined;
-  carpetArea: number | undefined;
   suiteArea: number | undefined;
   balconyArea: number | undefined;
   terracePoolArea: number | undefined;
@@ -163,7 +178,7 @@ export interface PropertyFormData {
   areaUnit: string;
   furnishingStatus: string;
   facingDirection: string;
-  floorLevel: number | undefined;
+  floorLevel: IFloorLevel;
   
   // Ownership & Availability
   ownershipType: string;

@@ -37,7 +37,7 @@ const stepValidationRules = {
     }
   },
   specifications: {
-    required: ['bedrooms', 'bathrooms', 'builtUpArea', 'totalArea', 'areaUnit', 'furnishingStatus', 'facingDirection'],
+    required: ['bedrooms', 'bathrooms', 'totalArea', 'areaUnit', 'furnishingStatus', 'facingDirection', 'floorLevel'],
     validate: (data: PropertyFormData) => {
       const errors: Record<string, string> = {}
       
@@ -55,24 +55,36 @@ const stepValidationRules = {
         errors.bathrooms = 'Number of bathrooms cannot be negative'
       }
       
-      // Floor level validation - now optional
-      if (data.floorLevel !== undefined && data.floorLevel !== null) {
-        if (typeof data.floorLevel !== 'number') {
-          errors.floorLevel = 'Floor level must be a number'
-        } else if (data.floorLevel < -5) {
-          errors.floorLevel = 'Floor level cannot be less than -5'
-        } else if (data.floorLevel > 200) {
-          errors.floorLevel = 'Floor level cannot be more than 200'
+      // Floor level validation - required JSON structure
+      if (!data.floorLevel || typeof data.floorLevel !== 'object') {
+        errors.floorLevel = 'Floor level is required'
+      } else {
+        if (data.floorLevel.type === 'single') {
+          if (typeof data.floorLevel.value !== 'number') {
+            errors.floorLevel = 'Single floor level value must be a number'
+          } else if (data.floorLevel.value < -5 || data.floorLevel.value > 2200) {
+            errors.floorLevel = 'Single floor level value must be between -5 and 2200'
+          }
+        } else if (data.floorLevel.type === 'complex') {
+          if (typeof data.floorLevel.basements !== 'number' || data.floorLevel.basements < 0 || data.floorLevel.basements > 10) {
+            errors.floorLevel = 'Basements must be between 0 and 10'
+          } else if (typeof data.floorLevel.floors !== 'number' || data.floorLevel.floors < 0 || data.floorLevel.floors > 200) {
+            errors.floorLevel = 'Number of floors must be between 0 and 200'
+          } else if (typeof data.floorLevel.mezzanines !== 'number' || data.floorLevel.mezzanines < 0 || data.floorLevel.mezzanines > 10) {
+            errors.floorLevel = 'Number of mezzanines must be between 0 and 10'
+          }
+        } else {
+          errors.floorLevel = 'Floor level type must be either "single" or "complex"'
         }
       }
       
-      // Built up area validation
-      if (data.builtUpArea === undefined || data.builtUpArea === null) {
-        errors.builtUpArea = 'Built up area is required'
-      } else if (typeof data.builtUpArea !== 'number' || data.builtUpArea <= 0) {
-        errors.builtUpArea = 'Built up area must be a positive number'
-      } else if (data.builtUpArea > 100000) {
-        errors.builtUpArea = 'Built up area cannot exceed 100,000'
+      // Built up area validation (now optional)
+      if (data.builtUpArea !== undefined && data.builtUpArea !== null) {
+        if (typeof data.builtUpArea !== 'number' || data.builtUpArea <= 0) {
+          errors.builtUpArea = 'Built up area must be a positive number'
+        } else if (data.builtUpArea > 100000) {
+          errors.builtUpArea = 'Built up area cannot exceed 100,000'
+        }
       }
       
       // Total area validation (mandatory)
@@ -85,13 +97,6 @@ const stepValidationRules = {
       }
       
       // Optional area validations
-      if (data.carpetArea !== undefined && data.carpetArea !== null) {
-        if (typeof data.carpetArea !== 'number' || data.carpetArea <= 0) {
-          errors.carpetArea = 'Carpet area must be a positive number'
-        } else if (data.carpetArea > 100000) {
-          errors.carpetArea = 'Carpet area cannot exceed 100,000'
-        }
-      }
       
       if (data.suiteArea !== undefined && data.suiteArea !== null) {
         if (typeof data.suiteArea !== 'number' || data.suiteArea <= 0) {

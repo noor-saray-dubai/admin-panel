@@ -90,6 +90,38 @@ export function PropertyViewModal({ isOpen, onClose, property }: PropertyViewMod
     return property.amenities?.reduce((total, category) => total + category.items.length, 0) || 0
   }
 
+  const formatFloorLevel = (floorLevel: any): string => {
+    if (!floorLevel) return 'N/A'
+    
+    if (typeof floorLevel === 'object') {
+      if (floorLevel.type === 'single') {
+        const value = floorLevel.value
+        if (value < 0) {
+          return `B${Math.abs(value)}`
+        } else if (value === 0) {
+          return 'G'
+        } else if (value >= 2000) {
+          return `R${value - 2000}`
+        } else if (value >= 1000) {
+          return `M${value - 1000}`
+        } else {
+          return `${value}`
+        }
+      } else if (floorLevel.type === 'complex') {
+        const parts = []
+        if (floorLevel.basements > 0) parts.push(`${floorLevel.basements}B`)
+        if (floorLevel.hasGroundFloor) parts.push('G')
+        if (floorLevel.floors > 0) parts.push(`${floorLevel.floors}F`)
+        if (floorLevel.mezzanines > 0) parts.push(`${floorLevel.mezzanines}M`)
+        if (floorLevel.hasRooftop) parts.push('R')
+        return parts.join('+')
+      }
+    }
+    
+    // Fallback for old numeric format
+    return floorLevel.toString()
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -180,18 +212,13 @@ export function PropertyViewModal({ isOpen, onClose, property }: PropertyViewMod
                     </div>
                   </div>
                   
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Built-up Area:</span>
-                    <div className="flex items-center gap-1">
-                      <Square className="h-4 w-4" />
-                      <span className="font-medium">{property.builtUpArea}</span>
-                    </div>
-                  </div>
-                  
-                  {property.carpetArea && (
+                  {property.builtUpArea && (
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Carpet Area:</span>
-                      <span className="font-medium">{property.carpetArea}</span>
+                      <span className="text-sm text-muted-foreground">Built-up Area:</span>
+                      <div className="flex items-center gap-1">
+                        <Square className="h-4 w-4" />
+                        <span className="font-medium">{property.builtUpArea} sq ft</span>
+                      </div>
                     </div>
                   )}
                   
@@ -207,7 +234,7 @@ export function PropertyViewModal({ isOpen, onClose, property }: PropertyViewMod
                     <span className="text-sm text-muted-foreground">Floor:</span>
                     <div className="flex items-center gap-1">
                       <Layers className="h-4 w-4" />
-                      <span className="font-medium">{property.floorLevel}</span>
+                      <span className="font-medium">{formatFloorLevel(property.floorLevel)}</span>
                     </div>
                   </div>
                   

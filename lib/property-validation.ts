@@ -81,17 +81,13 @@ export const validatePropertyField = (fieldName: string, value: any, formData: P
       return null
 
     case 'builtUpArea':
-      if (value === undefined || value === null) return 'Built-up area is required'
-      if (typeof value !== 'number' || value <= 0) return 'Built-up area must be a positive number'
-      if (value > 100000) return 'Built-up area cannot exceed 100,000'
-      return null
-
-    case 'carpetArea':
+      // Built-up area is now optional
       if (value !== undefined && value !== null) {
-        if (typeof value !== 'number' || value <= 0) return 'Carpet area must be a positive number'
-        if (value > 100000) return 'Carpet area cannot exceed 100,000'
+        if (typeof value !== 'number' || value <= 0) return 'Built-up area must be a positive number'
+        if (value > 100000) return 'Built-up area cannot exceed 100,000'
       }
       return null
+
 
     case 'suiteArea':
       if (value !== undefined && value !== null) {
@@ -136,9 +132,30 @@ export const validatePropertyField = (fieldName: string, value: any, formData: P
       return null
 
     case 'floorLevel':
-      // Floor level is now optional
-      if (value !== undefined && value !== null) {
-        if (!Number.isInteger(value) || value < -5 || value > 200) return 'Floor level must be between -5 and 200'
+      // Floor level is required and must be a JSON object
+      if (!value || typeof value !== 'object') return 'Floor level is required'
+      
+      if (value.type === 'single') {
+        if (typeof value.value !== 'number') return 'Single floor level value must be a number'
+        if (value.value < -5 || value.value > 2200) return 'Single floor level value must be between -5 and 2200'
+      } else if (value.type === 'complex') {
+        if (typeof value.basements !== 'number' || value.basements < 0 || value.basements > 10) {
+          return 'Basements must be between 0 and 10'
+        }
+        if (typeof value.hasGroundFloor !== 'boolean') {
+          return 'Ground floor flag must be a boolean'
+        }
+        if (typeof value.floors !== 'number' || value.floors < 0 || value.floors > 200) {
+          return 'Number of floors must be between 0 and 200'
+        }
+        if (typeof value.mezzanines !== 'number' || value.mezzanines < 0 || value.mezzanines > 10) {
+          return 'Number of mezzanines must be between 0 and 10'
+        }
+        if (typeof value.hasRooftop !== 'boolean') {
+          return 'Rooftop flag must be a boolean'
+        }
+      } else {
+        return 'Floor level type must be either "single" or "complex"'
       }
       return null
 
@@ -303,9 +320,6 @@ export const validatePropertyStep = (step: string, formData: PropertyFormData): 
       const builtUpAreaError = validatePropertyField('builtUpArea', formData.builtUpArea, formData)
       if (builtUpAreaError) addError('builtUpArea', builtUpAreaError)
 
-      const carpetAreaError = validatePropertyField('carpetArea', formData.carpetArea, formData)
-      if (carpetAreaError) addError('carpetArea', carpetAreaError)
-
       const suiteAreaError = validatePropertyField('suiteArea', formData.suiteArea, formData)
       if (suiteAreaError) addError('suiteArea', suiteAreaError)
 
@@ -324,7 +338,7 @@ export const validatePropertyStep = (step: string, formData: PropertyFormData): 
       const facingError = validatePropertyField('facingDirection', formData.facingDirection, formData)
       if (facingError) addError('facingDirection', facingError)
 
-      // Floor level is now optional
+      // Floor level is required
       const floorError = validatePropertyField('floorLevel', formData.floorLevel, formData)
       if (floorError) addError('floorLevel', floorError)
 
@@ -449,15 +463,7 @@ export const validatePropertyFormData = (formData: PropertyFormData): PropertyVa
     Object.assign(fieldErrors, stepValidation.errors)
   }
 
-  // Additional cross-field validations
-  if (formData.carpetArea && formData.builtUpArea) {
-    // Check that carpet area is not larger than built-up area
-    const carpetAreaNum = formData.carpetArea // Already a number
-    const builtUpAreaNum = formData.builtUpArea // Already a number
-    if (carpetAreaNum > builtUpAreaNum) {
-      fieldErrors.carpetArea = 'Carpet area cannot be larger than built-up area'
-    }
-  }
+  // Additional cross-field validations - removed carpet area validation
 
   // Validate coordinates combination
   if (formData.latitude !== undefined && formData.longitude !== undefined) {

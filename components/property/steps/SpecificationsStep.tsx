@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { AlertCircle, Home, Bed, Bath, Maximize, ArrowUp } from "lucide-react"
-import type { PropertyFormData, PropertyStepProps } from "@/types/properties"
+import { AlertCircle, Home, Bed, Bath, Maximize, Building2 } from "lucide-react"
+import type { PropertyFormData, PropertyStepProps, IFloorLevel } from "@/types/properties"
+import FloorLevelSelector from "@/components/property/FloorLevelSelector"
 
 // Furnishing status options - from schema enum
 const furnishingStatuses = [
@@ -229,30 +230,24 @@ export function SpecificationsStep({ formData, errors, setErrors, onInputChange 
               )}
             </div>
 
-            {/* Floor Level */}
-            <div className="space-y-2">
-              <Label htmlFor="floorLevel" className="text-sm font-medium flex items-center gap-2">
-                <ArrowUp className="h-4 w-4" />
-                Floor Level
-              </Label>
-              <Input
-                id="floorLevel"
-                type="number"
-                min="-5"
-                max="200"
-                placeholder="0"
-                value={formData.floorLevel !== undefined ? formData.floorLevel.toString() : ''}
-                onChange={(e) => handleNumberChange('floorLevel', e.target.value)}
-                className={errors.floorLevel ? 'border-red-500 focus-visible:ring-red-500' : ''}
-              />
-              {errors.floorLevel && (
-                <div className="flex items-center gap-1 text-sm text-red-600">
-                  <AlertCircle className="h-4 w-4" />
-                  {errors.floorLevel}
-                </div>
-              )}
-            </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Floor Level Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-purple-600" />
+            Floor Level Configuration
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FloorLevelSelector
+            value={formData.floorLevel}
+            onChange={(floorLevel: IFloorLevel) => handleFieldChange('floorLevel', floorLevel)}
+            error={errors.floorLevel}
+          />
         </CardContent>
       </Card>
 
@@ -269,20 +264,10 @@ export function SpecificationsStep({ formData, errors, setErrors, onInputChange 
             {/* Built Up Area */}
             <AreaConverter
               label="Built Up Area"
-              required
               placeholder="Enter area"
               value={formData.builtUpArea}
               error={errors.builtUpArea}
               onChange={(value) => handleFieldChange('builtUpArea', value)}
-            />
-
-            {/* Carpet Area */}
-            <AreaConverter
-              label="Carpet Area"
-              placeholder="Enter area"
-              value={formData.carpetArea}
-              error={errors.carpetArea}
-              onChange={(value) => handleFieldChange('carpetArea', value)}
             />
 
             {/* Suite Area */}
